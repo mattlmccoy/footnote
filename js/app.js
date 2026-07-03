@@ -1,12 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=c55a5ba';
-import { anchorFromSelection } from './anchor.js?v=c55a5ba';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=c55a5ba';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=c55a5ba';
-import { sealToBase64 } from './vendor/seal.js?v=c55a5ba';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=c55a5ba';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=c55a5ba';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=c55a5ba';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=c55a5ba';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=rev1';
+import { anchorFromSelection } from './anchor.js?v=rev1';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=rev1';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=rev1';
+import { sealToBase64 } from './vendor/seal.js?v=rev1';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=rev1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=rev1';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=rev1';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=rev1';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -36,11 +36,11 @@ const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
 // is mis-highlighted. The engine skips any step whose element is absent.
 const OWNER_TOUR = [
   { sel:'#btn-token', title:'Add your access token', body:'The reviewer reads your private data with a GitHub token that stays only in this browser. Paste a fine-grained token with Contents read/write on your data repo here first.' },
-  { sel:'.chcard', title:'Your chapters', body:'Each card opens a chapter to read and to work through your advisors\' comments. The bar shows how far along you are.' },
+  { sel:'.chcard', title:'Your chapters', body:'Each card opens a chapter to read and to work through your reviewers\' comments. The bar shows how far along you are.' },
   { sel:'#inbox-panel', title:'Needs you', body:'Your triage center. Across every chapter it gathers comments waiting on you, edits staged to approve, and finished jobs. Click any count to jump straight there.' },
-  { sel:'#btn-releases', title:'Invite advisors and release chapters', body:'Add advisors, connect email so invites send on their own, and choose which chapters each advisor can see.' },
-  { sel:'#btn-outline', title:'Share your outline early', body:'Post your planned structure so advisors can comment on it before the full chapters are ready.' },
-  { sel:'#btn-export', title:'Show advisors how you responded', body:'Generate a printable summary of how you addressed each advisor\'s comments. This is a response summary, not a document export.' },
+  { sel:'#btn-releases', title:'Invite reviewers and release chapters', body:'Add reviewers, connect email so invites send on their own, and choose which chapters each reviewer can see.' },
+  { sel:'#btn-outline', title:'Share your outline early', body:'Post your planned structure so reviewers can comment on it before the full chapters are ready.' },
+  { sel:'#btn-export', title:'Show reviewers how you responded', body:'Generate a printable summary of how you addressed each reviewer\'s comments. This is a response summary, not a document export.' },
   { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word, PDF, or Markdown with comments and tracked changes included.` },
   { sel:'#btn-tour', title:'Replay anytime', body:'Reopen this tour or turn auto-show off from here. Open any chapter, then use the More menu for the reviewing walkthrough.' },
 ];
@@ -104,22 +104,22 @@ function loadDemoChapterOwner(){
       <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam.</p></article>`;
   cmt.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">1 · 0 open</span></div>
     ${sugCard}
-    <div class="lbl adv-lbl"><i class="ti ti-users" style="margin-right:5px"></i>FROM ADVISORS<span style="margin-left:auto">1</span></div>
+    <div class="lbl adv-lbl"><i class="ti ti-users" style="margin-right:5px"></i>FROM REVIEWERS<span style="margin-left:auto">1</span></div>
     ${advCard}`;
   return () => { demoMode = false;   // nothing live was touched — just re-render the real view
     if (prevReading && CHAPTERS.some(c => c.id === prevCurrent)){ current = prevCurrent; enterChapter(prevCurrent); }
     else { current = prevCurrent; enterHome(); } };
 }
 const OWNER_CHAPTER_TOUR = [
-  { sel:'#doc h1', title:'Inside a chapter', body:'The reading view. We loaded a sample chapter with a sample advisor comment and a staged edit so you can see the workflow. Nothing here is saved.' },
-  { sel:'.ccard.adv', title:'Advisors\' comments land here', body:'Every comment your advisors leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
-  { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to advisor. They see the outcome in their Responses view.' },
+  { sel:'#doc h1', title:'Inside a chapter', body:'The reading view. We loaded a sample chapter with a sample reviewer comment and a staged edit so you can see the workflow. Nothing here is saved.' },
+  { sel:'.ccard.adv', title:'Reviewers\' comments land here', body:'Every comment your reviewers leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
+  { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to reviewer. They see the outcome in their Responses view.' },
   { sel:'.ccard.adv .a-send', title:'Or hand it to Claude', body:'Once you have read a comment, send it to Claude to draft the edit. You still approve the result before anything lands.' },
   { sel:'#doc ins.tc-stage', title:'Proposed edits show inline', body:'A staged edit shows as tracked changes right in the text, the old wording struck through and the new wording in place.' },
   { sel:'#approvebar', title:'Approve and merge', body:'The bar tallies what is approved, rejected, or still to decide. Preview the rendered result, then Queue the approved edits for merge.' },
-  { sel:'#tour-demo-select', title:'Comment yourself too', body:'Select any text to leave your own note or propose exact replacement wording, the same way your advisors do.', pin:'bl' },
+  { sel:'#tour-demo-select', title:'Comment yourself too', body:'Select any text to leave your own note or propose exact replacement wording, the same way your reviewers do.', pin:'bl' },
   { sel:'#doc figure', title:'Comment on a figure', body:'Click a figure to comment on it, and you can draw a box or circle to point at the exact spot.', pin:'bl' },
-  { sel:'#doc table', title:'Everything is reviewable', body:'Tables and equations take comments too, not just paragraphs. Your advisors can weigh in on all of them the same way.' },
+  { sel:'#doc table', title:'Everything is reviewable', body:'Tables and equations take comments too, not just paragraphs. Your reviewers can weigh in on all of them the same way.' },
   { sel:'#btn-more', title:'That is the loop', body:'Read, resolve, approve, merge. Reopen this walkthrough anytime from the More menu.' },
 ];
 function launchOwnerChapterTour(){ const restore = loadDemoChapterOwner(); startTour(OWNER_CHAPTER_TOUR, { storageKey:'tour-owner-chapter-v1', onDone: restore }); }
@@ -920,13 +920,13 @@ function renderAdvisorSection(pane){
   const active = advisorComments.filter(c => !RESOLVED_STATES.has(c.status));
   const resolved = advisorComments.filter(c => RESOLVED_STATES.has(c.status));
   const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
-  lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM ADVISORS<span style="margin-left:auto">${active.length}</span>`;
+  lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM REVIEWERS<span style="margin-left:auto">${active.length}</span>`;
   pane.appendChild(lbl);
   active.forEach(c => pane.appendChild(buildAdvCard(c)));
   if (resolved.length){   // advisor-resolved comments fold into a collapsible group instead of vanishing
     const grp = document.createElement('div'); grp.className = 'resolved-grp';
     const head = document.createElement('button'); head.className = 'resolved-head';
-    head.innerHTML = `<i class="ti ti-chevron-${advResolvedOpen?'down':'right'}"></i><span>Resolved by advisor</span><span class="rcount">${resolved.length}</span>`;
+    head.innerHTML = `<i class="ti ti-chevron-${advResolvedOpen?'down':'right'}"></i><span>Resolved by reviewer</span><span class="rcount">${resolved.length}</span>`;
     const body = document.createElement('div'); body.className = 'resolved-body'; body.style.display = advResolvedOpen?'block':'none';
     resolved.forEach(c => body.appendChild(buildAdvCard(c)));
     head.onclick = () => { advResolvedOpen = !advResolvedOpen; body.style.display = advResolvedOpen?'block':'none'; head.querySelector('i').className = `ti ti-chevron-${advResolvedOpen?'down':'right'}`; };
@@ -961,8 +961,8 @@ function buildAdvCard(c){
       <div class="rel-popacts"><button class="btn btn-primary a-sug-save">Attach edit</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rform" style="display:none">
       <select class="r-state"><option value="addressed"${c.resolution?.state==='addressed'?' selected':''}>Addressed — changed as suggested</option><option value="declined"${c.resolution?.state==='declined'?' selected':''}>Kept as written</option><option value="noted"${c.resolution?.state==='noted'?' selected':''}>Noted</option></select>
-      <textarea class="r-note" rows="2" placeholder="How it was handled — the advisor sees this…">${escapeHtml(c.resolution?.note||'')}</textarea>
-      <div style="display:flex;gap:6px;align-items:center"><button class="btn btn-primary r-save" style="padding:4px 10px;font-size:11.5px">Save to advisor</button><span class="r-stat" style="font-size:11px;color:var(--text-3)"></span></div></div>`;
+      <textarea class="r-note" rows="2" placeholder="How it was handled — the reviewer sees this…">${escapeHtml(c.resolution?.note||'')}</textarea>
+      <div style="display:flex;gap:6px;align-items:center"><button class="btn btn-primary r-save" style="padding:4px 10px;font-size:11.5px">Save to reviewer</button><span class="r-stat" style="font-size:11px;color:var(--text-3)"></span></div></div>`;
   card.onmouseenter = () => document.querySelector(`#doc .cmark[data-aid="${c.id}"]`)?.classList.add('cmark-hot');
   card.onmouseleave = () => document.querySelector(`#doc .cmark[data-aid="${c.id}"]`)?.classList.remove('cmark-hot');
   const swap = () => { const fresh = buildAdvCard(c); card.replaceWith(fresh); };   // in-place re-render, no re-fetch
@@ -988,7 +988,7 @@ function buildAdvCard(c){
     try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ b.textContent = 'Failed: ' + e.message; } };
   card.querySelector('.r-save').onclick = async () => { const stat = card.querySelector('.r-stat'); stat.textContent = 'Saving…';
     const resolution = { state:card.querySelector('.r-state').value, note:card.querySelector('.r-note').value.trim(), ts:new Date().toISOString() };
-    try { await recordResolution(c._advisor, current, c.id, resolution); c.resolution = resolution; c.read = true; stat.textContent = 'Saved — visible to the advisor.'; setTimeout(swap, 600); }
+    try { await recordResolution(c._advisor, current, c.id, resolution); c.resolution = resolution; c.read = true; stat.textContent = 'Saved — visible to the reviewer.'; setTimeout(swap, 600); }
     catch(e){ stat.textContent = 'Failed: ' + e.message; } };
   return card;
 }
@@ -1518,8 +1518,8 @@ function enterHome(){
     `<span style="display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 52 52" style="flex:0 0 auto"><rect x="3" y="3" width="46" height="46" rx="12" fill="${_CFG.brand.accent}"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg><strong style="font-size:16px;font-weight:600">${escapeHtml(_CFG.brand.name)}</strong></span>
      ${_CFG.deadline ? `<span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>${escapeHtml(_CFG.deadline.label || 'deadline')} in ${daysToDefense()} days</span>` : ''}
      <button class="btn" id="btn-token" style="padding:6px 12px${tok()?'':';color:var(--warn);border-color:var(--warn)'}" title="Your GitHub access token"><i class="ti ti-key"></i>${tok()?'Token':'Add token'}</button>
-     <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what advisors see)"><i class="ti ti-list-tree"></i>Outline</button>
-     <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to advisor comments"><i class="ti ti-file-text"></i>Response</button>
+     <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what reviewers see)"><i class="ti ti-list-tree"></i>Outline</button>
+     <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to reviewer comments"><i class="ti ti-file-text"></i>Response</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
@@ -1575,7 +1575,7 @@ function renderOwnerOutline(data){
   }).join('');
   read.innerHTML = `<div class="ol-wrap"><h1 class="ol-h1">${escapeHtml(data.title||'Proposed outline')}</h1>
     <p class="ol-intro">${escapeHtml(data.intro||'')}</p>
-    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:16px">This is what advisors and lab reviewers see. Comment on any node to leave yourself a note; their outline comments land in your inbox. Edit the structure by updating <code>outline.json</code>.</div>${chapters}</div>`;
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:16px">This is what reviewers and lab reviewers see. Comment on any node to leave yourself a note; their outline comments land in your inbox. Edit the structure by updating <code>outline.json</code>.</div>${chapters}</div>`;
   read.querySelectorAll('[data-toggle]').forEach(h => h.onclick = e => { if (e.target.closest('.ol-cmt')) return; h.closest('.ol-chapter').classList.toggle('open'); });
   read.querySelectorAll('.ol-cmt').forEach(b => b.onclick = e => { e.stopPropagation(); ownerOutlineComment(b, b.dataset.node, b.dataset.sec); });
 }
@@ -1632,7 +1632,7 @@ async function exportAdvisorResponse(){
     }));
     const RES = { addressed:'Addressed — changed as suggested', declined:'Kept as written', noted:'Noted' };
     const advs = Object.keys(byAdv).sort();
-    if (!advs.length){ flash('No advisor comments to export yet.'); return; }
+    if (!advs.length){ flash('No reviewer comments to export yet.'); return; }
     const sections = advs.map(a => {
       const name = ADVISOR_NAME[a] || a;
       const items = byAdv[a].sort((x,y) => (chMeta(x.ch).n||0)-(chMeta(y.ch).n||0)).map(g => {
@@ -1677,7 +1677,7 @@ function renderInbox(panel, { jobs, chData, adv }){
     ? `<button class="ibx-chip" ${ch?`data-ch="${ch}"`:''} style="--c:${color}"><i class="ti ti-${icon}"></i><b>${n}</b> ${label}</button>` : '';
   const chips = [
     chip('git-pull-request', stagedTotal, 'staged to approve', 'var(--info)', firstStaged?.ch),
-    chip('user-exclamation', advTotal, 'new advisor comment'+(advTotal!==1?'s':''), 'var(--accent)', firstAdv?.ch),
+    chip('user-exclamation', advTotal, 'new reviewer comment'+(advTotal!==1?'s':''), 'var(--accent)', firstAdv?.ch),
     chip('clock-play', queued+running, 'Claude job'+(queued+running!==1?'s':'')+(running?' running':' queued'), 'var(--warn)'),
   ].filter(Boolean).join('');
   const cell = (n, cls, ch) => n
@@ -1691,7 +1691,7 @@ function renderInbox(panel, { jobs, chData, adv }){
     <div class="ibx-head"><i class="ti ti-inbox"></i>Needs you${(stagedTotal||advTotal||queued||running)?'':' — all clear ✓'}</div>
     ${chips ? `<div class="ibx-chips">${chips}</div>` : ''}
     <div class="mxgrid">
-      <div class="mxrow mxhead"><span class="mxname"></span><span class="mx">open</span><span class="mx">staged</span><span class="mx">advisor</span><span class="mx">merged</span></div>
+      <div class="mxrow mxhead"><span class="mxname"></span><span class="mx">open</span><span class="mx">staged</span><span class="mx">reviewer</span><span class="mx">merged</span></div>
       ${rows}
     </div>`;
   panel.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
@@ -2051,7 +2051,7 @@ async function openReleasePanel(){
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
-    <div class="rel-sec">Advisors</div>
+    <div class="rel-sec">Reviewers</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -2061,7 +2061,7 @@ async function openReleasePanel(){
     </div>
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
-    <div class="rel-sec">Which chapters each advisor can see</div>
+    <div class="rel-sec">Which chapters each reviewer can see</div>
     <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => {
@@ -2073,13 +2073,13 @@ async function openReleasePanel(){
           : advisorUrl(a, rel[a].name);
         return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
       }).join('')}</div>
-    <div class="rel-sec" style="margin-top:26px">Comments received from advisors</div>${inboxHtml}
+    <div class="rel-sec" style="margin-top:26px">Comments received from reviewers</div>${inboxHtml}
     <div class="rel-sec" style="margin-top:34px;padding-top:10px;border-top:1px solid var(--border)"><i class="ti ti-settings" style="margin-right:6px"></i>Settings</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Email, notifications, and access — how the reviewer system is configured, separate from managing reviewers. (Will move to its own page.)</div>
     <div id="adv-email-banner"></div>
     <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
       <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
-      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of advisor activity)"
+      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of reviewer activity)"
         style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
       <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
@@ -2171,7 +2171,7 @@ async function openReleasePanel(){
         <div style="display:flex;gap:8px;align-items:flex-start">
           <i class="ti ti-alert-triangle" style="color:var(--warn);font-size:15px;margin-top:1px"></i>
           <div style="font-size:12.5px;line-height:1.5;color:var(--text)">
-            <b>Email invites aren't set up yet.</b> You can still add advisors and open their portals — but no invite email is sent automatically. Connect email once and future invites go out on their own; until then, copy each advisor's portal link and send it yourself.
+            <b>Email invites aren't set up yet.</b> You can still add reviewers and open their portals — but no invite email is sent automatically. Connect email once and future invites go out on their own; until then, copy each reviewer's portal link and send it yourself.
             <div style="margin-top:9px;display:flex;gap:8px;flex-wrap:wrap">
               <button id="adv-email-connect" class="btn btn-primary" style="padding:4px 11px;font-size:11.5px"><i class="ti ti-plug"></i>Connect email</button>
               <button id="adv-email-toggle" class="btn" style="padding:4px 10px;font-size:11.5px"><i class="ti ti-book"></i>Set it up manually</button>
@@ -2189,7 +2189,7 @@ async function openReleasePanel(){
           <div style="font-weight:600;color:var(--text);margin:8px 0 4px">Add these in the data repo</div>
           <div style="margin-bottom:3px">Settings → Secrets and variables → Actions, in <code>${dataRepo}</code>:</div>
           <div style="font-size:11.5px;margin-left:2px">
-            <b>Secrets</b> — <code>SMTP_USER</code> (login / from-address), <code>SMTP_PASS</code> (password, app password, or API key), <code>ADVISOR_KEY</code> (the access key advisors paste). Optional: <code>SMTP_HOST</code>, <code>SMTP_PORT</code> (default Gmail <code>smtp.gmail.com</code>:<code>465</code>), <code>SMTP_FROM_NAME</code>.<br>
+            <b>Secrets</b> — <code>SMTP_USER</code> (login / from-address), <code>SMTP_PASS</code> (password, app password, or API key), <code>ADVISOR_KEY</code> (the access key reviewers paste). Optional: <code>SMTP_HOST</code>, <code>SMTP_PORT</code> (default Gmail <code>smtp.gmail.com</code>:<code>465</code>), <code>SMTP_FROM_NAME</code>.<br>
             <b>Variables</b> — <code>AUTHOR_NAME</code> (shown in the invite), <code>PORTAL_BASE</code> (your site URL, e.g. <code>${portalBase()}</code>).
           </div>
           <div style="margin-top:8px">Or with the GitHub CLI:</div>
@@ -2201,7 +2201,7 @@ gh secret set SMTP_HOST --repo ${dataRepo}    # e.g. smtp.office365.com
 gh secret set SMTP_PORT --repo ${dataRepo}    # e.g. 587
 gh variable set AUTHOR_NAME --repo ${dataRepo}
 gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
-          Once set, add an advisor (or hit <b>Resend</b>) — the invite goes out and this notice clears.
+          Once set, add a reviewer (or hit <b>Resend</b>) — the invite goes out and this notice clears.
         </div>
       </div>`;
     const tg = document.getElementById('adv-email-toggle');
@@ -2329,7 +2329,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
         const loginBlock = P.separateLogin ? `
            <label style="font-size:12px">SMTP login (username)<div style="font-size:11px;color:var(--text-3);font-weight:400;margin:2px 0 3px">${escapeHtml(P.loginHint || '')}</div>
              <input id="ce-user" value="${escapeHtml(S.user)}" placeholder="12345@smtp-brevo.com" style="${inputCss};margin-bottom:9px"></label>
-           <label style="font-size:12px">From address advisors will see<div style="font-size:11px;color:var(--text-3);font-weight:400;margin:2px 0 3px">Your real, verified sender email (add it under Senders in Brevo).</div>
+           <label style="font-size:12px">From address reviewers will see<div style="font-size:11px;color:var(--text-3);font-weight:400;margin:2px 0 3px">Your real, verified sender email (add it under Senders in Brevo).</div>
              <input id="ce-from" type="email" value="${escapeHtml(S.from)}" placeholder="you@university.edu" style="${inputCss};margin-bottom:9px"></label>`
           : `<label style="font-size:12px">Sending email address<input id="ce-user" type="email" value="${escapeHtml(S.user)}" placeholder="you@example.com" style="${inputCss};margin-bottom:9px"></label>`;
         box.innerHTML = frame(`Get your ${escapeHtml(P.secretWord)}`,
@@ -2345,7 +2345,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
         if (S.provider === 'custom'){ $('ce-host').oninput = e => S.host = e.target.value; $('ce-port').oninput = e => S.port = e.target.value; }
         $('ce-next').onclick = async () => {
           if (!S.user.trim() || !S.pass){ $('ce-stat').textContent = `Enter your SMTP login and your ${P.secretWord}.`; return; }
-          if (P.separateLogin && !S.from.trim()){ $('ce-stat').textContent = 'Enter the From address advisors will see (your verified sender).'; return; }
+          if (P.separateLogin && !S.from.trim()){ $('ce-stat').textContent = 'Enter the From address reviewers will see (your verified sender).'; return; }
           if (S.provider === 'custom' && (!S.host.trim() || !(S.port || '').trim())){ $('ce-stat').textContent = 'Enter your SMTP host and port.'; return; }
           $('ce-stat').textContent = 'Checking…'; await S.probe;
           S.step = S.needToken ? 'token' : 'test'; render();
@@ -2397,9 +2397,9 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
          <label style="font-size:12px">Your name (shown in the invite)<input id="ce-name" value="${escapeHtml(S.name)}" style="${inputCss};margin-bottom:9px"></label>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
-           <label style="font-size:12px">Advisor access key <span style="color:var(--text-3);font-weight:400">(the token advisors paste to read chapters + comment)</span>
-             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every advisor). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
-             <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the advisor access token (or leave blank)" style="${inputCss}"></label>
+           <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read chapters + comment)</span>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
+             <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the reviewer access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
       $('ce-name').oninput = e => S.name = e.target.value;
@@ -2500,7 +2500,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   const renderAdvList = () => {
     renderEmailBanner();
     const box = document.getElementById('adv-list'); if (!box) return;
-    if (!advReg.advisors.length){ box.innerHTML = `<div style="font-size:12.5px;color:var(--text-3)">No added advisors yet.</div>`; return; }
+    if (!advReg.advisors.length){ box.innerHTML = `<div style="font-size:12.5px;color:var(--text-3)">No added reviewers yet.</div>`; return; }
     box.innerHTML = advReg.advisors.map(a => {
       const status = a.invited ? `<span class="chip" style="background:var(--success-bg);color:var(--success)">invited${a.invited_ts?` · ${fmtDate(a.invited_ts)}`:''}</span>`
         : a.invite_error ? `<span class="chip" style="background:var(--warn-bg);color:var(--warn)" title="${escapeHtml(a.invite_error)}">invite failed</span>`
@@ -2512,7 +2512,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
           <span style="margin-left:auto"></span>${status}
           <button class="btn adv-copy" data-id="${escapeHtml(a.id)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-link"></i>Copy link</button>
           ${a.email?`<button class="btn adv-resend" data-id="${escapeHtml(a.id)}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-mail-forward"></i>Resend</button>`:''}
-          <button class="adv-del" data-id="${escapeHtml(a.id)}" title="Remove advisor" style="width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text-3);font-size:13px;opacity:0;transition:opacity .12s"><i class="ti ti-trash"></i></button></div>`;
+          <button class="adv-del" data-id="${escapeHtml(a.id)}" title="Remove reviewer" style="width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text-3);font-size:13px;opacity:0;transition:opacity .12s"><i class="ti ti-trash"></i></button></div>`;
     }).join('');
     box.querySelectorAll('.advrow').forEach(row => { row.onmouseenter = () => { const d = row.querySelector('.adv-del'); if (d) d.style.opacity = '.85'; };
       row.onmouseleave = () => { const d = row.querySelector('.adv-del'); if (d) d.style.opacity = '0'; }; });
@@ -2563,9 +2563,9 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   // release gate (their portal stops showing chapters); their already-submitted comments are kept.
   const removeAdvisor = async (id) => {
     const a = advReg.advisors.find(x => x.id === id); if (!a) return;
-    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your advisor list and revokes their chapter access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
+    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their chapter access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
     if (typed === null) return;
-    if (typed.trim() !== a.name.trim()){ flash('Name did not match — advisor not removed.'); return; }
+    if (typed.trim() !== a.name.trim()){ flash('Name did not match — reviewer not removed.'); return; }
     try {
       await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
       try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
