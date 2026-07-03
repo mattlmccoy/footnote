@@ -35,15 +35,22 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -u
-          SITE="https://mattlmccoy.github.io/dissertation-hub"
-          PAGE="review-18d933f6.html"
+          SITE="https://footnotedocs.com"     # primary custom domain (Pages redirects *.github.io here)
+          PAGE="owner.html"                    # the reviewer engine page — carries the js/app.js?v= stamp
 
           expected() { grep -oE 'js/app\.js\?v=[A-Za-z0-9._-]+' "$PAGE" | head -1; }
-          live()     { curl -fsS "$SITE/$PAGE?cb=$(date +%s%N)" 2>/dev/null | grep -oE 'js/app\.js\?v=[A-Za-z0-9._-]+' | head -1; }
+          # -L follows the github.io → custom-domain and any http → https redirects
+          live()     { curl -fsSL "$SITE/$PAGE?cb=$(date +%s%N)" 2>/dev/null | grep -oE 'js/app\.js\?v=[A-Za-z0-9._-]+' | head -1; }
 
           EXP="$(expected)"
           if [ -z "$EXP" ]; then echo "::warning::no ?v= stamp found in $PAGE — nothing to verify"; exit 0; fi
           echo "expected live stamp: $EXP"
+
+          # Reachability guard: if HTTPS can't be fetched at all (e.g. the TLS cert is still
+          # provisioning right after a custom-domain switch), skip rather than false-alarm "stale".
+          if ! curl -fsSL "$SITE/$PAGE" >/dev/null 2>&1; then
+            echo "::warning::$SITE/$PAGE not reachable over HTTPS yet (cert provisioning?) — skipping this run"; exit 0
+          fi
 
           # poll up to ~6 min for the live site to catch up to the committed stamp
           poll() {
