@@ -3,6 +3,7 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject } from './config.js?v=fu1';
+import { seedDataRepo } from './seed.js?v=fu1';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -208,6 +209,8 @@ export async function launch() {
         q('#np-save').disabled = true;
         q('#np-err').textContent = 'Creating the comments repo…';
         await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
+        q('#np-err').textContent = 'Setting up background email/notify…';
+        try { await seedDataRepo(dataRepo, tok()); } catch (e) { console.warn('seed:', e.message); }   // non-fatal; can re-run later
         q('#np-err').textContent = 'Saving…';
         await writeProjects(hub(), tok(), next); close(); render();
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
