@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {
   normalizeConfig, ConfigError, dataRepoParts, storageKey,
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
-  getConfig, _resetConfigCache,
+  getConfig, _resetConfigCache, loadChapters,
 } from '../js/config.js';
 
-const MIN = { owner: 'alice', dataRepo: 'alice/data', chapters: [{ id: 'ch1', n: 1, title: 'Intro' }] };
+const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
 
 test('normalizeConfig applies defaults for optional keys', () => {
   const c = normalizeConfig(MIN);
@@ -35,15 +35,16 @@ test('normalizeConfig preserves explicit values over defaults', () => {
   assert.equal(c.advisors[0].id, 'AB');
 });
 
-test('normalizeConfig throws ConfigError listing every missing required key', () => {
+test('normalizeConfig requires owner + dataRepo only (chapters are optional)', () => {
   assert.throws(
     () => normalizeConfig({ owner: 'a' }),
-    (e) => e instanceof ConfigError && /dataRepo/.test(e.message) && /chapters/.test(e.message),
+    (e) => e instanceof ConfigError && /dataRepo/.test(e.message) && !/chapters/.test(e.message),
   );
 });
 
-test('normalizeConfig rejects empty chapters array', () => {
-  assert.throws(() => normalizeConfig({ ...MIN, chapters: [] }), ConfigError);
+test('normalizeConfig defaults chapters to [] when absent (parsed from the document, not shipped)', () => {
+  const c = normalizeConfig(MIN);
+  assert.deepEqual(c.chapters, []);
 });
 
 test('dataRepoParts splits owner/repo', () => {
@@ -99,6 +100,38 @@ test('loadConfig fetches, normalizes, and caches footnote.config.json', async ()
 test('loadConfig throws a clear error when the config is missing', async () => {
   const missing = async () => ({ ok: false, status: 404 });
   await assert.rejects(() => loadConfig(missing, { force: true }), /footnote\.config\.json/);
+});
+
+async function withConfig() { await loadConfig(async () => ({ ok: true, json: async () => MIN }), { force: true }); }
+
+test('loadChapters returns [] without a token (private data repo unreadable)', async () => {
+  await withConfig();
+  const chs = await loadChapters(null, async () => { throw new Error('must not fetch'); });
+  assert.deepEqual(chs, []);
+});
+
+test('loadChapters fetches + decodes chapters.json from the data repo', async () => {
+  await withConfig();
+  const arr = [{ id: 'ch1', n: 1, title: 'Intro' }, { id: 'ch2', n: 2, title: 'Methods' }];
+  const b64 = Buffer.from(JSON.stringify(arr)).toString('base64');
+  const chs = await loadChapters('tok', async (url) => {
+    assert.match(url, /alice\/data\/contents\/chapters\.json/);
+    return { ok: true, status: 200, json: async () => ({ content: b64 }) };
+  });
+  assert.deepEqual(chs, arr);
+});
+
+test('loadChapters accepts a {chapters:[...]} wrapper too', async () => {
+  await withConfig();
+  const b64 = Buffer.from(JSON.stringify({ chapters: [{ id: 'a', n: 1, title: 'A' }] })).toString('base64');
+  const chs = await loadChapters('tok', async () => ({ ok: true, status: 200, json: async () => ({ content: b64 }) }));
+  assert.deepEqual(chs, [{ id: 'a', n: 1, title: 'A' }]);
+});
+
+test('loadChapters returns [] on 404 (no document imported yet)', async () => {
+  await withConfig();
+  const chs = await loadChapters('tok', async () => ({ ok: false, status: 404 }));
+  assert.deepEqual(chs, []);
 });
 
 test('getConfig throws before load and returns the cached config after', async () => {

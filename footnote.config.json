@@ -14,16 +14,5 @@
   "advisors": [
     { "id": "CJS", "name": "Christopher J. Saldaña" },
     { "id": "CCS", "name": "Carolyn C. Seepersad" }
-  ],
-  "chapters": [
-    { "id": "ch_introduction", "n": 1, "title": "Introduction", "sourceFile": "chapters/ch_introduction.tex" },
-    { "id": "ch_background", "n": 2, "title": "Background: RF Dielectric Heating and Prior RFAM", "sourceFile": "chapters/ch_background.tex" },
-    { "id": "ch_platform", "n": 3, "title": "Design and Characterization of a Custom RFAM Platform", "sourceFile": "chapters/ch_platform.tex" },
-    { "id": "ch_modeling", "n": 4, "title": "Computational Modeling of RF Sintering", "sourceFile": "chapters/ch_modeling.tex" },
-    { "id": "ch_compensation", "n": 5, "title": "Simulation-Guided Compensation", "sourceFile": "chapters/ch_compensation.tex" },
-    { "id": "ch_validation", "n": 6, "title": "Experimental Validation", "sourceFile": "chapters/ch_validation.tex" },
-    { "id": "ch_design_guide", "n": 7, "title": "Design for RFAM: A Physics-Derived Capability Envelope", "sourceFile": "chapters/ch_design_guide.tex" },
-    { "id": "ch_materials", "n": 8, "title": "Extensibility of RF in Advanced Manufacturing", "sourceFile": "chapters/ch_materials.tex" },
-    { "id": "ch_conclusions", "n": 9, "title": "Conclusions", "sourceFile": "chapters/ch_conclusions.tex" }
   ]
 }

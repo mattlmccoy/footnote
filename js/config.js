@@ -7,7 +7,9 @@ export class ConfigError extends Error {
   constructor(message) { super(message); this.name = 'ConfigError'; }
 }
 
-const REQUIRED = ['owner', 'dataRepo', 'chapters'];
+// Only identity is required. `chapters` is NOT here: it is discovered by parsing the adopter's own
+// document (LaTeX/Word) and stored in the data repo's chapters.json, never shipped in config.
+const REQUIRED = ['owner', 'dataRepo'];
 
 const DEFAULTS = {
   brand: { name: 'Footnote', logo: 'brand/footnote-mark.png', accent: '#2c64c4' },
@@ -19,6 +21,7 @@ const DEFAULTS = {
   ownerAuthorTag: 'owner',
   reviewAgents: [],
   advisors: [],
+  chapters: [],   // fallback only; the live list is loadChapters() from the data repo
   deadline: null,
 };
 
@@ -26,8 +29,7 @@ const DEFAULTS = {
 // key-by-key so an adopter can set brand.name without losing the default logo/accent.
 export function normalizeConfig(raw) {
   const cfg = raw || {};
-  const missing = REQUIRED.filter(k => cfg[k] == null ||
-    (k === 'chapters' && (!Array.isArray(cfg.chapters) || cfg.chapters.length === 0)));
+  const missing = REQUIRED.filter(k => cfg[k] == null);
   if (missing.length) {
     throw new ConfigError(`footnote.config.json is missing required keys: ${missing.join(', ')}`);
   }
@@ -99,6 +101,29 @@ export async function loadConfig(fetchImpl, opts = {}) {
 export function getConfig() {
   if (!_cache) throw new ConfigError('config not loaded — call loadConfig() at boot before getConfig()');
   return _cache;
+}
+
+// The live chapter list is discovered by parsing the adopter's document and stored as chapters.json
+// in the DATA repo (not shipped in config). Fetch it with the reader's token. Returns [] when there is
+// no token or no chapters.json yet (fresh instance → the app shows the "import your document" state).
+// Accepts either a bare array or a { chapters: [...] } wrapper. fetchImpl is injectable for tests.
+export async function loadChapters(token, fetchImpl) {
+  if (!token) return [];
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return [];
+  const { owner, repo } = dataRepoParts(getConfig());
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/chapters.json?t=${Date.now()}`;
+  let res;
+  try {
+    res = await f(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+  } catch { return []; }
+  if (!res || !res.ok) return [];   // 404 = not imported yet
+  const d = await res.json();
+  if (typeof d.content !== 'string') return [];
+  let data;
+  try { data = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, ''))))); }
+  catch { return []; }
+  return Array.isArray(data) ? data : (data.chapters || []);
 }
 
 // Test-only: reset the module cache.

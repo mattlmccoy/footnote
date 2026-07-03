@@ -1,11 +1,11 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=d0ee84d';
-import { anchorFromSelection } from './anchor.js?v=d0ee84d';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=d0ee84d';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=d0ee84d';
-import { sealToBase64 } from './vendor/seal.js?v=d0ee84d';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=d0ee84d';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=d0ee84d';
-import { loadConfig, dataRepoParts } from './config.js?v=d0ee84d';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=chapdev2';
+import { anchorFromSelection } from './anchor.js?v=chapdev2';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=chapdev2';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=chapdev2';
+import { sealToBase64 } from './vendor/seal.js?v=chapdev2';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=chapdev2';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=chapdev2';
+import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=chapdev2';
 // Load the instance config ONCE before the module body evaluates — every constant below derives
 // from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
 // in this module type; the boot IIFE at the bottom runs only after this resolves.
@@ -111,7 +111,10 @@ function launchOwnerChapterTour(){ const restore = loadDemoChapterOwner(); start
 if (!tourSeen('tour-owner-v1')){ markTourSeen('tour-owner-v1'); setTimeout(() => { try { launchOwnerTour(); } catch {} }, 1400); }
 
 const DATA_REPO = _CFG.dataRepo;
-const CHAPTERS = _CFG.chapters;
+// The chapter list is discovered by parsing the author's document and stored in the data repo's
+// chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
+// "import your document" state. Re-fetched on reload after a token is added or a document imported.
+let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
 const TAGS = ['claim','wording','figure','citation','question'];
 // platform-adaptive modifier label (handlers accept ⌘ or Ctrl; this is just the on-screen text)
@@ -1510,6 +1513,8 @@ function enterHome(){
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+  const imp = document.getElementById('import-doc');
+  if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : manageToken();
   refreshInbox();
   renderHomeDownloads();
 }
@@ -1696,10 +1701,20 @@ function homeHtml(){
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
   }).join('');
+  const hasTok = !!localStorage.getItem('ghpat');
+  // No chapters yet → the document hasn't been imported. Show an import call-to-action, not a blank grid.
+  const empty = `<div style="border:1px dashed var(--border-2);border-radius:var(--r-lg);padding:40px 28px;text-align:center;max-width:520px;margin:6vh auto 0">
+      <i class="ti ti-file-import" style="font-size:30px;color:var(--accent)"></i>
+      <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Import your ${DOC}</div>
+      <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Point Footnote at your LaTeX source (<code>main.tex</code>) or a Word <code>.docx</code>. Footnote parses it to find your ${UNIT}s — nothing is hardcoded.${hasTok ? '' : ' Add your access token first.'}</div>
+      <button class="btn btn-primary" id="import-doc" style="padding:8px 16px">${hasTok ? `Import ${DOC}` : 'Add token'}</button></div>`;
+  const allCh = CHAPTERS.length
+    ? `<div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
+    : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
       ${cont}
-      <div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">ALL CHAPTERS</div>
-      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>
+      ${allCh}
       <div id="inbox-panel" class="ibx" style="display:none;margin-top:28px;margin-bottom:0"></div>
       <div id="home-downloads" style="margin-top:36px"></div></div>`;
 }
