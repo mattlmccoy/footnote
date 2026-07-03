@@ -4,6 +4,7 @@ import {
   normalizeConfig, ConfigError, dataRepoParts, storageKey,
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
+  normalizeProject, resolveProject, loadProjects,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -103,6 +104,54 @@ test('loadConfig throws a clear error when the config is missing', async () => {
 });
 
 async function withConfig() { await loadConfig(async () => ({ ok: true, json: async () => MIN }), { force: true }); }
+
+// ---- multi-project (hub repo + projects.json) ----
+const APP = normalizeConfig({ owner: 'alice', dataRepo: 'alice/data', hubRepo: 'alice/footnote-projects', brand: { name: 'MyReview' } });
+
+test('normalizeProject requires id/name/dataRepo and defaults its doc/advisors', () => {
+  const p = normalizeProject({ id: 'thesis', name: 'My Thesis', dataRepo: 'alice/thesis-data' });
+  assert.equal(p.id, 'thesis');
+  assert.equal(p.name, 'My Thesis');
+  assert.equal(p.dataRepo, 'alice/thesis-data');
+  assert.equal(p.doc.noun, 'document');       // default
+  assert.deepEqual(p.advisors, []);
+  assert.equal(p.deadline, null);
+  assert.throws(() => normalizeProject({ id: 'x', name: 'y' }), ConfigError);  // no dataRepo
+});
+
+test('resolveProject merges the app config with the selected project (project wins on overlap)', () => {
+  const projects = [
+    normalizeProject({ id: 'a', name: 'A', dataRepo: 'alice/a-data', doc: { noun: 'thesis', unitNoun: 'chapter' }, deadline: { date: '2027-01-01', label: 'defense' } }),
+    normalizeProject({ id: 'b', name: 'B', dataRepo: 'alice/b-data' }),
+  ];
+  const eff = resolveProject(APP, projects, 'a');
+  assert.equal(eff.dataRepo, 'alice/a-data');   // project's data repo
+  assert.equal(eff.doc.noun, 'thesis');         // project doc noun
+  assert.equal(eff.brand.name, 'MyReview');     // inherited app brand
+  assert.equal(eff.deadline.label, 'defense');
+  assert.equal(eff.projectId, 'a');
+});
+
+test('resolveProject throws for an unknown project id', () => {
+  assert.throws(() => resolveProject(APP, [], 'missing'), ConfigError);
+});
+
+test('loadProjects fetches + decodes projects.json from the hub repo', async () => {
+  const arr = [{ id: 'a', name: 'A', dataRepo: 'alice/a-data' }];
+  const b64 = Buffer.from(JSON.stringify(arr)).toString('base64');
+  const got = await loadProjects(APP, 'tok', async (url) => {
+    assert.match(url, /alice\/footnote-projects\/contents\/projects\.json/);
+    return { ok: true, status: 200, json: async () => ({ content: b64 }) };
+  });
+  assert.equal(got.length, 1);
+  assert.equal(got[0].id, 'a');
+  assert.equal(got[0].doc.noun, 'document');   // normalized
+});
+
+test('loadProjects returns [] without a token or when absent (404)', async () => {
+  assert.deepEqual(await loadProjects(APP, null, async () => { throw new Error('no'); }), []);
+  assert.deepEqual(await loadProjects(APP, 'tok', async () => ({ ok: false, status: 404 })), []);
+});
 
 test('loadChapters returns [] without a token (private data repo unreadable)', async () => {
   await withConfig();

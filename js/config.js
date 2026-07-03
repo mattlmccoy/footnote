@@ -23,6 +23,7 @@ const DEFAULTS = {
   advisors: [],
   chapters: [],   // fallback only; the live list is loadChapters() from the data repo
   deadline: null,
+  hubRepo: '',    // multi-project registry repo (owner/footnote-projects); projects.json lives there
 };
 
 // Validate required keys and apply defaults for every optional key. Nested brand/doc merge
@@ -101,6 +102,70 @@ export async function loadConfig(fetchImpl, opts = {}) {
 export function getConfig() {
   if (!_cache) throw new ConfigError('config not loaded — call loadConfig() at boot before getConfig()');
   return _cache;
+}
+
+// ---- Multi-project: a hub repo's projects.json lists projects; each carries its own data repo, doc
+// nouns, deadline and advisors. The app-level config (footnote.config.json) supplies brand/hub/storage.
+
+const PROJECT_REQUIRED = ['id', 'name', 'dataRepo'];
+const PROJECT_DEFAULTS = {
+  doc: { noun: 'document', unitNoun: 'chapter', title: '' },
+  advisors: [],
+  reviewAgents: [],
+  deadline: null,
+  sourceRepo: '',
+};
+
+// Validate + default one project entry from projects.json.
+export function normalizeProject(raw) {
+  const p = raw || {};
+  const missing = PROJECT_REQUIRED.filter(k => p[k] == null || p[k] === '');
+  if (missing.length) throw new ConfigError(`project is missing required keys: ${missing.join(', ')}`);
+  return {
+    ...PROJECT_DEFAULTS,
+    ...p,
+    doc: { ...PROJECT_DEFAULTS.doc, ...(p.doc || {}) },
+    advisors: p.advisors || [],
+    reviewAgents: p.reviewAgents || [],
+    deadline: p.deadline || null,
+  };
+}
+
+// Merge the app config with the selected project → the effective config the reviewer uses. Project
+// fields (dataRepo, doc, deadline, advisors, sourceRepo) win; brand/storage/portal files inherit from app.
+export function resolveProject(appCfg, projects, projectId) {
+  const p = (projects || []).find(x => x.id === projectId);
+  if (!p) throw new ConfigError(`unknown project: ${projectId}`);
+  return normalizeConfig({
+    ...appCfg,
+    dataRepo: p.dataRepo,
+    sourceRepo: p.sourceRepo || appCfg.sourceRepo,
+    doc: { ...appCfg.doc, ...p.doc },
+    deadline: p.deadline || null,
+    advisors: p.advisors || [],
+    reviewAgents: p.reviewAgents || appCfg.reviewAgents,
+    projectId: p.id,
+    projectName: p.name,
+  });
+}
+
+// Fetch + normalize the projects list from the hub repo. [] with no token / no hubRepo / 404.
+export async function loadProjects(appCfg, token, fetchImpl) {
+  if (!token || !appCfg.hubRepo) return [];
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return [];
+  const url = `https://api.github.com/repos/${appCfg.hubRepo}/contents/projects.json?t=${Date.now()}`;
+  let res;
+  try { res = await f(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' }); }
+  catch { return []; }
+  if (!res || !res.ok) return [];
+  const d = await res.json();
+  if (typeof d.content !== 'string') return [];
+  let data;
+  try { data = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, ''))))); }
+  catch { return []; }
+  const list = Array.isArray(data) ? data : (data.projects || []);
+  return list.map(normalizeProject);
 }
 
 // The live chapter list is discovered by parsing the adopter's document and stored as chapters.json
