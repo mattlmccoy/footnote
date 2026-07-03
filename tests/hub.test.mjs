@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -81,6 +81,15 @@ test('updateProject deep-merges doc so unitNoun survives a noun edit', () => {
   const a = out.find(p => p.id === 'a');
   assert.equal(a.doc.noun, 'paper');
   assert.equal(a.doc.unitNoun, 'section');   // NOT reset to the default
+});
+
+test('greetName uses the first name, falling back to login then a generic', () => {
+  assert.equal(greetName({ name: 'Matt McCoy', login: 'mattlmccoy' }), 'Matt');
+  assert.equal(greetName({ name: '  Jane   Doe ', login: 'jd' }), 'Jane');
+  assert.equal(greetName({ name: '', login: 'octocat' }), 'octocat');
+  assert.equal(greetName({ name: null, login: 'octocat' }), 'octocat');
+  assert.equal(greetName({}), 'there');
+  assert.equal(greetName(null), 'there');
 });
 
 test('updateProject ignores an attempt to change the id via patch', () => {

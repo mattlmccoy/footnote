@@ -144,8 +144,18 @@
   .fn-ws{margin-top:26px;font-size:12px;color:var(--faint)}
   .fn-loading{color:var(--muted);font-family:var(--serif);font-style:italic;font-size:18px;padding:40px 0}
 
-  .fn-foot{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);font-size:12px;color:var(--faint)}
-  .fn-foot sup{color:var(--accent);font-weight:600;margin-right:3px}
+  .fn-foot{margin-top:64px;padding-top:16px;border-top:1px solid var(--line);font-size:11.5px;color:var(--faint);
+    display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .fn-cred a{color:var(--muted);text-decoration:none;font-weight:500}.fn-cred a:hover{color:var(--accent)}
+  .fn-foot-links{display:flex;align-items:center;gap:6px}
+  .fn-foot-links a{display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:7px;color:var(--faint);transition:color .14s,background .14s}
+  .fn-foot-links a:hover{color:var(--accent);background:rgba(44,100,196,.08)}
+  /* header user chip (avatar + greeting + Disconnect) */
+  .fn-userbar{margin-left:auto;display:flex;align-items:center;gap:10px}
+  .fn-userbar .fn-link{margin-left:2px}
+  .fn-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1px solid var(--line);background:var(--paper-2)}
+  .fn-hi{font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap}
+  @media(max-width:520px){.fn-hi{display:none}}
 
   .fn-scrim{position:fixed;inset:0;background:rgba(33,28,16,.34);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
   .fn-sheet{background:var(--card);border-radius:18px;padding:26px;width:min(460px,94vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}

@@ -34,6 +34,12 @@ export function projectIdFromName(name) {
 // Each project gets a spine color by its position so the shelf reads like a row of different books.
 export const SPINES = ['#2c64c4', '#b5643c', '#4a7c59', '#7a4b73', '#c08a2d', '#2f7d80', '#93313e'];
 export function spineColor(i) { return SPINES[((i % SPINES.length) + SPINES.length) % SPINES.length]; }
+// First name for the greeting: first word of the GitHub display name, else the login, else a generic.
+export function greetName(user) {
+  const u = user || {};
+  const first = String(u.name || '').trim().split(/\s+/)[0];
+  return first || u.login || 'there';
+}
 
 // ---- I/O + DOM (browser only) ----
 
@@ -107,6 +113,19 @@ function attachRepoPicker(input, t) {
 
 const MARK = accent => `<svg class="fn-mark" viewBox="0 0 52 52" aria-hidden="true"><rect x="3" y="3" width="46" height="46" rx="13" fill="${accent}"/><line x1="19" y1="13" x2="19" y2="39" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.7" fill="#fff"/></svg>`;
 
+// Creator credit + contact — Footnote's own authorship (global product identity, not the adopter's data).
+const IC_MAIL = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`;
+const IC_GH = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`;
+const IC_ISSUE = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>`;
+const FOOTER = `<footer class="fn-foot">
+  <span class="fn-cred">Footnote · Built by <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener">@mattlmccoy</a></span>
+  <span class="fn-foot-links">
+    <a href="mailto:mail@matthewmccoy.info" title="Email" aria-label="Email">${IC_MAIL}</a>
+    <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub profile">${IC_GH}</a>
+    <a href="https://github.com/mattlmccoy/footnote/issues" target="_blank" rel="noopener" title="Report an issue" aria-label="Report an issue">${IC_ISSUE}</a>
+  </span>
+</footer>`;
+
 export async function launch() {
   const cfg = await loadConfig();
   const root = document.getElementById('app') || document.body;
@@ -115,23 +134,32 @@ export async function launch() {
   document.documentElement.style.setProperty('--accent', cfg.brand.accent);
 
   // Derive the real GitHub username from the token so defaults aren't the "your-github-username"
-  // placeholder. Runs at launch and after each connect.
+  // placeholder, and grab the display name + avatar for the greeting. Runs at launch + after connect.
   let _ownerFetched = false;
+  let _user = {};   // { login, name, avatar }
   async function refreshOwner() {
     const t = tok(); if (!t || _ownerFetched) return;
-    try { const u = await (await fetch(`${API}/user`, { headers: hdr(t) })).json(); if (u && u.login) { cfg.owner = u.login; _ownerFetched = true; } } catch {}
+    try {
+      const u = await (await fetch(`${API}/user`, { headers: hdr(t) })).json();
+      if (u && u.login) { cfg.owner = u.login; _user = { login: u.login, name: u.name, avatar: u.avatar_url }; _ownerFetched = true; }
+    } catch {}
   }
   await refreshOwner();
 
   function frame(inner, opts = {}) {
+    const avatar = _user.avatar ? `<img class="fn-avatar" src="${esc(_user.avatar)}" alt="" referrerpolicy="no-referrer">` : '';
+    const userbar = opts.signout ? `<div class="fn-userbar">
+        ${avatar}<span class="fn-hi">Hi, ${esc(greetName(_user))}</span>
+        <button class="fn-link" id="fn-signout">Disconnect</button>
+      </div>` : '';
     root.innerHTML = `<div class="fn-shell">
       <header class="fn-top">
         <span class="fn-brand">${MARK(cfg.brand.accent)}<span class="fn-word">${esc(cfg.brand.name)}</span></span>
-        ${opts.signout ? `<button class="fn-link" id="fn-signout">Disconnect</button>` : ''}
+        ${userbar}
       </header>
       <div class="fn-rule"></div>
       <main class="fn-main">${inner}</main>
-      <footer class="fn-foot"><sup>1</sup> Review native-LaTeX &amp; Word writing — entirely in your GitHub.</footer>
+      ${FOOTER}
     </div>`;
     const so = document.getElementById('fn-signout');
     if (so) so.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
