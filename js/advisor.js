@@ -1,10 +1,10 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=proj6';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj6';
-import { wordDiff } from './textdiff.js?v=proj6';
-import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=proj6';   // instance config + chapter manifest; assistant-free by construction
+import { anchorFromSelection } from './anchor.js?v=adv1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=adv1';
+import { wordDiff } from './textdiff.js?v=adv1';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=adv1';   // instance config + chapter manifest; assistant-free by construction
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour
@@ -1136,12 +1136,16 @@ function setupMobileSheet(){
 }
 // ---------- boot ----------
 async function boot(){
-  // Load the instance config FIRST — every fetch below resolves the data repo + chapters from it.
+  // Load the instance config FIRST. Advisors are invited PER-PROJECT: their link carries the project's data
+  // repo as ?data=owner/repo (they have no hub access). Resolve it, push it into the shared config cache so
+  // loadChapters/loadRelease/getJson all read the right project's data repo.
   const _cfg = await loadConfig();
-  ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_cfg));
-  DATA_REPO = _cfg.dataRepo;
-  DOC = _cfg.doc.noun; UNIT = _cfg.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
-  CHAPTERS = await loadChapters(tok());   // parsed manifest from the data repo, not shipped in config
+  const _eff = { ..._cfg, dataRepo: dataRepoFromParams(location.search, _cfg.dataRepo) };
+  setConfig(_eff);
+  ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_eff));
+  DATA_REPO = _eff.dataRepo;
+  DOC = _eff.doc.noun; UNIT = _eff.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
+  CHAPTERS = await loadChapters(tok());   // parsed manifest from the (project's) data repo, not shipped in config
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)

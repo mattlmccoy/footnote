@@ -108,6 +108,13 @@ export function getConfig() {
 // every module that reads getConfig() (gh.js, ghsecrets.js, loadChapters) uses the selected project's dataRepo.
 export function setConfig(cfg) { _cache = cfg; return _cache; }
 
+// Advisors hold only a data-repo key (no hub access), so their invite link carries the project's data repo
+// directly as ?data=owner/repo. Read + validate it, else fall back to the app config's dataRepo.
+export function dataRepoFromParams(search, fallback) {
+  const p = new URLSearchParams(search || '').get('data');
+  return (p && /^[\w.-]+\/[\w.-]+$/.test(p)) ? p : (fallback || '');
+}
+
 // ---- Multi-project: a hub repo's projects.json lists projects; each carries its own data repo, doc
 // nouns, deadline and advisors. The app-level config (footnote.config.json) supplies brand/hub/storage.
 

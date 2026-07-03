@@ -1,12 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=proj6';
-import { anchorFromSelection } from './anchor.js?v=proj6';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=proj6';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=proj6';
-import { sealToBase64 } from './vendor/seal.js?v=proj6';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=proj6';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj6';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=proj6';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=proj6';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=adv1';
+import { anchorFromSelection } from './anchor.js?v=adv1';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=adv1';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=adv1';
+import { sealToBase64 } from './vendor/seal.js?v=adv1';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=adv1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=adv1';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=adv1';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=adv1';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1292,7 +1292,9 @@ function markFigure(doc, c){
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
 // ---------- advisor registry + invite helpers ----------
 const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
-const advisorUrl = (id, name) => `${portalBase()}advisor.html?a=${encodeURIComponent(id)}&n=${encodeURIComponent(name||'')}`;
+// Invite links carry the project's data repo (&data=owner/repo) so an advisor — who has no hub access —
+// lands in the right project. Harmless in single-project mode (same data repo).
+const advisorUrl = (id, name) => `${portalBase()}advisor.html?a=${encodeURIComponent(id)}&n=${encodeURIComponent(name||'')}&data=${encodeURIComponent(DATA_REPO)}`;
 const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
 const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
@@ -2065,8 +2067,9 @@ async function openReleasePanel(){
     <div class="rel-links">${advs.map(a => {
         // Legacy committee members have dedicated pages; the shared lab pool uses review-lab.html;
         // everyone added through the Advisors feature uses the generic advisor.html?a=<id> portal.
-        const url = a === 'general' ? base + 'review-lab.html'
-          : (a === 'CJS' || a === 'CCS') ? base + a + '.html'
+        const _d = `data=${encodeURIComponent(DATA_REPO)}`;
+        const url = a === 'general' ? `${base}review-lab.html?${_d}`
+          : (a === 'CJS' || a === 'CCS') ? `${base}${a}.html?${_d}`
           : advisorUrl(a, rel[a].name);
         return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
       }).join('')}</div>

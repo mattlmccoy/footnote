@@ -4,7 +4,7 @@ import {
   normalizeConfig, ConfigError, dataRepoParts, storageKey,
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
-  normalizeProject, resolveProject, loadProjects,
+  normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -146,6 +146,13 @@ test('loadProjects fetches + decodes projects.json from the hub repo', async () 
   assert.equal(got.length, 1);
   assert.equal(got[0].id, 'a');
   assert.equal(got[0].doc.noun, 'document');   // normalized
+});
+
+test('dataRepoFromParams reads a valid ?data= override, else falls back', () => {
+  assert.equal(dataRepoFromParams('?a=CJS&n=X&data=alice/thesis-data', 'app/default'), 'alice/thesis-data');
+  assert.equal(dataRepoFromParams('?a=CJS', 'app/default'), 'app/default');           // no data param
+  assert.equal(dataRepoFromParams('?data=not-a-repo', 'app/default'), 'app/default'); // invalid → fallback
+  assert.equal(dataRepoFromParams('', ''), '');
 });
 
 test('loadProjects returns [] without a token or when absent (404)', async () => {

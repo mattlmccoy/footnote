@@ -20,7 +20,10 @@ def save(p, o):
 
 def portal_url(base, a):
     base = (base or "").rstrip("/") + "/"
-    return f"{base}advisor.html?a={quote(a['id'])}&n={quote(a.get('name',''))}"
+    # Carry this data repo so the advisor (who has no hub access) lands in the right project.
+    data = os.environ.get("GITHUB_REPOSITORY", "")
+    url = f"{base}advisor.html?a={quote(a['id'])}&n={quote(a.get('name',''))}"
+    return url + (f"&data={quote(data)}" if data else "")
 
 def build_message(a, frm, frm_name, key, author, base):
     to = a["email"]
