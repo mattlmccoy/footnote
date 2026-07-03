@@ -2,7 +2,7 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject } from './config.js?v=d4e04d6';
+import { loadConfig, loadProjects, normalizeProject } from './config.js?v=fu1';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -98,6 +98,15 @@ export async function launch() {
   const hub = () => localStorage.getItem(HUB_KEY) || cfg.hubRepo || '';
   document.documentElement.style.setProperty('--accent', cfg.brand.accent);
 
+  // Derive the real GitHub username from the token so defaults aren't the "your-github-username"
+  // placeholder. Runs at launch and after each connect.
+  let _ownerFetched = false;
+  async function refreshOwner() {
+    const t = tok(); if (!t || _ownerFetched) return;
+    try { const u = await (await fetch(`${API}/user`, { headers: hdr(t) })).json(); if (u && u.login) { cfg.owner = u.login; _ownerFetched = true; } } catch {}
+  }
+  await refreshOwner();
+
   function frame(inner, opts = {}) {
     root.innerHTML = `<div class="fn-shell">
       <header class="fn-top">
@@ -123,9 +132,9 @@ export async function launch() {
         <div class="fn-err" id="fn-err"></div>
         <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
       </div></div>`);
-    const go = () => { const v = document.getElementById('fn-tok').value.trim();
+    const go = async () => { const v = document.getElementById('fn-tok').value.trim();
       if (!v) { document.getElementById('fn-err').textContent = 'Paste your token to continue.'; return; }
-      localStorage.setItem(TOK_KEY, v); render(); };
+      localStorage.setItem(TOK_KEY, v); _ownerFetched = false; await refreshOwner(); render(); };
     document.getElementById('fn-go').onclick = go;
     document.getElementById('fn-tok').onkeydown = e => { if (e.key === 'Enter') go(); };
   }
@@ -196,7 +205,10 @@ export async function launch() {
       if (!name || !dataRepo) return q('#np-err').textContent = 'Name and data repo are required.';
       try {
         const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo: q('#np-src').value.trim(), doc: { noun: q('#np-noun').value.trim() || 'document', unitNoun: 'chapter' } });
-        q('#np-save').disabled = true; q('#np-err').textContent = 'Saving…';
+        q('#np-save').disabled = true;
+        q('#np-err').textContent = 'Creating the comments repo…';
+        await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
+        q('#np-err').textContent = 'Saving…';
         await writeProjects(hub(), tok(), next); close(); render();
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };

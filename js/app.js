@@ -1,12 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=d4e04d6';
-import { anchorFromSelection } from './anchor.js?v=d4e04d6';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=d4e04d6';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=d4e04d6';
-import { sealToBase64 } from './vendor/seal.js?v=d4e04d6';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=d4e04d6';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=d4e04d6';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=d4e04d6';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=d4e04d6';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=fu1';
+import { anchorFromSelection } from './anchor.js?v=fu1';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=fu1';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=fu1';
+import { sealToBase64 } from './vendor/seal.js?v=fu1';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=fu1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=fu1';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=fu1';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=fu1';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -18,11 +18,13 @@ const _projectId = new URLSearchParams(location.search).get('project');
 const _hub = localStorage.getItem('footnote:hub') || _appCfg.hubRepo || '';
 let _CFG = { ..._appCfg, hubRepo: _hub };
 if (_hub) {
-  if (!_projectId) { location.replace('index.html'); }
+  // A never-resolving await halts this module so the boot IIFE never runs during a redirect (no home flash).
+  const _halt = () => new Promise(() => {});
+  if (!_projectId) { location.replace('index.html'); await _halt(); }
   else {
     const _projects = await loadProjects({ ..._appCfg, hubRepo: _hub }, localStorage.getItem('ghpat'));
     try { _CFG = resolveProject({ ..._appCfg, hubRepo: _hub }, _projects, _projectId); }
-    catch { location.replace('index.html'); }
+    catch { location.replace('index.html'); await _halt(); }
   }
 }
 // Make the effective config the one every module reads (gh.js/loadChapters resolve the project's dataRepo).
