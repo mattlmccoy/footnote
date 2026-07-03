@@ -1,0 +1,22 @@
+name: test
+on:
+  push:
+    branches: [main]
+    paths: ['js/**', 'scripts/**', 'tests/**', 'footnote.config*.json', 'package.json']
+  pull_request:
+  workflow_dispatch:
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - name: Run unit tests
+        run: node --test tests/*.test.mjs
+      - name: Advisor bundle is assistant-free (grep gate)
+        run: |
+          if grep -aiEr 'claude|anthropic|\bAI\b|\bagent\b|gpt|llm|copilot' js/advisor.js CCS.html CJS.html review-lab.html advisor.html 2>/dev/null; then
+            echo "::error::assistant reference found in the advisor bundle"; exit 1
+          fi
+          echo "advisor bundle clean"

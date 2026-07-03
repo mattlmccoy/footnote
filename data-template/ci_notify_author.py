@@ -49,7 +49,7 @@ def _render(events, reg, labels, base, now):
     if counts_r:
         subj_bits.append(f"{counts_r} repl" + ("ies" if counts_r != 1 else "y"))
     subject = f"{author} dissertation — " + " and ".join(subj_bits) if author else "Review digest — " + " and ".join(subj_bits)
-    portal = (base or "").rstrip("/") + "/review-18d933f6.html"
+    portal = (base or "").rstrip("/") + "/" + os.environ.get("OWNER_PORTAL_FILE", "owner.html")
     # --- text part ---
     tl = [f"Review digest — as of {stamp}", ""]
     for adv, rows in events.items():

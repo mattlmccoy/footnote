@@ -57,9 +57,11 @@ EMAIL = {
     "box": "#f4f6f8", "box_border": "rgba(0,0,0,.08)",
 }
 
-# --- Footnote brand. Hosted PNG (mail clients don't render SVG); the wordmark text is the images-off fallback. ---
-BRAND_NAME = "Footnote"
-BRAND_LOGO = "https://mattlmccoy.github.io/dissertation-hub/brand/footnote-mark.png"
+# --- Brand. Hosted PNG (mail clients don't render SVG); the wordmark text is the images-off fallback. ---
+# Derived from the adopter's own Pages deploy (PORTAL_BASE) so the logo isn't tied to any one instance.
+BRAND_NAME = os.environ.get("BRAND_NAME", "Footnote")
+_PORTAL = os.environ.get("PORTAL_BASE", "").rstrip("/")
+BRAND_LOGO = os.environ.get("BRAND_LOGO") or (f"{_PORTAL}/brand/footnote-mark.png" if _PORTAL else "")
 
 def email_shell(title, subtitle, inner_rows, width=520):
     """Wrap table-rows (inner_rows) in the standard card: cool canvas, white card, accent top-bar, header."""
