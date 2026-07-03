@@ -1,12 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=39063c1';
-import { anchorFromSelection } from './anchor.js?v=39063c1';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=39063c1';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=39063c1';
-import { sealToBase64 } from './vendor/seal.js?v=39063c1';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=39063c1';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=39063c1';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=39063c1';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=39063c1';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=d4e04d6';
+import { anchorFromSelection } from './anchor.js?v=d4e04d6';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=d4e04d6';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=d4e04d6';
+import { sealToBase64 } from './vendor/seal.js?v=d4e04d6';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=d4e04d6';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=d4e04d6';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=d4e04d6';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=d4e04d6';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
