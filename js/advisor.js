@@ -1,10 +1,10 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=chapdev2';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=chapdev2';
-import { wordDiff } from './textdiff.js?v=chapdev2';
-import { loadConfig, dataRepoParts } from './config.js?v=chapdev2';   // instance config (data repo, chapters); assistant-free by construction
+import { anchorFromSelection } from './anchor.js?v=chapdev3';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=chapdev3';
+import { wordDiff } from './textdiff.js?v=chapdev3';
+import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=chapdev3';   // instance config + chapter manifest; assistant-free by construction
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour
@@ -1140,8 +1140,8 @@ async function boot(){
   const _cfg = await loadConfig();
   ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_cfg));
   DATA_REPO = _cfg.dataRepo;
-  CHAPTERS = _cfg.chapters;
   DOC = _cfg.doc.noun; UNIT = _cfg.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
+  CHAPTERS = await loadChapters(tok());   // parsed manifest from the data repo, not shipped in config
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)

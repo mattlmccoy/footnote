@@ -1,11 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=chapdev2';
-import { anchorFromSelection } from './anchor.js?v=chapdev2';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=chapdev2';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=chapdev2';
-import { sealToBase64 } from './vendor/seal.js?v=chapdev2';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=chapdev2';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=chapdev2';
-import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=chapdev2';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=chapdev3';
+import { anchorFromSelection } from './anchor.js?v=chapdev3';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=chapdev3';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=chapdev3';
+import { sealToBase64 } from './vendor/seal.js?v=chapdev3';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=chapdev3';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=chapdev3';
+import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=chapdev3';
+import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=chapdev3';
 // Load the instance config ONCE before the module body evaluates — every constant below derives
 // from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
 // in this module type; the boot IIFE at the bottom runs only after this resolves.
@@ -1677,6 +1678,78 @@ function renderInbox(panel, { jobs, chData, adv }){
     </div>`;
   panel.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
 }
+// ---------- import: parse the author's document → chapters.json (no hardcoded chapters) ----------
+// Fetch one raw file from a source repo (adopter's own repo + token; never a Footnote-held credential).
+async function ghRaw(src, path, t){
+  const r = await fetch(`https://api.github.com/repos/${src}/contents/${path}?t=${Date.now()}`,
+    { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+  if (!r.ok) throw new Error(`${path}: ${r.status}`);
+  return r.text();
+}
+// Detect chapters from the configured LaTeX source repo: read the entry .tex, resolve its \include/\input
+// files, then parse. Two-pass so parseLatexChapters gets a synchronous resolver.
+async function detectFromRepo(src, entry, t){
+  const main = await ghRaw(src, entry, t);
+  const includes = [...main.matchAll(/\\(?:include|input)\s*\{([^}]+)\}/g)].map(m => m[1].trim().replace(/\.tex$/, ''));
+  const map = {};
+  await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${p}.tex`, t); } catch { map[p] = null; } }));
+  return parseLatexChapters(main, p => map[p] ?? null);
+}
+async function saveChapters(chs, t){
+  let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
+  await putJson(t, 'chapters.json', chs, sha, `import: ${chs.length} ${UNIT}s from document`);
+}
+function importDocument(){
+  const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
+  const src = _CFG.sourceRepo;
+  let detected = [];
+  const scrim = document.createElement('div'); scrim.className = 'scrim';
+  scrim.innerHTML = `<div class="sheet" style="max-width:560px">
+    <div style="font-size:16px;font-weight:600;margin-bottom:4px">Import your ${escapeHtml(DOC)}</div>
+    <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Footnote parses your source to find ${escapeHtml(UNIT)}s — nothing is hardcoded.</div>
+    ${src ? `<button class="btn" id="imp-repo" style="width:100%;margin-bottom:10px"><i class="ti ti-brand-github"></i> Detect from <code>${escapeHtml(src)}</code></button>` : ''}
+    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Upload a .tex file<input id="imp-file" type="file" accept=".tex" style="display:none"></label>
+    <div id="imp-status" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
+    <div id="imp-preview" style="margin-top:6px;max-height:230px;overflow:auto"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" id="imp-cancel">Cancel</button>
+      <button class="btn btn-primary" id="imp-save" disabled>Save ${escapeHtml(UNIT)}s</button>
+    </div></div>`;
+  document.body.appendChild(scrim);
+  const $ = s => scrim.querySelector(s);
+  const status = m => { $('#imp-status').textContent = m; };
+  const preview = list => {
+    detected = list;
+    $('#imp-preview').innerHTML = list.length
+      ? `<div style="font-size:11px;color:var(--text-3);margin:4px 0 6px">Detected ${list.length} ${escapeHtml(UNIT)}${list.length!==1?'s':''}:</div>` +
+        list.map(c => `<div style="font-size:12.5px;padding:4px 0;border-bottom:.5px solid var(--border)"><b>${c.n}.</b> ${escapeHtml(c.title)} <span style="color:var(--text-3)">· ${escapeHtml(c.id)}${c.sourceFile?` · ${escapeHtml(c.sourceFile)}`:''}</span></div>`).join('')
+      : `<div style="font-size:12.5px;color:var(--warn)">No ${escapeHtml(UNIT)}s found. For a multi-file LaTeX project, use "Detect from source repo" so \\include'd files resolve.</div>`;
+    $('#imp-save').disabled = !list.length;
+  };
+  const close = () => scrim.remove();
+  scrim.onclick = e => { if (e.target === scrim) close(); };
+  $('#imp-cancel').onclick = close;
+  if (src) $('#imp-repo').onclick = async () => {
+    const entry = prompt('Entry .tex file in the source repo:', 'main.tex'); if (!entry) return;
+    status(`Reading ${entry} from ${src}…`);
+    try { preview(await detectFromRepo(src, entry.trim(), t)); status(''); }
+    catch (e){ status('Could not read the source: ' + e.message); }
+  };
+  $('#imp-file').onchange = async e => {
+    const f = e.target.files[0]; if (!f) return;
+    status(`Parsing ${f.name}…`);
+    const text = await f.text();
+    preview(parseLatexChapters(text, () => null));
+    status(detected.length ? '' : '');
+  };
+  $('#imp-save').onclick = async () => {
+    $('#imp-save').disabled = true; status('Saving…');
+    try { await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();
+          CHAPTERS = await loadChapters(t); enterHome(); }
+    catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
+  };
+}
+
 function homeHtml(){
   const last = localStorage.getItem('lastChapter');
   const lm = last && chMeta(last);
