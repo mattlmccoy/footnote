@@ -5,6 +5,11 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=b9529aa';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=b9529aa';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=b9529aa';
+import { loadConfig, dataRepoParts } from './config.js';
+// Load the instance config ONCE before the module body evaluates — every constant below derives
+// from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
+// in this module type; the boot IIFE at the bottom runs only after this resolves.
+const _CFG = await loadConfig();
 
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
@@ -101,18 +106,8 @@ function launchOwnerChapterTour(){ const restore = loadDemoChapterOwner(); start
 // for a returning user. The ⋯ menu lets them replay it or turn auto-show back on.
 if (!tourSeen('tour-owner-v1')){ markTourSeen('tour-owner-v1'); setTimeout(() => { try { launchOwnerTour(); } catch {} }, 1400); }
 
-const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
-const CHAPTERS = [
-  { id:'ch_introduction', n:1, title:'Introduction' },
-  { id:'ch_background',   n:2, title:'Background: RF Dielectric Heating and Prior RFAM' },
-  { id:'ch_platform',     n:3, title:'Design and Characterization of a Custom RFAM Platform' },
-  { id:'ch_modeling',     n:4, title:'Computational Modeling of RF Sintering' },
-  { id:'ch_compensation', n:5, title:'Simulation-Guided Compensation' },
-  { id:'ch_validation',   n:6, title:'Experimental Validation' },
-  { id:'ch_design_guide', n:7, title:'Design for RFAM: A Physics-Derived Capability Envelope' },
-  { id:'ch_materials',    n:8, title:'Extensibility of RF in Advanced Manufacturing' },
-  { id:'ch_conclusions',  n:9, title:'Conclusions' },
-];
+const DATA_REPO = _CFG.dataRepo;
+const CHAPTERS = _CFG.chapters;
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
 const TAGS = ['claim','wording','figure','citation','question'];
 // platform-adaptive modifier label (handlers accept ⌘ or Ctrl; this is just the on-screen text)
@@ -359,8 +354,8 @@ async function stageDirectEdit(ch, source, newSource, before, after){
   renderComments(); refreshStaged();
 }
 // ---------- advisor comments surfaced in the owner reviewer ----------
-const ADVISOR_IDS = ['CJS','CCS'];
-const ADVISOR_NAME = { CJS:'Saldaña', CCS:'Seepersad' };
+const ADVISOR_IDS = _CFG.advisors.map(a=>a.id);
+const ADVISOR_NAME = Object.fromEntries(_CFG.advisors.map(a=>[a.id,a.name]));
 // label a comment's source: named advisor → their name; a shared lab reviewer (general-<slug>) → the name they entered
 const whoLabel = c => ADVISOR_NAME[c._advisor] || (/^general-/.test(c._advisor||'') ? (c.author || 'Lab reviewer') : c._advisor);
 // an advisor's follow-up replies (when they felt a response was incomplete) + a re-opened flag
@@ -1463,7 +1458,7 @@ async function downloadArtifact(path){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   flash('Fetching…');
   let blob;
-  try { const url = `https://api.github.com/repos/mattlmccoy/dissertation-tracker-data/contents/${path}?t=${Date.now()}`;
+  try { const url = `https://api.github.com/repos/${DATA_REPO}/contents/${path}?t=${Date.now()}`;
     const r = await fetch(url, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (!r.ok) throw new Error('GitHub '+r.status);
     blob = await r.blob();
@@ -1473,7 +1468,7 @@ async function downloadArtifact(path){
 function restoreCursor(){ if (review.cursor?.sec){ document.getElementById(review.cursor.sec)?.scrollIntoView(); } }
 
 // ---------- home / chapter library ----------
-const DEFENSE = '2026-10-15';
+const DEFENSE = _CFG.deadline ? _CFG.deadline.date : null;
 const daysToDefense = () => Math.max(0, Math.ceil((new Date(DEFENSE) - new Date()) / 86400000));
 function chapterStats(ch){
   const r = JSON.parse(localStorage.getItem('review:'+ch) || 'null');
@@ -1701,7 +1696,7 @@ function homeHtml(){
 }
 
 // ---------- history / version timeline (data repo content commits — readable with the data-repo token) ----------
-const HIST_REPO = 'mattlmccoy/dissertation-tracker-data';
+const HIST_REPO = DATA_REPO;
 async function ghApi(t, path){
   const r = await fetch('https://api.github.com/' + path, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' } });
   if (!r.ok) throw new Error('HTTP '+r.status); return r.json();
@@ -2052,7 +2047,7 @@ async function openReleasePanel(){
       const tb = document.getElementById('adv-email-test'); if (tb) tb.onclick = openTestSend;
       return;
     }
-    const dataRepo = 'mattlmccoy/dissertation-tracker-data';   // where the invite workflow + secrets live
+    const dataRepo = DATA_REPO;   // where the invite workflow + secrets live
     box.innerHTML = `
       <div style="border:.5px solid var(--warn);background:var(--warn-bg);border-radius:9px;padding:11px 13px;margin-bottom:12px">
         <div style="display:flex;gap:8px;align-items:flex-start">
@@ -2285,7 +2280,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
            <label style="font-size:12px">Advisor access key <span style="color:var(--text-3);font-weight:400">(the token advisors paste to read chapters + comment)</span>
-             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every advisor). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>dissertation-tracker-data</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every advisor). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
              <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the advisor access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
