@@ -19,6 +19,15 @@ def save_json(path, obj):
 def iso_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+def doc_noun():
+    """The word for the whole document, from the DOC_NOUN Actions variable (default "document").
+    Keeps the invite/notify emails document-agnostic — "dissertation", "paper", "proposal", etc."""
+    return (os.environ.get("DOC_NOUN") or "document").strip() or "document"
+
+def default_sender_name():
+    """From-name fallback when the author name and SMTP_FROM_NAME are unset — brand, else the noun."""
+    return (os.environ.get("BRAND_NAME") or "").strip() or f"{doc_noun().capitalize()} review"
+
 def chapter_labels():
     """id -> {n, title} from chapters.json (empty dict if missing)."""
     rows = load_json("chapters.json", [])
@@ -101,7 +110,7 @@ def build_eml(frm, frm_name, to, subject, text_body, html_body):
     """multipart/alternative message (text + HTML) as a raw .eml string."""
     boundary = email.utils.make_msgid().strip("<>").replace("@", "-")
     lines = [
-        f"From: {email.utils.formataddr((frm_name or 'Dissertation Review', frm))}",
+        f"From: {email.utils.formataddr((frm_name or default_sender_name(), frm))}",
         f"To: {to}",
         f"Subject: {subject}",
         f"Date: {email.utils.formatdate(localtime=True)}",

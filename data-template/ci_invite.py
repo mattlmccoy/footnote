@@ -29,12 +29,13 @@ def build_message(a, frm, frm_name, key, author, base):
     to = a["email"]
     name = a.get("name", "")
     url = portal_url(base, a)
+    noun = C.doc_noun()
     whose = f"{author}'s" if author else "a"
-    subject = f"You're invited to review {author}'s dissertation" if author else "You're invited to review a dissertation"
+    subject = f"You're invited to review {author}'s {noun}" if author else f"You're invited to review a {noun}"
     # --- plain-text fallback ---
     text = (
         f"Hi {name},\n\n"
-        f"You've been invited to review {whose} dissertation in a private, comment-only reader.\n\n"
+        f"You've been invited to review {whose} {noun} in a private, comment-only reader.\n\n"
         f"Your access key (paste it when the portal asks; it's stored only in your browser):\n  {key}\n\n"
         f"Open your review portal:\n  {url}\n\n"
         "How it works: open the link, paste the access key once, then read the released chapters and "
@@ -43,9 +44,9 @@ def build_message(a, frm, frm_name, key, author, base):
     )
     # --- HTML (shared portal-matched shell from ci_notify_common) ---
     E = C.EMAIL
-    intro = (f"you've been invited to review <span style=\"color:{E['text']};font-weight:500;\">{C.esc(author)}'s</span> dissertation"
-             if author else "you've been invited to review a dissertation")
-    title = f"You're invited to review {C.esc(author)}'s dissertation" if author else "You're invited to review a dissertation"
+    intro = (f"you've been invited to review <span style=\"color:{E['text']};font-weight:500;\">{C.esc(author)}'s</span> {C.esc(noun)}"
+             if author else f"you've been invited to review a {C.esc(noun)}")
+    title = f"You're invited to review {C.esc(author)}'s {C.esc(noun)}" if author else f"You're invited to review a {C.esc(noun)}"
     rows = (
         f'<tr><td style="padding:0 24px 16px;">'
         f'<div style="font-size:14px;color:{E["text2"]};line-height:1.55;margin-bottom:16px;">Hi {C.esc(name)}, {intro} in a private, comment-only reader.</div>'
@@ -57,7 +58,7 @@ def build_message(a, frm, frm_name, key, author, base):
         + f'<tr><td style="padding:0 24px 22px;"><div style="font-size:12px;color:{E["text3"]};line-height:1.5;">Open the link, paste the access key once, then read the released chapters and leave comments or suggested edits inline. Your comments are private to the author.</div></td></tr>'
     )
     html = C.email_shell(title, "A private, comment-only reader", rows)
-    frm_disp = frm_name or author or "Dissertation Review"
+    frm_disp = frm_name or author or C.default_sender_name()
     return to, subject, C.build_eml(frm, frm_disp, to, subject, text, html)
 
 def send(frm, to, eml):
@@ -88,7 +89,7 @@ def main():
     # --- test send: one message to the owner; record verbatim outcome; gate the flag on it ---
     if test_email:
         to, subj, eml = build_message({"id": "test", "name": "you", "email": test_email}, frm, frm_name, key, author, base)
-        eml = eml.replace(f"Subject: {subj}", "Subject: Dissertation reviewer — email test", 1)
+        eml = eml.replace(f"Subject: {subj}", f"Subject: {C.doc_noun().capitalize()} reviewer - email test", 1)
         try:
             if not DRY:
                 send(frm, test_email, eml)

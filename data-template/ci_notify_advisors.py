@@ -64,7 +64,7 @@ def _chapters_email(name, chapters, labels, url, stamp):
     )
     html = C.email_shell(f"New {plural} ready to review", f"As of {stamp}", inner)
     _an = os.environ.get('AUTHOR_NAME', '')
-    subject = f"New {plural} ready to review — {_an}'s dissertation" if _an else f"New {plural} ready to review"
+    subject = f"New {plural} ready to review - {_an}'s {C.doc_noun()}" if _an else f"New {plural} ready to review"
     return subject, text, html
 
 def _responses_email(name, counts, url, stamp):

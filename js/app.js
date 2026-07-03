@@ -2191,7 +2191,7 @@ async function openReleasePanel(){
           <div style="margin-bottom:3px">Settings → Secrets and variables → Actions, in <code>${dataRepo}</code>:</div>
           <div style="font-size:11.5px;margin-left:2px">
             <b>Secrets</b> — <code>SMTP_USER</code> (login / from-address), <code>SMTP_PASS</code> (password, app password, or API key), <code>ADVISOR_KEY</code> (the access key reviewers paste). Optional: <code>SMTP_HOST</code>, <code>SMTP_PORT</code> (default Gmail <code>smtp.gmail.com</code>:<code>465</code>), <code>SMTP_FROM_NAME</code>.<br>
-            <b>Variables</b> — <code>AUTHOR_NAME</code> (shown in the invite), <code>PORTAL_BASE</code> (your site URL, e.g. <code>${portalBase()}</code>).
+            <b>Variables</b> — <code>AUTHOR_NAME</code> (shown in the invite), <code>PORTAL_BASE</code> (your site URL, e.g. <code>${portalBase()}</code>), <code>DOC_NOUN</code> (the word for your document, e.g. <code>${DOC}</code>).
           </div>
           <div style="margin-top:8px">Or with the GitHub CLI:</div>
           <pre style="background:var(--bg);border:.5px solid var(--border);border-radius:7px;padding:8px 10px;margin:5px 0;font-size:11px;overflow-x:auto;white-space:pre">gh secret set SMTP_USER --repo ${dataRepo}
@@ -2201,7 +2201,8 @@ gh secret set ADVISOR_KEY --repo ${dataRepo}
 gh secret set SMTP_HOST --repo ${dataRepo}    # e.g. smtp.office365.com
 gh secret set SMTP_PORT --repo ${dataRepo}    # e.g. 587
 gh variable set AUTHOR_NAME --repo ${dataRepo}
-gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
+gh variable set PORTAL_BASE --repo ${dataRepo}
+gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
           Once set, add a reviewer (or hit <b>Resend</b>) — the invite goes out and this notice clears.
         </div>
       </div>`;
@@ -2463,6 +2464,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
+      await setVariable(etok, 'DOC_NOUN', DOC);   // keeps the invite/notify emails document-agnostic (e.g. "paper", "proposal")
       stat.textContent = 'Sending a test email…';
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);
