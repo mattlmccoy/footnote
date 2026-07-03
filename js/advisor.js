@@ -767,7 +767,7 @@ function renderTopbar(){ const m=chMeta(current);
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown · PDF)"><i class="ti ti-file-export"></i></button>
+      <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown)"><i class="ti ti-file-export"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
@@ -1042,7 +1042,6 @@ function exportDialog(scope){
       <div style="font-size:11px;letter-spacing:.05em;color:var(--text-3);margin-bottom:6px">FORMATS</div>
       <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="docx" checked> Word (.docx), with your comments</label>
       <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="md" checked> Markdown</label>
-      <label style="display:flex;gap:8px;align-items:center;padding:5px 0;font-size:13px"><input type="checkbox" class="exp-fmt" value="pdf"> PDF <span style="color:var(--text-3)">(slower to build)</span></label>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
         <button class="btn" id="exp-cancel">Cancel</button>
         <button class="btn btn-primary" id="exp-go"><i class="ti ti-file-export"></i>Download</button></div>

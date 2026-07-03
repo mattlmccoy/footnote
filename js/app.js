@@ -41,7 +41,7 @@ const OWNER_TOUR = [
   { sel:'#btn-releases', title:'Invite reviewers and release chapters', body:'Add reviewers, connect email so invites send on their own, and choose which chapters each reviewer can see.' },
   { sel:'#btn-outline', title:'Share your outline early', body:'Post your planned structure so reviewers can comment on it before the full chapters are ready.' },
   { sel:'#btn-export', title:'Show reviewers how you responded', body:'Generate a printable summary of how you addressed each reviewer\'s comments. This is a response summary, not a document export.' },
-  { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word, PDF, or Markdown with comments and tracked changes included.` },
+  { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word or Markdown with comments and tracked changes included.` },
   { sel:'#btn-tour', title:'Replay anytime', body:'Reopen this tour or turn auto-show off from here. Open any chapter, then use the More menu for the reviewing walkthrough.' },
 ];
 // Small menu on the home "?" button: replay the tour, or toggle auto-show for first-time users.
@@ -1378,7 +1378,6 @@ function exportDialog(scope){
       <div class="exp-sec">Formats</div>
       <label class="exp-row"><input type="checkbox" class="exp-fmt" value="docx" checked> Word (.docx) — native comments + tracked changes</label>
       <label class="exp-row"><input type="checkbox" class="exp-fmt" value="md" checked> Markdown</label>
-      <label class="exp-row"><input type="checkbox" class="exp-fmt" value="pdf"> PDF — typeset + comments annex <span style="color:var(--text-3)">(slower: full LaTeX build)</span></label>
       <div class="exp-sec" style="margin-top:12px">Comments</div>
       <label class="exp-row"><input type="checkbox" id="exp-resolved" checked> Include resolved/answered comments</label>
       <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
