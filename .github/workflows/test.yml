@@ -16,7 +16,9 @@ jobs:
         run: node --test tests/*.test.mjs
       - name: Advisor bundle is assistant-free (grep gate)
         run: |
-          if grep -aiEr 'claude|anthropic|\bAI\b|\bagent\b|gpt|llm|copilot' js/advisor.js CCS.html CJS.html review-lab.html advisor.html 2>/dev/null; then
+          # advisor.js + every shell that loads it (advisor.html, review-lab.html, generated <id>.html)
+          shells=$(grep -l 'advisor.js' *.html 2>/dev/null || true)
+          if grep -aiEr 'claude|anthropic|\bAI\b|\bagent\b|gpt|llm|copilot' js/advisor.js $shells 2>/dev/null; then
             echo "::error::assistant reference found in the advisor bundle"; exit 1
           fi
           echo "advisor bundle clean"

@@ -1,18 +1,14 @@
 {
-  "_comment": "Footnote instance config — the single source of truth read by the browser app AND the CI. Adopters overwrite every value. This committed default is a dev instance for parity testing against the existing review data repo. No sourceRepo here: it is CI-only (export/direct-edit) and set per-adopter; it must never reference a private LaTeX source that Footnote should not touch.",
-  "owner": "mattlmccoy",
-  "dataRepo": "mattlmccoy/dissertation-tracker-data",
+  "_comment": "Footnote instance config — the single source of truth read by the browser app AND the CI. This committed default is a NEUTRAL template: no chapters (parsed from your document), no deadline, generic wording. Copy footnote.config.example.json or edit here. sourceRepo (your LaTeX repo) is set per-adopter and used only by the export/direct-edit CI.",
+  "owner": "your-github-username",
+  "dataRepo": "your-github-username/footnote-data",
   "brand": { "name": "Footnote", "logo": "brand/footnote-mark.png", "accent": "#2c64c4" },
-  "doc": { "noun": "dissertation", "unitNoun": "chapter", "title": "RFAM Dissertation" },
-  "deadline": { "date": "2026-10-15", "label": "defense" },
+  "doc": { "noun": "document", "unitNoun": "chapter", "title": "" },
   "storagePrefix": "footnote",
   "ownerPortalFile": "owner.html",
   "advisorPortalFile": "advisor.html",
   "inviteWorkflow": "invite.yml",
   "ownerAuthorTag": "owner",
   "reviewAgents": [],
-  "advisors": [
-    { "id": "CJS", "name": "Christopher J. Saldaña" },
-    { "id": "CCS", "name": "Carolyn C. Seepersad" }
-  ]
+  "advisors": []
 }
