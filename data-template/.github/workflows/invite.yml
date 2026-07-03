@@ -1,0 +1,76 @@
+name: invite
+
+# Emails an invite to each newly-added advisor when the reviewer app writes advisors.json.
+on:
+  push:
+    branches: [main]
+    paths: ['advisors.json', 'email_test_request.json']
+  workflow_dispatch:
+    inputs:
+      test_email:
+        description: 'Send one test email to this address (leave blank for a normal invite run)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: invite
+  cancel-in-progress: false
+
+jobs:
+  send:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Any pending invites?
+        id: check
+        run: |
+          TEST=""
+          if [ -n "${{ github.event.inputs.test_email }}" ]; then
+            TEST="${{ github.event.inputs.test_email }}"
+          elif [ -f email_test_request.json ]; then
+            TEST="$(jq -r '.to // ""' email_test_request.json 2>/dev/null)"
+          fi
+          if [ -n "$TEST" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "test_email=$TEST" >> "$GITHUB_OUTPUT"
+            echo "test send to $TEST"
+          elif jq -e '[.advisors[]? | select(.email != null and .email != "" and (.invited != true))] | length > 0' advisors.json >/dev/null 2>&1; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "go=false" >> "$GITHUB_OUTPUT"; echo "No pending invites."
+          fi
+
+      - name: Send invites
+        if: steps.check.outputs.go == 'true'
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
+          ADVISOR_KEY: ${{ secrets.ADVISOR_KEY }}
+          AUTHOR_NAME: ${{ vars.AUTHOR_NAME }}
+          PORTAL_BASE: ${{ vars.PORTAL_BASE }}
+          TEST_EMAIL: ${{ steps.check.outputs.test_email }}
+        run: python3 ci_invite.py
+
+      - name: Commit invite status
+        if: steps.check.outputs.go == 'true'
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm -f --ignore-unmatch email_test_request.json >/dev/null 2>&1 || true
+          git add advisors.json
+          if git diff --cached --quiet; then echo "no status change"; else
+            git commit -m "invite: update advisor invite status [skip ci]"
+            # the browser may have written advisors.json since checkout — rebase onto the remote and retry
+            for attempt in 1 2 3; do
+              git push && break
+              echo "push rejected — rebasing (attempt $attempt)"; git pull --rebase origin main || { git rebase --abort; break; }
+            done
+          fi

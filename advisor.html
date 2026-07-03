@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Footnote</title>
+<link rel="icon" type="image/svg+xml" href="brand/footnote-mark.svg">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<link rel="stylesheet" href="./css/reader.css?v=b9529aa">
+</head>
+<body>
+<div class="app">
+  <header class="topbar" id="topbar"></header>
+  <div class="panes">
+    <nav class="nav" id="nav"></nav>
+    <section class="read" id="read"></section>
+    <aside class="comments" id="comments"></aside>
+  </div>
+</div>
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var id = (q.get('a') || '').trim();
+    var name = (q.get('n') || '').trim();
+    if (!id) {
+      document.getElementById('read').innerHTML =
+        '<div class="empty" style="max-width:460px;margin:12vh auto;text-align:center">' +
+        '<div style="font-size:17px;font-weight:600;margin-bottom:8px">This invite link looks incomplete</div>' +
+        '<div style="font-size:13px;line-height:1.6;color:var(--text-3)">It\'s missing the reviewer id. Please use the exact link from your invitation email, or ask the author to resend it.</div></div>';
+      return;
+    }
+    window.ADVISOR = { id: id, name: name || id };
+    var s = document.createElement('script');
+    s.type = 'module'; s.src = './js/advisor.js?v=b9529aa';
+    document.body.appendChild(s);
+  })();
+</script>
+</body>
+</html>

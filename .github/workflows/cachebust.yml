@@ -1,0 +1,54 @@
+name: cachebust
+
+# Stamp every ?v= asset token (HTML + JS module imports) with the commit SHA on each push,
+# so a changed file always gets a new URL and browser/CDN caches bust automatically.
+# No more hand-editing ?v= tokens.
+on:
+  push:
+    branches: [main]
+    paths: ['**.html', 'js/**.js', 'css/**.css']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: cachebust
+  cancel-in-progress: false
+
+jobs:
+  bust:
+    runs-on: ubuntu-latest
+    # skip runs triggered by this workflow's own bot commit (no infinite loop). The bot commit has
+    # no [skip ci] so GitHub Pages still deploys the freshly-stamped assets.
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Stamp asset versions with the commit SHA
+        run: |
+          python3 - <<'PY'
+          import re, glob, subprocess
+          sha = subprocess.run(["git","rev-parse","--short","HEAD"], capture_output=True, text=True).stdout.strip()
+          qv = re.compile(r"\?v=[A-Za-z0-9._-]+")
+          # relative JS module specifiers, optionally already carrying ?v=
+          imp = re.compile(r"(['\"])(\.{1,2}/[A-Za-z0-9._/-]+\.js)(\?v=[A-Za-z0-9._-]+)?\1")
+          def stamp_html(s): return qv.sub(f"?v={sha}", s)
+          def stamp_js(s):   return imp.sub(lambda m: f"{m.group(1)}{m.group(2)}?v={sha}{m.group(1)}", s)
+          for f in glob.glob("*.html"):
+              t = open(f, encoding="utf-8").read(); n = stamp_html(t)
+              if n != t: open(f, "w", encoding="utf-8").write(n); print("stamped", f)
+          for f in glob.glob("js/*.js"):
+              t = open(f, encoding="utf-8").read(); n = stamp_js(t)
+              if n != t: open(f, "w", encoding="utf-8").write(n); print("stamped", f)
+          PY
+
+      - name: Commit stamped versions
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then echo "nothing to stamp"; else
+            git commit -m "chore: cache-bust assets to ${GITHUB_SHA:0:7}"
+            git push
+          fi

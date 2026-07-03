@@ -1,0 +1,74 @@
+name: verify-deploy
+
+# Guards against silent GitHub Pages deploy failures (the built-in "pages build and deployment"
+# can error / time out in its queue, leaving the LIVE site stale while git + cachebust look green).
+# After each cachebust, this verifies the live site actually serves the committed asset version.
+# If it's stale it self-heals (forces a Pages rebuild); if it's STILL stale it opens an issue and
+# fails loudly so a bad deploy can never ship unnoticed.
+
+on:
+  workflow_run:
+    workflows: [cachebust]
+    types: [completed]
+  schedule:
+    - cron: '17 */6 * * *'   # safety-net drift check a few times a day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  issues: write
+
+concurrency:
+  group: verify-deploy
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify live site matches committed assets (self-heal + alert)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -u
+          SITE="https://mattlmccoy.github.io/dissertation-hub"
+          PAGE="review-18d933f6.html"
+
+          expected() { grep -oE 'js/app\.js\?v=[A-Za-z0-9._-]+' "$PAGE" | head -1; }
+          live()     { curl -fsS "$SITE/$PAGE?cb=$(date +%s%N)" 2>/dev/null | grep -oE 'js/app\.js\?v=[A-Za-z0-9._-]+' | head -1; }
+
+          EXP="$(expected)"
+          if [ -z "$EXP" ]; then echo "::warning::no ?v= stamp found in $PAGE — nothing to verify"; exit 0; fi
+          echo "expected live stamp: $EXP"
+
+          # poll up to ~6 min for the live site to catch up to the committed stamp
+          poll() {
+            for i in $(seq 1 24); do
+              L="$(live)"; echo "  attempt $i: live=$L"
+              [ "$L" = "$EXP" ] && return 0
+              sleep 15
+            done
+            return 1
+          }
+
+          if poll; then echo "live site is current ($EXP)"; exit 0; fi
+
+          echo "::warning::live site still stale after 6 min — forcing a Pages rebuild"
+          gh api -X POST "repos/$REPO/pages/builds" >/dev/null 2>&1 || echo "::warning::rebuild request failed"
+
+          if poll; then echo "self-heal succeeded — live site now current ($EXP)"; exit 0; fi
+
+          echo "::error::live site STILL stale after self-heal — opening an issue"
+          BODY=$(printf 'The live site is not serving the committed assets.\n\n- Expected stamp: `%s`\n- Live stamp: `%s`\n- Page: %s/%s\n\nGitHub Pages likely errored or is stuck in its deploy queue. A forced rebuild did not fix it. Re-run this workflow, or check Settings → Pages.\n' "$EXP" "$(live)" "$SITE" "$PAGE")
+          # de-dupe: only open a new issue if none is currently open
+          if [ "$(gh issue list --repo "$REPO" --state open --label deploy-stale --json number --jq 'length' 2>/dev/null || echo 0)" = "0" ]; then
+            gh label create deploy-stale --repo "$REPO" --color b60205 --description "Live Pages site not serving committed assets" 2>/dev/null || true
+            gh issue create --repo "$REPO" --title "⚠️ Live site stale — Pages deploy failed" --label deploy-stale --body "$BODY" 2>/dev/null || echo "::warning::could not open issue"
+          else
+            echo "an open deploy-stale issue already exists — not duplicating"
+          fi
+          exit 1
