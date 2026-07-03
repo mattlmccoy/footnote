@@ -1,6 +1,38 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters, slugifyId, latexTitleText, parseDocxChapters } from '../js/docparse.js';
+import { parseLatexChapters, slugifyId, latexTitleText, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+
+// Build a minimal STORED (uncompressed) zip containing one entry, to test the zip reader without inflate.
+function storedZip(name, content) {
+  const enc = new TextEncoder();
+  const nameB = enc.encode(name), dataB = enc.encode(content);
+  const h = new Uint8Array(30 + nameB.length + dataB.length);
+  const dv = new DataView(h.buffer);
+  dv.setUint32(0, 0x04034b50, true);        // PK\x03\x04
+  dv.setUint16(8, 0, true);                 // method 0 (stored)
+  dv.setUint32(18, dataB.length, true);     // compressed size
+  dv.setUint32(22, dataB.length, true);     // uncompressed size
+  dv.setUint16(26, nameB.length, true);     // filename length
+  dv.setUint16(28, 0, true);                // extra length
+  h.set(nameB, 30); h.set(dataB, 30 + nameB.length);
+  return h;
+}
+
+test('findZipEntry locates a stored entry by name', () => {
+  const zip = storedZip('word/document.xml', '<w:body>hi</w:body>');
+  const e = findZipEntry(zip, 'word/document.xml');
+  assert.equal(e.method, 0);
+  assert.equal(new TextDecoder().decode(e.data), '<w:body>hi</w:body>');
+  assert.equal(findZipEntry(zip, 'missing.xml'), null);
+});
+
+test('docxToXml returns document.xml for a stored .docx and parseDocxChapters reads it', async () => {
+  const xml = `<w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Intro</w:t></w:r></w:p></w:body>`;
+  const zip = storedZip('word/document.xml', xml);
+  const got = await docxToXml(zip.buffer);
+  assert.equal(got, xml);
+  assert.deepEqual(parseDocxChapters(got).map(c => c.title), ['Intro']);
+});
 
 const wp = (style, ...texts) =>
   `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr>${texts.map(t => `<w:r><w:t>${t}</w:t></w:r>`).join('')}</w:p>`;

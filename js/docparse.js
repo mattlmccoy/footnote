@@ -49,6 +49,39 @@ function allChapters(tex) {
   return out;
 }
 
+// ---- .docx unzip: a .docx is a ZIP; find word/document.xml via local file headers and inflate it with
+// the built-in DecompressionStream (no dependency). Assumes sizes are in the local headers (true for Word
+// and common zippers). Pure zip-header parse (findZipEntry) is unit-tested; the inflate path runs in-browser.
+function bytesEq(a, b) { if (a.length !== b.length) return false; for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false; return true; }
+
+export function findZipEntry(u8, name) {
+  const target = new TextEncoder().encode(name);
+  for (let i = 0; i + 30 <= u8.length; i++) {
+    if (u8[i] === 0x50 && u8[i + 1] === 0x4b && u8[i + 2] === 0x03 && u8[i + 3] === 0x04) {
+      const dv = new DataView(u8.buffer, u8.byteOffset + i, 30);
+      const method = dv.getUint16(8, true);
+      const compSize = dv.getUint32(18, true);
+      const fnLen = dv.getUint16(26, true);
+      const exLen = dv.getUint16(28, true);
+      const nameBytes = u8.subarray(i + 30, i + 30 + fnLen);
+      const start = i + 30 + fnLen + exLen;
+      if (bytesEq(nameBytes, target)) return { method, data: u8.subarray(start, start + compSize) };
+      if (compSize > 0) i = start + compSize - 1;   // skip past data to avoid false PK matches
+    }
+  }
+  return null;
+}
+
+export async function docxToXml(arrayBuffer) {
+  const u8 = new Uint8Array(arrayBuffer);
+  const e = findZipEntry(u8, 'word/document.xml');
+  if (!e) throw new Error('not a .docx (word/document.xml missing)');
+  if (e.method === 0) return new TextDecoder().decode(e.data);
+  if (typeof DecompressionStream === 'undefined') throw new Error('this browser cannot inflate .docx');
+  const stream = new Blob([e.data]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
+  return new TextDecoder().decode(await new Response(stream).arrayBuffer());
+}
+
 // Dedupe ids + number a raw [{title, id, sourceFile}] list into the chapter manifest shape.
 function finalizeChapters(raw) {
   const used = new Set();

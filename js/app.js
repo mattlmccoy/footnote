@@ -6,7 +6,7 @@ import { sealToBase64 } from './vendor/seal.js?v=proj1';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=proj1';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj1';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject } from './config.js?v=proj1';
-import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=proj1';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=proj1';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1719,7 +1719,7 @@ function importDocument(){
     <div style="font-size:16px;font-weight:600;margin-bottom:4px">Import your ${escapeHtml(DOC)}</div>
     <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Footnote parses your source to find ${escapeHtml(UNIT)}s — nothing is hardcoded.</div>
     ${src ? `<button class="btn" id="imp-repo" style="width:100%;margin-bottom:10px"><i class="ti ti-brand-github"></i> Detect from <code>${escapeHtml(src)}</code></button>` : ''}
-    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Upload a .tex file<input id="imp-file" type="file" accept=".tex" style="display:none"></label>
+    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Upload a .tex or .docx file<input id="imp-file" type="file" accept=".tex,.docx" style="display:none"></label>
     <div id="imp-status" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
     <div id="imp-preview" style="margin-top:6px;max-height:230px;overflow:auto"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -1749,9 +1749,11 @@ function importDocument(){
   $('#imp-file').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
     status(`Parsing ${f.name}…`);
-    const text = await f.text();
-    preview(parseLatexChapters(text, () => null));
-    status(detected.length ? '' : '');
+    try {
+      if (/\.docx$/i.test(f.name)) preview(parseDocxChapters(await docxToXml(await f.arrayBuffer())));
+      else preview(parseLatexChapters(await f.text(), () => null));
+      status('');
+    } catch (err){ status('Could not parse ' + f.name + ': ' + err.message); }
   };
   $('#imp-save').onclick = async () => {
     $('#imp-save').disabled = true; status('Saving…');
