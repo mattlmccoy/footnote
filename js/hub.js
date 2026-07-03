@@ -47,15 +47,19 @@ async function createRepo(t, fullName) {
 }
 
 // The user's repos (full names), so fields can be PICKED instead of typed. Cached; paginates a few pages.
-let _repoCache = null;
+// Also records whether ANY private repo was visible — used to warn about an under-scoped token.
+let _repoCache = null, _seenPrivate = false;
 async function userRepos(t) {
   if (_repoCache) return _repoCache;
   const out = [];
   try {
-    for (let page = 1; page <= 4; page++) {
-      const r = await fetch(`${API}/user/repos?per_page=100&sort=updated&page=${page}`, { headers: hdr(t), cache: 'no-store' });
+    // visibility=all + all affiliations so PRIVATE and org repos are included (given a token that can see them).
+    for (let page = 1; page <= 6; page++) {
+      const r = await fetch(`${API}/user/repos?per_page=100&visibility=all&affiliation=owner,collaborator,organization_member&sort=updated&page=${page}`, { headers: hdr(t), cache: 'no-store' });
       if (!r.ok) break;
-      const d = await r.json(); out.push(...d.map(x => x.full_name));
+      const d = await r.json(); if (!Array.isArray(d)) break;
+      if (d.some(x => x.private)) _seenPrivate = true;
+      out.push(...d.map(x => x.full_name));
       if (d.length < 100) break;
     }
   } catch {}
@@ -66,16 +70,17 @@ function attachRepoPicker(input, t) {
   const menu = document.createElement('div'); menu.className = 'fn-ac';
   input.insertAdjacentElement('afterend', menu);
   let repos = [];
+  const warn = _seenPrivate ? '' : `<div class="fn-ac-hint">Only public repos? Your token can't see private ones — <a href="${TOKEN_URL}" target="_blank" rel="noopener">generate one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
   const show = () => {
     const q = input.value.trim().toLowerCase();
     const m = repos.filter(r => r.toLowerCase().includes(q)).slice(0, 8);
-    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('');
-    menu.style.display = m.length ? 'block' : 'none';
-    [...menu.children].forEach((el, i) => el.onmousedown = e => { e.preventDefault(); input.value = m[i]; menu.style.display = 'none'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + (_seenPrivate ? '' : warn);
+    menu.style.display = (m.length || !_seenPrivate) ? 'block' : 'none';
+    [...menu.querySelectorAll('.fn-ac-item')].forEach((el, i) => el.onmousedown = e => { e.preventDefault(); input.value = m[i]; menu.style.display = 'none'; input.dispatchEvent(new Event('input', { bubbles: true })); });
   };
   input.addEventListener('focus', async () => { if (!repos.length) repos = await userRepos(t); show(); });
   input.addEventListener('input', show);
-  input.addEventListener('blur', () => setTimeout(() => { menu.style.display = 'none'; }, 160));
+  input.addEventListener('blur', () => setTimeout(() => { menu.style.display = 'none'; }, 200));
 }
 
 const MARK = accent => `<svg class="fn-mark" viewBox="0 0 52 52" aria-hidden="true"><rect x="3" y="3" width="46" height="46" rx="13" fill="${accent}"/><line x1="19" y1="13" x2="19" y2="39" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.7" fill="#fff"/></svg>`;
@@ -107,8 +112,8 @@ export async function launch() {
       <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
       <div class="fn-card">
         <div class="fn-step">Connect GitHub</div>
-        <label class="fn-field">Access token<input id="fn-tok" type="password" placeholder="github_pat_…" autocomplete="off"></label>
-        <p class="fn-hint">Stored only in this browser. <a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate one →</a></p>
+        <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
+        <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> scope (full read/write, private included). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
         <div class="fn-err" id="fn-err"></div>
         <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
       </div></div>`);
