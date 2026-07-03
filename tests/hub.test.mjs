@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, projectHref } from '../js/hub.js';
+import { addProject, projectHref, defaultHubRepo, projectIdFromName } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -24,4 +24,15 @@ test('addProject rejects an invalid project (no dataRepo)', () => {
 test('projectHref points the launcher at the reviewer for a project', () => {
   assert.equal(projectHref(CFG, 'thesis'), 'owner.html?project=thesis');
   assert.equal(projectHref(CFG, 'a b'), 'owner.html?project=a%20b');
+});
+
+test('defaultHubRepo suggests <owner>/footnote-projects', () => {
+  assert.equal(defaultHubRepo(CFG), 'alice/footnote-projects');
+  assert.equal(defaultHubRepo(normalizeConfig({ owner: 'bob', dataRepo: 'bob/x' })), 'bob/footnote-projects');
+});
+
+test('projectIdFromName slugs a project name to a stable id', () => {
+  assert.equal(projectIdFromName('My Thesis'), 'my-thesis');
+  assert.equal(projectIdFromName('  Paper #2!  '), 'paper-2');
+  assert.equal(projectIdFromName(''), 'project');
 });
