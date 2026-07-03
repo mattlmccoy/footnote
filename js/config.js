@@ -104,6 +104,10 @@ export function getConfig() {
   return _cache;
 }
 
+// Replace the cached config with the EFFECTIVE one (e.g. after resolveProject in multi-project mode), so
+// every module that reads getConfig() (gh.js, ghsecrets.js, loadChapters) uses the selected project's dataRepo.
+export function setConfig(cfg) { _cache = cfg; return _cache; }
+
 // ---- Multi-project: a hub repo's projects.json lists projects; each carries its own data repo, doc
 // nouns, deadline and advisors. The app-level config (footnote.config.json) supplies brand/hub/storage.
 

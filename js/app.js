@@ -1,27 +1,32 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=e7e896e';
-import { anchorFromSelection } from './anchor.js?v=e7e896e';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=e7e896e';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=e7e896e';
-import { sealToBase64 } from './vendor/seal.js?v=e7e896e';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=e7e896e';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=e7e896e';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject } from './config.js?v=e7e896e';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=e7e896e';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=proj6';
+import { anchorFromSelection } from './anchor.js?v=proj6';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=proj6';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=proj6';
+import { sealToBase64 } from './vendor/seal.js?v=proj6';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=proj6';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj6';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=proj6';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=proj6';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
 //  • single-project: no hubRepo → footnote.config.json IS the config (backward compatible).
 const _appCfg = await loadConfig();
 const _projectId = new URLSearchParams(location.search).get('project');
-let _CFG = _appCfg;
-if (_appCfg.hubRepo) {
+// The workspace (hub) repo can come from footnote.config.json OR the launcher's localStorage override —
+// keep both surfaces in sync so opening a project from the launcher resolves correctly.
+const _hub = localStorage.getItem('footnote:hub') || _appCfg.hubRepo || '';
+let _CFG = { ..._appCfg, hubRepo: _hub };
+if (_hub) {
   if (!_projectId) { location.replace('index.html'); }
   else {
-    const _projects = await loadProjects(_appCfg, localStorage.getItem('ghpat'));
-    try { _CFG = resolveProject(_appCfg, _projects, _projectId); }
+    const _projects = await loadProjects({ ..._appCfg, hubRepo: _hub }, localStorage.getItem('ghpat'));
+    try { _CFG = resolveProject({ ..._appCfg, hubRepo: _hub }, _projects, _projectId); }
     catch { location.replace('index.html'); }
   }
 }
+// Make the effective config the one every module reads (gh.js/loadChapters resolve the project's dataRepo).
+setConfig(_CFG);
 // Document nouns for user-facing copy (default "dissertation"/"chapter"; an adopter sets e.g.
 // "thesis"/"section" or "paper"/"part"). Capitalized variants for sentence starts.
 const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
