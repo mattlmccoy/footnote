@@ -119,6 +119,7 @@ const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;
 const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
 let DATA_REPO = '';        // populated from footnote.config.json at boot
 let CHAPTERS = [];         // the adopter's chapter manifest (config.chapters), populated at boot
+let DOC = '', DOCC = '', UNIT = '';   // document nouns for copy (config.doc), populated at boot
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
 const TAGS = ['suggestion','wording','figure','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
@@ -136,7 +137,7 @@ const is401 = e => /\b401\b/.test((e && e.message) || '');
 function showKeyExpired(){
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
-  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">Dissertation review · ${escapeHtml(ADVISOR.name)}</strong>`;
+  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">${DOCC} review · ${escapeHtml(ADVISOR.name)}</strong>`;
   read.innerHTML = `<div class="empty"><i class="ti ti-key-off" style="font-size:26px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Your access key has expired</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px;max-width:430px">Access keys are time-limited for security. Please request a fresh key, then enter it below to pick up where you left off — your comments are saved.</div>
@@ -146,7 +147,7 @@ function showKeyExpired(){
 function showRevoked(){
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
-  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">Dissertation review</strong>`;
+  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">${DOCC} review</strong>`;
   read.innerHTML = `<div class="empty" style="max-width:460px;margin:12vh auto;text-align:center"><i class="ti ti-lock-off" style="font-size:26px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">This review link is no longer active</div>
     <div style="font-size:13px;line-height:1.6;color:var(--text-3)">Access for this reviewer has been removed by the author. If you think this is a mistake, please contact them for a new invitation.</div></div>`;
@@ -812,7 +813,7 @@ function enterHome(){
       <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits — each one is shared with the author as soon as you add it.</div>
       <button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
-        <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed dissertation outline</div>
+        <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed ${DOC} outline</div>
         <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it — available before chapters are released.</div></div>
         <span style="margin-left:auto;font-size:11.5px;color:var(--text-2);white-space:nowrap">${ocn?ocn+' comment'+(ocn>1?'s':''):'open to review'} <i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>
       ${responsesReleased ? `<button id="responses-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--success);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--success-bg);cursor:pointer;font:inherit;color:var(--text)">
@@ -1140,6 +1141,7 @@ async function boot(){
   ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_cfg));
   DATA_REPO = _cfg.dataRepo;
   CHAPTERS = _cfg.chapters;
+  DOC = _cfg.doc.noun; UNIT = _cfg.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
@@ -1169,7 +1171,7 @@ function startOutbox(){ if (outboxStarted) return; outboxStarted = true;
 }
 function showNameEntry(){
   document.getElementById('nav').style.display = 'none'; document.getElementById('comments').style.display = 'none';
-  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">Dissertation review</strong>`;
+  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">${DOCC} review</strong>`;
   read.innerHTML = `<div class="empty"><i class="ti ti-user-circle" style="font-size:26px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Welcome — what's your name?</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:14px;max-width:400px">So the author knows who left each comment. Stored only in this browser.</div>

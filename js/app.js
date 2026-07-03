@@ -10,6 +10,10 @@ import { loadConfig, dataRepoParts } from './config.js';
 // from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
 // in this module type; the boot IIFE at the bottom runs only after this resolves.
 const _CFG = await loadConfig();
+// Document nouns for user-facing copy (default "dissertation"/"chapter"; an adopter sets e.g.
+// "thesis"/"section" or "paper"/"part"). Capitalized variants for sentence starts.
+const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
+const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
 
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
@@ -20,7 +24,7 @@ const OWNER_TOUR = [
   { sel:'#btn-releases', title:'Invite advisors and release chapters', body:'Add advisors, connect email so invites send on their own, and choose which chapters each advisor can see.' },
   { sel:'#btn-outline', title:'Share your outline early', body:'Post your planned structure so advisors can comment on it before the full chapters are ready.' },
   { sel:'#btn-export', title:'Show advisors how you responded', body:'Generate a printable summary of how you addressed each advisor\'s comments. This is a response summary, not a document export.' },
-  { sel:'#dl-export-all', title:'Export the document', body:'Download the whole dissertation, or any single chapter, as Word, PDF, or Markdown with comments and tracked changes included.' },
+  { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word, PDF, or Markdown with comments and tracked changes included.` },
   { sel:'#btn-tour', title:'Replay anytime', body:'Reopen this tour or turn auto-show off from here. Open any chapter, then use the More menu for the reviewing walkthrough.' },
 ];
 // Small menu on the home "?" button: replay the tour, or toggle auto-show for first-time users.
@@ -239,7 +243,7 @@ async function loadChapter(ch){
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
-    <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your dissertation</div>
+    <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your ${DOC}</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read) — stored only in this browser.</div>
     <button class="btn" id="connect">Add access token</button></div>`;
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
@@ -1343,7 +1347,7 @@ function flash(msg){ const t = document.createElement('div'); t.textContent = ms
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const whole = scope === '__all__';
-  const title = whole ? 'the whole dissertation' : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+  const title = whole ? `the whole ${DOC}` : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
   const back = document.createElement('div'); back.id = 'expdlg';
   back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
   back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
@@ -1397,7 +1401,7 @@ async function renderHomeDownloads(){
   const jobs = await listExports();
   const header = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin:0">DOWNLOADS</div>
-      <button class="btn" id="dl-export-all" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export whole dissertation…</button></div>`;
+      <button class="btn" id="dl-export-all" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export whole ${DOC}…</button></div>`;
   if (!jobs.length){ box.innerHTML = header + `<div style="font-size:12.5px;color:var(--text-3)">No exports yet. Use a chapter's “…” menu → Export, or the button above.</div>`;
     box.querySelector('#dl-export-all').onclick = () => exportDialog('__all__'); return; }
   // group by scope (chapter id or __all__)
@@ -1406,7 +1410,7 @@ async function renderHomeDownloads(){
   const order = Object.keys(groups).sort((a,b) => (a==='__all__'?99:chMeta(a).n) - (b==='__all__'?99:chMeta(b).n));
   box.innerHTML = header + order.map(scope => {
     const list = groups[scope];
-    const name = scope === '__all__' ? 'Whole dissertation' : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+    const name = scope === '__all__' ? `Whole ${DOC}` : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
     const pending = list.filter(j => j.status !== 'done').length;
     const open = _expOpen.has(scope);
     const versions = list.map(j => {
@@ -1779,7 +1783,7 @@ function renderPatch(patch){
   return `<div class="hdiff">${body}</div>`;
 }
 
-// ---------- global search (across the dissertation) ----------
+// ---------- global search (across the ${DOC}) ----------
 let searchIndex = null;
 async function loadIndex(){
   if (searchIndex) return searchIndex;
@@ -1802,7 +1806,7 @@ function showSearchResults(q, hits){
   document.getElementById('searchpanel')?.remove();
   const p = document.createElement('div'); p.id = 'searchpanel';
   p.style.cssText = 'position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:50;width:min(640px,92%);max-height:72vh;overflow:auto;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 14px 44px rgba(0,0,0,.18);padding:8px';
-  p.innerHTML = `<div style="font-size:11px;color:var(--text-3);padding:6px 10px">${hits.length} result${hits.length!==1?'s':''} across the dissertation for "${escapeHtml(q)}"</div>` +
+  p.innerHTML = `<div style="font-size:11px;color:var(--text-3);padding:6px 10px">${hits.length} result${hits.length!==1?'s':''} across the ${DOC} for "${escapeHtml(q)}"</div>` +
     (hits.length ? hits.map(h => `<div class="sres" data-ch="${h.ch}" data-h="${escapeHtml(h.h)}" style="padding:9px 10px;border-radius:8px;cursor:pointer">
         <div style="font-size:12px;font-weight:500">${chMeta(h.ch).n}. ${escapeHtml(shortTitle(chMeta(h.ch).title))} <span style="color:var(--text-3)">· ${escapeHtml(h.h).slice(0,42)}</span></div>
         <div style="font-size:11.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.snip).slice(0,120)}</div></div>`).join('') : `<div style="padding:10px;color:var(--text-3)">No matches.</div>`);
@@ -1823,11 +1827,11 @@ function cycleComment(dir){
   const c = list[i]; activeCommentId = c.id; renderComments(); jumpTo(c);
   document.querySelector(`#comments .ccard[data-id="${c.id}"]`)?.scrollIntoView({ block:'nearest' });
 }
-const SHORTCUTS = [['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/','search this chapter'],[`${MOD}\\`,'search the whole dissertation'],[`${MOD}↵`,'open the Send to Claude menu'],['⌥1–5 (in popover)','pick a tag'],['Esc','close popover / overlay'],['?','show this help']];
+const SHORTCUTS = [['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/',`search this ${UNIT}`],[`${MOD}\\`,`search the whole ${DOC}`],[`${MOD}↵`,'open the Send menu'],['⌥1–5 (in popover)','pick a tag'],['Esc','close popover / overlay'],['?','show this help']];
 const BUTTONS = [
   ['ti-layout-grid','Home — the chapter library'],
   ['ti-book-2','Chapter switcher'],
-  ['ti-search',`Search this chapter (${MOD}\\ = whole dissertation)`],
+  ['ti-search',`Search this chapter (${MOD}\\ = whole ${DOC})`],
   ['ti-arrows-diagonal-minimize-2','Focus mode — hide both side panes'],
   ['ti-history','Version history & diffs for this chapter'],
   ['ti-moon','Light / dark theme'],
@@ -2141,7 +2145,7 @@ gh variable set PORTAL_BASE --repo ${dataRepo}</pre>
   const inputCss = 'width:100%;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)';
   // ---- Connect email: write SMTP secrets to the data repo + real test send (owner-only) ----
   // TOKEN_URL: pre-scoped classic token so the owner just clicks Generate (repo→secrets, workflow→dispatch).
-  const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Dissertation%20reviewer%20email%20setup';
+  const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=' + encodeURIComponent(_CFG.brand.name + ' email setup');
   const withTimeout = (p, ms) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
   // The elevated token must do THREE things: write secrets (getPublicKey), and read+dispatch Actions
   // (latestRun proxies Actions access). Checking only secrets let a Secrets-but-not-Actions token
