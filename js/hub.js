@@ -2,7 +2,7 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject } from './config.js?v=priv1';
+import { loadConfig, loadProjects, normalizeProject } from './config.js?v=diag1';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -48,36 +48,40 @@ async function createRepo(t, fullName) {
 
 // The user's repos, so fields can be PICKED instead of typed. Cache is KEYED BY TOKEN so switching to a
 // new (e.g. private-enabled) token always refetches. Records whether any private repo was visible.
-let _repoCache = null;   // { token, names:[], seenPrivate:bool }
+let _repoCache = null;   // { token, names, priv, count, status, error }
 async function userRepos(t) {
   if (_repoCache && _repoCache.token === t) return _repoCache;
-  const out = []; let seenPrivate = false;
+  const out = []; let priv = 0, status = 0, error = '';
   try {
     // visibility=all + all affiliations so PRIVATE and org repos are included (given a token that can see them).
     for (let page = 1; page <= 6; page++) {
       const r = await fetch(`${API}/user/repos?per_page=100&visibility=all&affiliation=owner,collaborator,organization_member&sort=updated&page=${page}`, { headers: hdr(t), cache: 'no-store' });
-      if (!r.ok) break;
-      const d = await r.json(); if (!Array.isArray(d)) break;
-      if (d.some(x => x.private)) seenPrivate = true;
+      status = r.status;
+      if (!r.ok) { error = 'HTTP ' + r.status; break; }
+      const d = await r.json(); if (!Array.isArray(d)) { error = 'unexpected response'; break; }
+      for (const x of d) if (x.private) priv++;
       out.push(...d.map(x => x.full_name));
       if (d.length < 100) break;
     }
-  } catch {}
-  _repoCache = { token: t, names: out, seenPrivate };
+  } catch (e) { error = (e && e.message) || 'network error'; }
+  _repoCache = { token: t, names: out, priv, count: out.length, seenPrivate: priv > 0, status, error };
   return _repoCache;
 }
 // Attach a GitHub-repo autocomplete to a text input (still typeable). Suggestions from the user's repos.
 function attachRepoPicker(input, t) {
   const menu = document.createElement('div'); menu.className = 'fn-ac';
   input.insertAdjacentElement('afterend', menu);
-  let data = { names: [], seenPrivate: true };
+  let data = { names: [], priv: 0, count: 0, seenPrivate: true, status: 0, error: '' };
   const show = () => {
     const q = input.value.trim().toLowerCase();
     const m = data.names.filter(r => r.toLowerCase().includes(q)).slice(0, 8);
-    // Recompute the hint LIVE from the current fetch result (never a stale precomputed value).
-    const hint = data.seenPrivate ? '' : `<div class="fn-ac-hint">Only public repos? Your token can't see private ones — <a href="${TOKEN_URL}" target="_blank" rel="noopener">generate one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
-    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + hint;
-    menu.style.display = (m.length || hint) ? 'block' : 'none';
+    // Live footer: shows the ACTUAL result so token/scope problems are visible, not silent.
+    let foot;
+    if (data.error) foot = `<div class="fn-ac-hint">Couldn't list your repos — <b>${esc(data.error)}</b>. The token may be wrong or lack access.</div>`;
+    else if (data.priv === 0) foot = `<div class="fn-ac-hint">${data.count} repos found, <b>0 private</b>. Your token can't see private repos — <a href="${TOKEN_URL}" target="_blank" rel="noopener">make one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
+    else foot = `<div class="fn-ac-diag">${data.count} repos · ${data.priv} private</div>`;
+    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + foot;
+    menu.style.display = 'block';
     [...menu.querySelectorAll('.fn-ac-item')].forEach((el, i) => el.onmousedown = e => { e.preventDefault(); input.value = m[i]; menu.style.display = 'none'; input.dispatchEvent(new Event('input', { bubbles: true })); });
   };
   input.addEventListener('focus', async () => { data = await userRepos(t); show(); });

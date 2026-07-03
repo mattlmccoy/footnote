@@ -56,6 +56,7 @@
   .fn-ac-item:hover{background:rgba(44,100,196,.09);color:var(--accent-ink)}
   .fn-ac-hint{padding:9px 12px;font-size:11.5px;line-height:1.5;color:var(--muted);border-top:1px solid var(--line);background:#fbf7ee}
   .fn-ac-hint a{color:var(--accent);font-weight:500}
+  .fn-ac-diag{padding:6px 12px;font-size:10.5px;color:var(--faint);border-top:1px solid var(--line);font-family:var(--mono)}
   .fn-hint{font-size:12.5px;color:var(--faint);margin:0 0 16px}
   .fn-hint a{color:var(--accent);text-decoration:none;font-weight:500}.fn-hint a:hover{text-decoration:underline}
   .fn-err{color:#b23b2e;font-size:12.5px;min-height:16px;margin-bottom:4px}
@@ -107,7 +108,7 @@
 <body>
 <div id="app"></div>
 <script type="module">
-  import { launch } from './js/hub.js';
+  import { launch } from './js/hub.js?v=diag1';
   launch().catch(e => { document.getElementById('app').innerHTML = '<div style="max-width:600px;margin:14vh auto;font-family:Georgia,serif;color:#6d685d;text-align:center">Footnote couldn’t start: ' + (e && e.message || e) + '</div>'; });
 </script>
 </body>
