@@ -4,6 +4,7 @@
 import { anchorFromSelection } from './anchor.js?v=b9529aa';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=b9529aa';
 import { wordDiff } from './textdiff.js';
+import { loadConfig, dataRepoParts } from './config.js';   // instance config (data repo, chapters); assistant-free by construction
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour
@@ -66,7 +67,8 @@ const addComment = (r, c) => ({ ...r, comments:[...r.comments, {
 const updateComment = (r, id, patch) => ({ ...r, comments:r.comments.map(c => c.id===id ? { ...c, ...patch } : c) });
 const deleteComment = (r, id) => ({ ...r, comments:r.comments.filter(c => c.id!==id), deleted:[...new Set([...(r.deleted||[]), id])] });
 // --- data-repo I/O (self-contained) ---
-const _API='https://api.github.com', _OWNER='mattlmccoy', _REPO='dissertation-tracker-data';
+const _API='https://api.github.com';
+let _OWNER='', _REPO='';   // populated from footnote.config.json at boot (before any fetch)
 const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' });
 async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
 async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
@@ -115,18 +117,8 @@ const effId = () => SHARED ? (localStorage.getItem('reviewerId') || ADVISOR.id) 
 const RELEASE_ID = SHARED ? 'general' : ADVISOR.id;                                              // shared gate
 const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;                // comment attribution
 const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
-const DATA_REPO = 'mattlmccoy/dissertation-tracker-data';
-const CHAPTERS = [
-  { id:'ch_introduction', n:1, title:'Introduction' },
-  { id:'ch_background',   n:2, title:'Background: RF Dielectric Heating and Prior RFAM' },
-  { id:'ch_platform',     n:3, title:'Design and Characterization of a Custom RFAM Platform' },
-  { id:'ch_modeling',     n:4, title:'Computational Modeling of RF Sintering' },
-  { id:'ch_compensation', n:5, title:'Simulation-Guided Compensation' },
-  { id:'ch_validation',   n:6, title:'Experimental Validation' },
-  { id:'ch_design_guide', n:7, title:'Design for RFAM: A Physics-Derived Capability Envelope' },
-  { id:'ch_materials',    n:8, title:'Extensibility of RF in Advanced Manufacturing' },
-  { id:'ch_conclusions',  n:9, title:'Conclusions' },
-];
+let DATA_REPO = '';        // populated from footnote.config.json at boot
+let CHAPTERS = [];         // the adopter's chapter manifest (config.chapters), populated at boot
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
 const TAGS = ['suggestion','wording','figure','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
@@ -1142,7 +1134,13 @@ function setupMobileSheet(){
   document.body.append(back, fab);
 }
 // ---------- boot ----------
-async function boot(){ keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
+async function boot(){
+  // Load the instance config FIRST — every fetch below resolves the data repo + chapters from it.
+  const _cfg = await loadConfig();
+  ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_cfg));
+  DATA_REPO = _cfg.dataRepo;
+  CHAPTERS = _cfg.chapters;
+  keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
