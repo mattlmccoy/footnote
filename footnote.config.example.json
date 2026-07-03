@@ -1,0 +1,25 @@
+{
+  "_comment": "Copy this to footnote.config.json and edit for your instance. This is the single source of truth read by BOTH the browser app and the CI. Required: owner, dataRepo, chapters. Everything else has a sensible default. After editing advisors, run `node scripts/gen-shells.mjs` to regenerate the per-reviewer shells. sourceRepo is optional and used ONLY by the export/direct-edit CI (v1.1) — set it to your own LaTeX source repo.",
+  "owner": "your-github-username",
+  "dataRepo": "your-github-username/my-review-data",
+  "sourceRepo": "your-github-username/my-thesis",
+  "brand": { "name": "Footnote", "logo": "brand/footnote-mark.png", "accent": "#2c64c4" },
+  "doc": { "noun": "thesis", "unitNoun": "chapter", "title": "My Thesis" },
+  "deadline": { "date": "2027-05-01", "label": "defense" },
+  "storagePrefix": "footnote",
+  "ownerPortalFile": "owner.html",
+  "advisorPortalFile": "advisor.html",
+  "inviteWorkflow": "invite.yml",
+  "ownerAuthorTag": "owner",
+  "reviewAgents": [],
+  "advisors": [
+    { "id": "AB", "name": "Dr. Ada Byron" },
+    { "id": "CD", "name": "Prof. Charles Darwin" }
+  ],
+  "chapters": [
+    { "id": "ch_intro", "n": 1, "title": "Introduction", "sourceFile": "chapters/intro.tex" },
+    { "id": "ch_methods", "n": 2, "title": "Methods", "sourceFile": "chapters/methods.tex" },
+    { "id": "ch_results", "n": 3, "title": "Results", "sourceFile": "chapters/results.tex" },
+    { "id": "ch_conclusion", "n": 4, "title": "Conclusion", "sourceFile": "chapters/conclusion.tex" }
+  ]
+}
