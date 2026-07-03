@@ -46,6 +46,38 @@ async function createRepo(t, fullName) {
   if (!r.ok) throw new Error('couldn’t create ' + fullName + ' (' + r.status + ') — check the token scope');
 }
 
+// The user's repos (full names), so fields can be PICKED instead of typed. Cached; paginates a few pages.
+let _repoCache = null;
+async function userRepos(t) {
+  if (_repoCache) return _repoCache;
+  const out = [];
+  try {
+    for (let page = 1; page <= 4; page++) {
+      const r = await fetch(`${API}/user/repos?per_page=100&sort=updated&page=${page}`, { headers: hdr(t), cache: 'no-store' });
+      if (!r.ok) break;
+      const d = await r.json(); out.push(...d.map(x => x.full_name));
+      if (d.length < 100) break;
+    }
+  } catch {}
+  _repoCache = out; return out;
+}
+// Attach a GitHub-repo autocomplete to a text input (still typeable). Suggestions from the user's repos.
+function attachRepoPicker(input, t) {
+  const menu = document.createElement('div'); menu.className = 'fn-ac';
+  input.insertAdjacentElement('afterend', menu);
+  let repos = [];
+  const show = () => {
+    const q = input.value.trim().toLowerCase();
+    const m = repos.filter(r => r.toLowerCase().includes(q)).slice(0, 8);
+    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('');
+    menu.style.display = m.length ? 'block' : 'none';
+    [...menu.children].forEach((el, i) => el.onmousedown = e => { e.preventDefault(); input.value = m[i]; menu.style.display = 'none'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  };
+  input.addEventListener('focus', async () => { if (!repos.length) repos = await userRepos(t); show(); });
+  input.addEventListener('input', show);
+  input.addEventListener('blur', () => setTimeout(() => { menu.style.display = 'none'; }, 160));
+}
+
 const MARK = accent => `<svg class="fn-mark" viewBox="0 0 52 52" aria-hidden="true"><rect x="3" y="3" width="46" height="46" rx="13" fill="${accent}"/><line x1="19" y1="13" x2="19" y2="39" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.7" fill="#fff"/></svg>`;
 
 export async function launch() {
@@ -72,7 +104,7 @@ export async function launch() {
   function connect() {
     frame(`<div class="fn-hero fn-reveal">
       <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
-      <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your advisors, and clean exports — running entirely on your GitHub. No server.</p>
+      <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
       <div class="fn-card">
         <div class="fn-step">Connect GitHub</div>
         <label class="fn-field">Access token<input id="fn-tok" type="password" placeholder="github_pat_…" autocomplete="off"></label>
@@ -90,16 +122,17 @@ export async function launch() {
   function setupWorkspace() {
     frame(`<div class="fn-hero fn-reveal">
       <h1 class="fn-h1">Set up your <em>workspace</em>.</h1>
-      <p class="fn-lead">Footnote keeps the list of your projects in one small private repo. Create it now, or point to one you already have.</p>
+      <p class="fn-lead">This is just a small private repo that holds the <b>list</b> of your projects — <b>not</b> your document or its comments. You'll pick those next, one per project. Create it now, or choose one you already have.</p>
       <div class="fn-card">
         <div class="fn-step">Workspace repo</div>
-        <label class="fn-field">Projects registry<input id="fn-hub" value="${esc(defaultHubRepo(cfg))}" spellcheck="false"></label>
+        <label class="fn-field">Projects index <span class="fn-sub">a tiny private repo, e.g. footnote-projects</span><input id="fn-hub" value="${esc(defaultHubRepo(cfg))}" spellcheck="false"></label>
         <div class="fn-err" id="fn-err"></div>
         <div class="fn-actions">
           <button class="fn-btn fn-btn-primary" id="fn-create">Create it for me</button>
-          <button class="fn-btn" id="fn-use">Use this repo</button>
+          <button class="fn-btn" id="fn-use">Use an existing repo</button>
         </div>
       </div></div>`, { signout: true });
+    attachRepoPicker(document.getElementById('fn-hub'), tok());
     const val = () => document.getElementById('fn-hub').value.trim();
     const err = m => document.getElementById('fn-err').textContent = m;
     document.getElementById('fn-use').onclick = () => { if (!/^[\w.-]+\/[\w.-]+$/.test(val())) return err('Use owner/repo format.'); localStorage.setItem(HUB_KEY, val()); render(); };
@@ -137,13 +170,14 @@ export async function launch() {
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
       <div class="fn-sheet-h">New project</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false"></label>
-      <label class="fn-field">Review data repo <span class="fn-sub">private — holds comments</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false"></label>
-      <label class="fn-field">LaTeX source repo <span class="fn-sub">optional — Overleaf-synced or your own</span><input id="np-src" placeholder="${esc(cfg.owner)}/my-thesis" spellcheck="false"></label>
+      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing — e.g. your dissertation repo (Overleaf-synced or local). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/phd-dissertation" spellcheck="false"></label>
+      <label class="fn-field">New comments repo <span class="fn-sub">a separate private repo Footnote writes comments + the reading view into — NOT your document</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false"></label>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="thesis" spellcheck="false"></label>
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
+    attachRepoPicker(q('#np-src'), tok()); attachRepoPicker(q('#np-data'), tok());
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
