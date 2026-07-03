@@ -1297,9 +1297,14 @@ function openSendMenu(){
   const menu = document.createElement('div'); menu.id = 'sendmenu';
   menu.style.cssText = 'position:absolute;top:50px;right:52px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:248px';
   const open = review.comments.filter(c => c.status === 'open').length;
+  // The review-agents row is the optional AI plugin — shown only when the instance configures
+  // reviewAgents (off by default; absent from the assistant-free build).
+  const agentsRow = _CFG.reviewAgents.length
+    ? `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">${escapeHtml(_CFG.reviewAgents.join(', '))} read-only critique</div></div></div>`
+    : '';
   menu.innerHTML = `
     <div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>
-    <div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">dissertation-adversary read-only critique</div></div></div>
+    ${agentsRow}
     <div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this chapter…</div><div class="smi-d">Word · PDF · Markdown, with comments</div></div></div>`;
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
@@ -1315,7 +1320,7 @@ async function sendJob(type){
     if (type === 'run-agents'){
       flash('Requesting agent review…');
       jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:current,
-        agents:['dissertation-adversary'], status:'queued', requested_ts:new Date().toISOString() });
+        agents:_CFG.reviewAgents, status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: agents '+current);
       flash(`Requested adversary review of Chapter ${chMeta(current).n}`);
       return;
