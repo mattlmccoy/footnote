@@ -12,6 +12,17 @@ export function addProject(projects, entry) {
   if ((projects || []).some(x => x.id === p.id)) throw new Error(`a project named that already exists (id "${p.id}")`);
   return [...(projects || []), p];
 }
+export function removeProject(projects, id) {
+  return (projects || []).filter(p => p.id !== id);
+}
+export function updateProject(projects, id, patch) {
+  return (projects || []).map(p => {
+    if (p.id !== id) return p;
+    const merged = { ...p, ...(patch || {}), id: p.id };   // id is stable — edits never change it
+    if (patch && patch.doc) merged.doc = { ...(p.doc || {}), ...patch.doc };   // keep unitNoun etc.
+    return normalizeProject(merged);
+  });
+}
 export function projectHref(cfg, id) {
   return `${cfg.ownerPortalFile || 'owner.html'}?project=${encodeURIComponent(id)}`;
 }
@@ -176,6 +187,7 @@ export async function launch() {
     // Each project is a face-out book standing on the shelf; its spine color comes from its position.
     const books = list.map((p, i) => `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
         <span class="fn-book-spine"></span>
+        <button class="fn-book-manage" data-mid="${esc(p.id)}" title="Manage project" aria-label="Manage ${esc(p.name)}">⋯</button>
         <span class="fn-book-type">${esc(p.doc.noun)}</span>
         <span class="fn-book-title">${esc(p.name)}</span>
         <span class="fn-book-repo">${esc(p.dataRepo)}</span>
@@ -191,31 +203,64 @@ export async function launch() {
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
       <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true });
-    const open = () => newProject(list);
+    const open = () => projectSheet(list, null);
     ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });
     document.getElementById('fn-chg').onclick = () => { localStorage.removeItem(HUB_KEY); render(); };
+    // per-book manage menu (Edit / Remove). The ⋯ button must not open the project.
+    list.forEach(p => {
+      const mb = root.querySelector(`.fn-book-manage[data-mid="${cssId(p.id)}"]`);
+      if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list); };
+    });
   }
 
-  function newProject(list) {
+  function cssId(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'); }
+
+  function closeManageMenu() { const m = document.getElementById('fn-menu'); if (m) m.remove(); }
+  function openManageMenu(anchor, project, list) {
+    closeManageMenu();
+    const menu = document.createElement('div'); menu.className = 'fn-menu'; menu.id = 'fn-menu';
+    menu.innerHTML = `<button class="fn-menu-item" data-act="edit">Edit details</button>
+      <button class="fn-menu-item fn-menu-danger" data-act="remove">Remove from library</button>`;
+    document.body.appendChild(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = (r.bottom + 6) + 'px';
+    menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
+    menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
+    menu.querySelector('[data-act="remove"]').onclick = () => { closeManageMenu(); confirmRemove(list, project); };
+  }
+
+  // One sheet for both New (existing=null) and Edit. On edit the comments repo is read-only (it's the
+  // project's identity + holds all existing comments) and no repo is created/seeded — only projects.json changes.
+  function projectSheet(list, existing) {
+    const editing = !!existing;
+    const v = existing || { name: '', sourceRepo: '', dataRepo: '', doc: { noun: 'thesis' } };
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
-      <div class="fn-sheet-h">New project</div>
-      <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false"></label>
-      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing — e.g. your dissertation repo (Overleaf-synced or local). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/phd-dissertation" spellcheck="false"></label>
-      <label class="fn-field">New comments repo <span class="fn-sub">a separate private repo Footnote writes comments + the reading view into — NOT your document</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false"></label>
-      <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="thesis" spellcheck="false"></label>
+      <div class="fn-sheet-h">${editing ? 'Edit project' : 'New project'}</div>
+      <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false" value="${esc(v.name)}"></label>
+      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing — e.g. your dissertation repo (Overleaf-synced or local). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/phd-dissertation" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
+      <label class="fn-field">${editing ? 'Comments repo' : 'New comments repo'} <span class="fn-sub">${editing ? 'where this project’s comments live — fixed once created' : 'a separate private repo Footnote writes comments + the reading view into — NOT your document'}</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false" value="${esc(v.dataRepo || '')}"${editing ? ' disabled' : ''}></label>
+      <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="${esc((v.doc && v.doc.noun) || 'thesis')}" spellcheck="false"></label>
       <div class="fn-err" id="np-err"></div>
-      <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
+      <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">${editing ? 'Save changes' : 'Create project'}</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
-    attachRepoPicker(q('#np-src'), tok()); attachRepoPicker(q('#np-data'), tok());
+    attachRepoPicker(q('#np-src'), tok());
+    if (!editing) attachRepoPicker(q('#np-data'), tok());
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
-      const name = q('#np-name').value.trim(), dataRepo = q('#np-data').value.trim();
-      if (!name || !dataRepo) return q('#np-err').textContent = 'Name and data repo are required.';
+      const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document', sourceRepo = q('#np-src').value.trim();
       try {
-        const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo: q('#np-src').value.trim(), doc: { noun: q('#np-noun').value.trim() || 'document', unitNoun: 'chapter' } });
+        if (editing) {
+          if (!name) return q('#np-err').textContent = 'Name is required.';
+          q('#np-save').disabled = true; q('#np-err').textContent = 'Saving…';
+          await writeProjects(hub(), tok(), updateProject(list, existing.id, { name, sourceRepo, doc: { noun } }));
+          close(); render(); return;
+        }
+        const dataRepo = q('#np-data').value.trim();
+        if (!name || !dataRepo) return q('#np-err').textContent = 'Name and data repo are required.';
+        const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo, doc: { noun, unitNoun: 'chapter' } });
         q('#np-save').disabled = true;
         q('#np-err').textContent = 'Creating the comments repo…';
         await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
@@ -227,6 +272,32 @@ export async function launch() {
     };
     setTimeout(() => q('#np-name').focus(), 30);
   }
+
+  // Remove = unregister only. It never deletes the comments repo or the document on GitHub — the confirm
+  // dialog says so and names the repo, so a click can't silently destroy a reviewer's work.
+  function confirmRemove(list, project) {
+    const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
+    scrim.innerHTML = `<div class="fn-sheet fn-reveal">
+      <div class="fn-sheet-h">Remove “${esc(project.name)}”?</div>
+      <p class="fn-remove-note">This only takes it off your shelf here. Your comments repo <span class="fn-mono">${esc(project.dataRepo)}</span> and your document stay on GitHub — nothing is deleted, and you can add it back anytime. To delete the repo itself, do that from GitHub.</p>
+      <div class="fn-err" id="rm-err"></div>
+      <div class="fn-actions fn-right"><button class="fn-btn" id="rm-x">Cancel</button><button class="fn-btn fn-btn-danger" id="rm-go">Remove from library</button></div></div>`;
+    root.appendChild(scrim);
+    const q = s => scrim.querySelector(s), close = () => scrim.remove();
+    scrim.onclick = e => { if (e.target === scrim) close(); };
+    q('#rm-x').onclick = close;
+    q('#rm-go').onclick = async () => {
+      q('#rm-go').disabled = true; q('#rm-err').textContent = 'Removing…';
+      try { await writeProjects(hub(), tok(), removeProject(list, project.id)); close(); render(); }
+      catch (e) { q('#rm-err').textContent = e.message; q('#rm-go').disabled = false; }
+    };
+  }
+
+  // Close the manage menu on any outside click or Escape (added once for the launcher's lifetime).
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#fn-menu') && !e.target.closest('.fn-book-manage')) closeManageMenu();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeManageMenu(); });
 
   function render() { if (!tok()) return connect(); if (!hub()) return setupWorkspace(); projects(); }
   render();

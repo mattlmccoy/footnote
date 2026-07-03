@@ -107,6 +107,20 @@
   .fn-book-new:hover .fn-book-plus{color:var(--accent)}
   .fn-book-newlabel{font-size:13.5px;font-weight:500}
   @media(max-width:640px){.fn-book{width:calc(50% - 11px)}}
+  /* per-book manage (⋯) button + dropdown menu */
+  .fn-book-manage{position:absolute;top:9px;right:9px;width:26px;height:22px;padding:0;border:none;border-radius:7px;
+    background:transparent;color:var(--faint);font-size:17px;line-height:1;cursor:pointer;letter-spacing:1px;
+    display:flex;align-items:center;justify-content:center;transition:background .14s,color .14s;z-index:2}
+  .fn-book-manage:hover{background:rgba(40,34,20,.08);color:var(--ink)}
+  .fn-menu{position:fixed;z-index:80;min-width:172px;background:var(--card);border:1px solid var(--line);
+    border-radius:11px;padding:5px;box-shadow:0 16px 40px -14px rgba(40,34,20,.42);animation:rise .16s ease both}
+  .fn-menu-item{display:block;width:100%;text-align:left;background:none;border:none;border-radius:7px;
+    padding:9px 11px;font-family:var(--sans);font-size:13.5px;color:var(--ink);cursor:pointer}
+  .fn-menu-item:hover{background:rgba(44,100,196,.09);color:var(--accent-ink)}
+  .fn-menu-danger{color:#b23b2e}.fn-menu-danger:hover{background:rgba(178,59,46,.09);color:#8f2c22}
+  .fn-btn-danger{background:#b23b2e;border-color:#b23b2e;color:#fff}.fn-btn-danger:hover{background:#8f2c22}
+  .fn-remove-note{font-size:13px;color:var(--muted);line-height:1.55;margin:0 0 16px}
+  .fn-field input:disabled{opacity:.6;cursor:not-allowed;background:var(--paper-2)}
 
   .fn-grid{display:grid;gap:14px}
   .fn-proj{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;

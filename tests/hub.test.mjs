@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -48,4 +48,43 @@ test('spineColor cycles through the SPINES palette by index', () => {
 
 test('spineColor is deterministic and stable per index', () => {
   assert.equal(spineColor(3), spineColor(3));
+});
+
+const twoProjects = () => addProject(
+  addProject([], { id: 'a', name: 'A', dataRepo: 'alice/a-data', doc: { noun: 'thesis', unitNoun: 'section' } }),
+  { id: 'b', name: 'B', dataRepo: 'alice/b-data' });
+
+test('removeProject unregisters the matching id and leaves the rest', () => {
+  const out = removeProject(twoProjects(), 'a');
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, 'b');
+});
+
+test('removeProject is a no-op for an unknown id', () => {
+  const base = twoProjects();
+  assert.deepEqual(removeProject(base, 'nope'), base);
+  assert.equal(removeProject([], 'x').length, 0);
+});
+
+test('updateProject patches fields but keeps the id stable', () => {
+  const out = updateProject(twoProjects(), 'a', { name: 'A renamed', sourceRepo: 'alice/src' });
+  const a = out.find(p => p.id === 'a');
+  assert.equal(a.id, 'a');                 // id never changes on edit
+  assert.equal(a.name, 'A renamed');
+  assert.equal(a.sourceRepo, 'alice/src');
+  assert.equal(a.dataRepo, 'alice/a-data'); // untouched
+  assert.equal(out.find(p => p.id === 'b').name, 'B');   // other project untouched
+});
+
+test('updateProject deep-merges doc so unitNoun survives a noun edit', () => {
+  const out = updateProject(twoProjects(), 'a', { doc: { noun: 'paper' } });
+  const a = out.find(p => p.id === 'a');
+  assert.equal(a.doc.noun, 'paper');
+  assert.equal(a.doc.unitNoun, 'section');   // NOT reset to the default
+});
+
+test('updateProject ignores an attempt to change the id via patch', () => {
+  const out = updateProject(twoProjects(), 'a', { id: 'hacked', name: 'A2' });
+  assert.ok(out.find(p => p.id === 'a'));
+  assert.ok(!out.find(p => p.id === 'hacked'));
 });
