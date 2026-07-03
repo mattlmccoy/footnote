@@ -93,5 +93,13 @@ export async function loadConfig(fetchImpl, opts = {}) {
   return _cache;
 }
 
+// Synchronous accessor for the already-loaded config. Boot calls loadConfig() once before any
+// render; every module (gh.js, ghsecrets.js, app.js, advisor.js) then reads the cached singleton
+// synchronously when it builds a URL or a storage key. Throws if called before loadConfig.
+export function getConfig() {
+  if (!_cache) throw new ConfigError('config not loaded — call loadConfig() at boot before getConfig()');
+  return _cache;
+}
+
 // Test-only: reset the module cache.
 export function _resetConfigCache() { _cache = null; }

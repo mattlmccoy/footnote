@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   normalizeConfig, ConfigError, dataRepoParts, storageKey,
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
+  getConfig, _resetConfigCache,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data', chapters: [{ id: 'ch1', n: 1, title: 'Intro' }] };
@@ -98,4 +99,11 @@ test('loadConfig fetches, normalizes, and caches footnote.config.json', async ()
 test('loadConfig throws a clear error when the config is missing', async () => {
   const missing = async () => ({ ok: false, status: 404 });
   await assert.rejects(() => loadConfig(missing, { force: true }), /footnote\.config\.json/);
+});
+
+test('getConfig throws before load and returns the cached config after', async () => {
+  _resetConfigCache();
+  assert.throws(() => getConfig(), ConfigError);
+  await loadConfig(async () => ({ ok: true, json: async () => MIN }), { force: true });
+  assert.equal(getConfig().owner, 'alice');
 });
