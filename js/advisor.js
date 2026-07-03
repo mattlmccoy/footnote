@@ -1,10 +1,10 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=proj1';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj1';
-import { wordDiff } from './textdiff.js?v=proj1';
-import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=proj1';   // instance config + chapter manifest; assistant-free by construction
+import { anchorFromSelection } from './anchor.js?v=e7e896e';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=e7e896e';
+import { wordDiff } from './textdiff.js?v=e7e896e';
+import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=e7e896e';   // instance config + chapter manifest; assistant-free by construction
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour

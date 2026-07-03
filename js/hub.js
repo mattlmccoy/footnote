@@ -1,7 +1,7 @@
 // Footnote launcher — the multi-project homepage. Lists the owner's review projects from the hub repo's
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token.
-import { loadConfig, loadProjects, normalizeProject, storageKey } from './config.js';
+import { loadConfig, loadProjects, normalizeProject, storageKey } from './config.js?v=e7e896e';
 
 // ---- pure helpers (unit-tested) ----
 
