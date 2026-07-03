@@ -1,12 +1,12 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=753cd31';
-import { anchorFromSelection } from './anchor.js?v=753cd31';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=753cd31';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=753cd31';
-import { sealToBase64 } from './vendor/seal.js?v=753cd31';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=753cd31';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=753cd31';
-import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=753cd31';
-import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=753cd31';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=72cf4f8';
+import { anchorFromSelection } from './anchor.js?v=72cf4f8';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=72cf4f8';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=72cf4f8';
+import { sealToBase64 } from './vendor/seal.js?v=72cf4f8';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=72cf4f8';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=72cf4f8';
+import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=72cf4f8';
+import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=72cf4f8';
 // Load the instance config ONCE before the module body evaluates — every constant below derives
 // from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
 // in this module type; the boot IIFE at the bottom runs only after this resolves.
