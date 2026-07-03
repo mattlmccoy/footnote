@@ -2,7 +2,7 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject } from './config.js?v=632c317';
+import { loadConfig, loadProjects, normalizeProject } from './config.js?v=priv1';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -46,39 +46,41 @@ async function createRepo(t, fullName) {
   if (!r.ok) throw new Error('couldn’t create ' + fullName + ' (' + r.status + ') — check the token scope');
 }
 
-// The user's repos (full names), so fields can be PICKED instead of typed. Cached; paginates a few pages.
-// Also records whether ANY private repo was visible — used to warn about an under-scoped token.
-let _repoCache = null, _seenPrivate = false;
+// The user's repos, so fields can be PICKED instead of typed. Cache is KEYED BY TOKEN so switching to a
+// new (e.g. private-enabled) token always refetches. Records whether any private repo was visible.
+let _repoCache = null;   // { token, names:[], seenPrivate:bool }
 async function userRepos(t) {
-  if (_repoCache) return _repoCache;
-  const out = [];
+  if (_repoCache && _repoCache.token === t) return _repoCache;
+  const out = []; let seenPrivate = false;
   try {
     // visibility=all + all affiliations so PRIVATE and org repos are included (given a token that can see them).
     for (let page = 1; page <= 6; page++) {
       const r = await fetch(`${API}/user/repos?per_page=100&visibility=all&affiliation=owner,collaborator,organization_member&sort=updated&page=${page}`, { headers: hdr(t), cache: 'no-store' });
       if (!r.ok) break;
       const d = await r.json(); if (!Array.isArray(d)) break;
-      if (d.some(x => x.private)) _seenPrivate = true;
+      if (d.some(x => x.private)) seenPrivate = true;
       out.push(...d.map(x => x.full_name));
       if (d.length < 100) break;
     }
   } catch {}
-  _repoCache = out; return out;
+  _repoCache = { token: t, names: out, seenPrivate };
+  return _repoCache;
 }
 // Attach a GitHub-repo autocomplete to a text input (still typeable). Suggestions from the user's repos.
 function attachRepoPicker(input, t) {
   const menu = document.createElement('div'); menu.className = 'fn-ac';
   input.insertAdjacentElement('afterend', menu);
-  let repos = [];
-  const warn = _seenPrivate ? '' : `<div class="fn-ac-hint">Only public repos? Your token can't see private ones — <a href="${TOKEN_URL}" target="_blank" rel="noopener">generate one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
+  let data = { names: [], seenPrivate: true };
   const show = () => {
     const q = input.value.trim().toLowerCase();
-    const m = repos.filter(r => r.toLowerCase().includes(q)).slice(0, 8);
-    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + (_seenPrivate ? '' : warn);
-    menu.style.display = (m.length || !_seenPrivate) ? 'block' : 'none';
+    const m = data.names.filter(r => r.toLowerCase().includes(q)).slice(0, 8);
+    // Recompute the hint LIVE from the current fetch result (never a stale precomputed value).
+    const hint = data.seenPrivate ? '' : `<div class="fn-ac-hint">Only public repos? Your token can't see private ones — <a href="${TOKEN_URL}" target="_blank" rel="noopener">generate one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
+    menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + hint;
+    menu.style.display = (m.length || hint) ? 'block' : 'none';
     [...menu.querySelectorAll('.fn-ac-item')].forEach((el, i) => el.onmousedown = e => { e.preventDefault(); input.value = m[i]; menu.style.display = 'none'; input.dispatchEvent(new Event('input', { bubbles: true })); });
   };
-  input.addEventListener('focus', async () => { if (!repos.length) repos = await userRepos(t); show(); });
+  input.addEventListener('focus', async () => { data = await userRepos(t); show(); });
   input.addEventListener('input', show);
   input.addEventListener('blur', () => setTimeout(() => { menu.style.display = 'none'; }, 200));
 }
