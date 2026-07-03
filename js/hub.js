@@ -19,6 +19,10 @@ export function defaultHubRepo(cfg) { return `${cfg.owner}/footnote-projects`; }
 export function projectIdFromName(name) {
   return String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
 }
+// Book-spine palette for the shelf — warm editorial hues that harmonize with the paper background.
+// Each project gets a spine color by its position so the shelf reads like a row of different books.
+export const SPINES = ['#2c64c4', '#b5643c', '#4a7c59', '#7a4b73', '#c08a2d', '#2f7d80', '#93313e'];
+export function spineColor(i) { return SPINES[((i % SPINES.length) + SPINES.length) % SPINES.length]; }
 
 // ---- I/O + DOM (browser only) ----
 
@@ -166,20 +170,26 @@ export async function launch() {
   }
 
   async function projects() {
-    frame(`<div class="fn-loading fn-reveal">Loading your projects…</div>`, { signout: true });
+    frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
     let list = [];
     try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
-    const cards = list.map((p, i) => `<a class="fn-proj fn-reveal" style="--i:${i}" href="${projectHref(cfg, p.id)}">
-        <span class="fn-proj-num">${String(i + 1).padStart(2, '0')}</span>
-        <span class="fn-proj-name">${esc(p.name)}</span>
-        <span class="fn-proj-meta">${esc(p.doc.noun)}<span class="fn-dot">·</span><span class="fn-mono">${esc(p.dataRepo)}</span></span>
-        <span class="fn-proj-go">Open →</span></a>`).join('');
-    frame(`<div class="fn-head fn-reveal"><h1 class="fn-h1">Your projects</h1><button class="fn-btn fn-btn-primary" id="fn-new">＋ New project</button></div>
-      ${list.length ? `<div class="fn-grid">${cards}</div>`
+    // Each project is a face-out book standing on the shelf; its spine color comes from its position.
+    const books = list.map((p, i) => `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
+        <span class="fn-book-spine"></span>
+        <span class="fn-book-type">${esc(p.doc.noun)}</span>
+        <span class="fn-book-title">${esc(p.name)}</span>
+        <span class="fn-book-repo">${esc(p.dataRepo)}</span>
+        <span class="fn-book-go">Open →</span></a>`).join('');
+    // "Add a book" tile stands at the end of the shelf, same footprint as the books.
+    const addTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
+        <span class="fn-book-plus">＋</span><span class="fn-book-newlabel">New project</span></button>`;
+    frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
+      ${list.length
+        ? `<div class="fn-shelf">${books}${addTile}</div><div class="fn-shelf-board"></div>`
         : `<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
-             <h2 class="fn-empty-h">Start your first project</h2>
-             <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers.</p>
-             <button class="fn-btn fn-btn-primary" id="fn-new2">Start a project</button></div>`}
+             <h2 class="fn-empty-h">Your shelf is empty</h2>
+             <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
+             <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
       <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true });
     const open = () => newProject(list);
     ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });

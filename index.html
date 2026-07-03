@@ -27,7 +27,7 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.035'/%3E%3C/svg%3E");}
   #app{position:relative;z-index:1}
 
-  .fn-shell{max-width:760px;margin:0 auto;padding:0 28px 80px;position:relative}
+  .fn-shell{max-width:880px;margin:0 auto;padding:0 28px 80px;position:relative}
   /* the manuscript margin rule — the "footnote" motif */
   .fn-rule{position:absolute;left:28px;top:96px;bottom:70px;width:2px;background:linear-gradient(var(--accent),rgba(44,100,196,.15));border-radius:2px}
   @media(max-width:640px){.fn-rule{display:none}}
@@ -68,8 +68,45 @@
   .fn-btn-primary{background:var(--accent);border-color:var(--accent);color:#fff}
   .fn-btn-primary:hover{background:var(--accent-ink)}
 
-  .fn-head{display:flex;align-items:flex-end;gap:16px;margin:14px 0 26px}
-  .fn-head .fn-h1{margin:0}.fn-head .fn-btn{margin-left:auto;margin-bottom:5px}
+  .fn-head{margin:20px 0 30px}
+  .fn-head .fn-h1{margin:2px 0 0}
+  .fn-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+
+  /* ── Document library: books standing face-out on a shelf ── */
+  .fn-shelf{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 22px;padding:6px 4px 0}
+  .fn-shelf-board{height:12px;margin:0 -4px 2px;border-radius:0 0 6px 6px;
+    background:linear-gradient(#e7e0d0,#d8cfba);
+    box-shadow:inset 0 2px 0 rgba(255,255,255,.5), 0 10px 22px -12px rgba(40,34,20,.4);}
+  .fn-book{position:relative;display:flex;flex-direction:column;width:176px;min-height:236px;
+    padding:20px 20px 18px 26px;text-decoration:none;color:inherit;text-align:left;cursor:pointer;
+    background:linear-gradient(160deg,#fffefb 0%,#faf7ef 100%);
+    border:1px solid var(--line);border-left:none;border-radius:3px 12px 12px 3px;
+    box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 14px 26px -16px rgba(40,34,20,.5), 0 3px 6px -4px rgba(40,34,20,.3);
+    transition:transform .18s cubic-bezier(.2,.7,.2,1),box-shadow .2s;font-family:var(--sans)}
+  /* the colored spine on the book's left edge */
+  .fn-book-spine{position:absolute;left:0;top:0;bottom:0;width:11px;border-radius:3px 0 0 3px;
+    background:linear-gradient(90deg,color-mix(in srgb,var(--spine) 78%,#000) 0%,var(--spine) 55%,color-mix(in srgb,var(--spine) 70%,#fff) 100%);
+    box-shadow:1px 0 0 rgba(0,0,0,.12), inset -2px 0 3px rgba(0,0,0,.18)}
+  .fn-book:hover{transform:translateY(-8px) rotate(-.4deg);
+    box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 26px 40px -18px rgba(40,34,20,.55), 0 6px 10px -6px rgba(40,34,20,.35)}
+  .fn-book-type{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+  .fn-book-title{font-family:var(--serif);font-weight:500;font-size:20px;line-height:1.15;letter-spacing:-.01em;
+    color:var(--ink);margin-top:10px;
+    display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .fn-book-repo{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:auto;padding-top:14px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fn-book-go{font-size:12px;font-weight:600;color:var(--accent);margin-top:6px;opacity:0;transform:translateY(4px);
+    transition:opacity .18s,transform .18s}
+  .fn-book:hover .fn-book-go{opacity:1;transform:translateY(0)}
+  /* add-a-book tile */
+  .fn-book-new{align-items:center;justify-content:center;gap:8px;
+    background:transparent;border:1.5px dashed #cfc7b4;border-left:1.5px dashed #cfc7b4;border-radius:12px;
+    box-shadow:none;color:var(--muted)}
+  .fn-book-new:hover{transform:translateY(-8px);border-color:var(--accent);color:var(--accent);box-shadow:0 20px 34px -20px rgba(40,34,20,.4)}
+  .fn-book-plus{font-size:30px;font-weight:300;line-height:1;color:var(--faint)}
+  .fn-book-new:hover .fn-book-plus{color:var(--accent)}
+  .fn-book-newlabel{font-size:13.5px;font-weight:500}
+  @media(max-width:640px){.fn-book{width:calc(50% - 11px)}}
 
   .fn-grid{display:grid;gap:14px}
   .fn-proj{position:relative;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:16px;

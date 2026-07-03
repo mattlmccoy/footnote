@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, projectHref, defaultHubRepo, projectIdFromName } from '../js/hub.js';
+import { addProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -35,4 +35,17 @@ test('projectIdFromName slugs a project name to a stable id', () => {
   assert.equal(projectIdFromName('My Thesis'), 'my-thesis');
   assert.equal(projectIdFromName('  Paper #2!  '), 'paper-2');
   assert.equal(projectIdFromName(''), 'project');
+});
+
+test('spineColor cycles through the SPINES palette by index', () => {
+  assert.ok(Array.isArray(SPINES) && SPINES.length >= 4, 'SPINES is a non-trivial palette');
+  assert.ok(SPINES.every(c => /^#[0-9a-fA-F]{6}$/.test(c)), 'every spine is a hex color');
+  assert.equal(spineColor(0), SPINES[0]);
+  assert.equal(spineColor(1), SPINES[1]);
+  assert.equal(spineColor(SPINES.length), SPINES[0]);       // wraps
+  assert.equal(spineColor(SPINES.length + 2), SPINES[2]);   // wraps + offset
+});
+
+test('spineColor is deterministic and stable per index', () => {
+  assert.equal(spineColor(3), spineColor(3));
 });
