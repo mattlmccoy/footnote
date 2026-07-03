@@ -49,6 +49,36 @@ function allChapters(tex) {
   return out;
 }
 
+// Dedupe ids + number a raw [{title, id, sourceFile}] list into the chapter manifest shape.
+function finalizeChapters(raw) {
+  const used = new Set();
+  return raw.map((c, i) => {
+    let id = c.id, k = 2;
+    while (used.has(id)) id = `${c.id}-${k++}`;
+    used.add(id);
+    return { id, n: i + 1, title: c.title, sourceFile: c.sourceFile ?? null };
+  });
+}
+
+// Parse chapters from the WordprocessingML `document.xml` (already unzipped from the .docx). Every
+// paragraph styled Heading 1 (any casing / "Heading 1" / "Heading1") becomes a chapter; its text is the
+// concatenation of its runs. The unzip (bytes → xml) is done by the caller (import UI). sourceFile is null
+// (Word docs aren't split into per-chapter source files). Pure + testable.
+export function parseDocxChapters(documentXml) {
+  const xml = String(documentXml);
+  const paras = xml.match(/<w:p\b[\s\S]*?<\/w:p>/g) || [];
+  const raw = [];
+  for (const p of paras) {
+    const style = (p.match(/<w:pStyle\s+w:val="([^"]*)"/) || [])[1] || '';
+    if (!/^heading\s*1$/i.test(style)) continue;
+    const text = (p.match(/<w:t\b[^>]*>([\s\S]*?)<\/w:t>/g) || [])
+      .map(t => t.replace(/<[^>]+>/g, '')).join('')
+      .replace(/\s+/g, ' ').trim();
+    if (text) raw.push({ title: text, id: slugifyId(text), sourceFile: null });
+  }
+  return finalizeChapters(raw);
+}
+
 // Parse chapters from a LaTeX document. resolveFile(path) → the content of an \include/\input'd file
 // (path as written, without .tex), or null. Order follows the includes; a single-file doc falls back to
 // its own \chapter commands. Files/None with no \chapter are skipped. Ids are deduped.
@@ -68,13 +98,5 @@ export function parseLatexChapters(mainTex, resolveFile = () => null) {
   if (raw.length === 0) {
     for (const title of allChapters(clean)) raw.push({ title, id: slugifyId(title), sourceFile: 'main.tex' });
   }
-  // Number + dedupe ids.
-  const seen = new Map();
-  return raw.map((c, i) => {
-    let id = c.id; const base = id;
-    while (seen.has(id)) id = `${base}-${(seen.get(base) || 1) + 1}`;
-    seen.set(base, (seen.get(base) || 1) + (base === id ? 1 : 1));
-    seen.set(id, 1);
-    return { id, n: i + 1, title: c.title, sourceFile: c.sourceFile };
-  });
+  return finalizeChapters(raw);
 }

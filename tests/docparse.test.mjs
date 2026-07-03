@@ -1,6 +1,32 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters, slugifyId, latexTitleText } from '../js/docparse.js';
+import { parseLatexChapters, slugifyId, latexTitleText, parseDocxChapters } from '../js/docparse.js';
+
+const wp = (style, ...texts) =>
+  `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr>${texts.map(t => `<w:r><w:t>${t}</w:t></w:r>`).join('')}</w:p>`;
+
+test('parseDocxChapters extracts Heading 1 paragraphs in order', () => {
+  const xml = `<w:document><w:body>${wp('Heading1', 'Introduction')}${wp('Normal', 'body text')}${wp('Heading1', 'Methods')}</w:body></w:document>`;
+  assert.deepEqual(parseDocxChapters(xml), [
+    { id: 'introduction', n: 1, title: 'Introduction', sourceFile: null },
+    { id: 'methods', n: 2, title: 'Methods', sourceFile: null },
+  ]);
+});
+
+test('parseDocxChapters concatenates split runs within a heading', () => {
+  const xml = `<w:body>${wp('Heading1', 'Chap', 'ter ', 'One')}</w:body>`;
+  assert.equal(parseDocxChapters(xml)[0].title, 'Chapter One');
+});
+
+test('parseDocxChapters matches heading-style variants but not Heading 2', () => {
+  const xml = `<w:body>${wp('heading1', 'A')}${wp('Heading2', 'sub')}${wp('Heading 1', 'B')}</w:body>`;
+  assert.deepEqual(parseDocxChapters(xml).map(c => c.title), ['A', 'B']);
+});
+
+test('parseDocxChapters skips empty headings and dedupes ids', () => {
+  const xml = `<w:body>${wp('Heading1', '')}${wp('Heading1', 'Intro')}${wp('Heading1', 'Intro')}</w:body>`;
+  assert.deepEqual(parseDocxChapters(xml).map(c => c.id), ['intro', 'intro-2']);
+});
 
 test('slugifyId makes stable lowercase ids', () => {
   assert.equal(slugifyId('Introduction'), 'introduction');
