@@ -1,7 +1,11 @@
 // GitHub Actions secrets / variables / workflow-dispatch helper for the owner Connect-email flow.
 // Every network fn takes an explicit token argument — it NEVER reads localStorage, so a one-time
 // elevated token can flow through without being persisted. Repo mirrors gh.js (the data repo).
-const API = 'https://api.github.com', OWNER = 'mattlmccoy', REPO = 'dissertation-tracker-data';
+import { getConfig, dataRepoParts } from './config.js';
+const API = 'https://api.github.com';
+// data repo + invite workflow are read from footnote.config.json (loaded at boot), not hardcoded.
+const slug = () => { const { owner, repo } = dataRepoParts(getConfig()); return `${owner}/${repo}`; };
+const inviteWorkflow = () => getConfig().inviteWorkflow;
 const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.github+json' });
 
 // Provider prefill table (pure data). domains[] drives detectProvider. keyUrl/keyLabel deep-link the
@@ -54,7 +58,7 @@ export function isScopeError(e){
 
 // GET the repo Actions public key. Throwing on 403 is the signal the token lacks Secrets:write.
 export async function getPublicKey(tok){
-  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/secrets/public-key`, { headers:hdr(tok), cache:'no-store' });
+  const r = await fetch(`${API}/repos/${slug()}/actions/secrets/public-key`, { headers:hdr(tok), cache:'no-store' });
   if (r.status === 403 || r.status === 404) { const e = new Error('no-secret-scope'); e.code = 'NOSCOPE'; throw e; }
   if (!r.ok) throw new Error('public-key ' + r.status);
   return r.json();   // { key_id, key }
@@ -62,7 +66,7 @@ export async function getPublicKey(tok){
 
 // PUT one sealed secret. sealFn(pubKeyB64, value) -> base64 (from vendor/seal.mjs).
 export async function putSecret(tok, pk, sealFn, name, value){
-  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/secrets/${name}`, {
+  const r = await fetch(`${API}/repos/${slug()}/actions/secrets/${name}`, {
     method:'PUT', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
     body: JSON.stringify({ encrypted_value: sealFn(pk.key, value), key_id: pk.key_id }) });
   if (!r.ok) throw new Error(`secret ${name}: ${r.status} ${(await r.text()).slice(0,120)}`);
@@ -70,11 +74,11 @@ export async function putSecret(tok, pk, sealFn, name, value){
 
 // Set a plain (non-secret) Actions variable: POST, and on 409 (exists) PATCH.
 export async function setVariable(tok, name, value){
-  let r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/variables`, {
+  let r = await fetch(`${API}/repos/${slug()}/actions/variables`, {
     method:'POST', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
     body: JSON.stringify({ name, value }) });
   if (r.status === 409){
-    r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/variables/${name}`, {
+    r = await fetch(`${API}/repos/${slug()}/actions/variables/${name}`, {
       method:'PATCH', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
       body: JSON.stringify({ name, value }) });
   }
@@ -83,15 +87,15 @@ export async function setVariable(tok, name, value){
 
 // Fire the invite workflow as a test send to testEmail. Needs actions:write / workflow scope.
 export async function dispatchInvite(tok, testEmail){
-  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/workflows/invite.yml/dispatches`, {
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/${inviteWorkflow()}/dispatches`, {
     method:'POST', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
     body: JSON.stringify({ ref:'main', inputs:{ test_email: testEmail } }) });
   if (!r.ok) throw new Error('dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
 }
 
-// Newest workflow_dispatch run id/status/conclusion for invite.yml.
+// Newest workflow_dispatch run id/status/conclusion for the invite workflow.
 export async function latestRun(tok){
-  const r = await fetch(`${API}/repos/${OWNER}/${REPO}/actions/workflows/invite.yml/runs?event=workflow_dispatch&per_page=1`, { headers:hdr(tok), cache:'no-store' });
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/${inviteWorkflow()}/runs?event=workflow_dispatch&per_page=1`, { headers:hdr(tok), cache:'no-store' });
   if (!r.ok) throw new Error('runs ' + r.status);
   const d = await r.json(); const run = (d.workflow_runs||[])[0];
   return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
