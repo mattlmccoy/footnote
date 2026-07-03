@@ -1,16 +1,27 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=753cd31';
-import { anchorFromSelection } from './anchor.js?v=753cd31';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=753cd31';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=753cd31';
-import { sealToBase64 } from './vendor/seal.js?v=753cd31';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=753cd31';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=753cd31';
-import { loadConfig, dataRepoParts, loadChapters } from './config.js?v=753cd31';
-import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=753cd31';
-// Load the instance config ONCE before the module body evaluates — every constant below derives
-// from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
-// in this module type; the boot IIFE at the bottom runs only after this resolves.
-const _CFG = await loadConfig();
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=proj1';
+import { anchorFromSelection } from './anchor.js?v=proj1';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=proj1';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=proj1';
+import { sealToBase64 } from './vendor/seal.js?v=proj1';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=proj1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=proj1';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject } from './config.js?v=proj1';
+import { parseLatexChapters, parseDocxChapters } from './docparse.js?v=proj1';
+// Load the effective config before the module body evaluates. Two modes:
+//  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
+//    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
+//  • single-project: no hubRepo → footnote.config.json IS the config (backward compatible).
+const _appCfg = await loadConfig();
+const _projectId = new URLSearchParams(location.search).get('project');
+let _CFG = _appCfg;
+if (_appCfg.hubRepo) {
+  if (!_projectId) { location.replace('index.html'); }
+  else {
+    const _projects = await loadProjects(_appCfg, localStorage.getItem('ghpat'));
+    try { _CFG = resolveProject(_appCfg, _projects, _projectId); }
+    catch { location.replace('index.html'); }
+  }
+}
 // Document nouns for user-facing copy (default "dissertation"/"chapter"; an adopter sets e.g.
 // "thesis"/"section" or "paper"/"part"). Capitalized variants for sentence starts.
 const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
