@@ -1,4 +1,4 @@
-import { getConfig, dataRepoParts } from './config.js';
+import { getConfig, dataRepoParts } from './config.js?v=d0ee84d';
 export const reviewPath = ch => `reviews/${ch}.json`;
 export const mergeReview = (local, remote) => {
   if (!remote) return local;

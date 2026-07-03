@@ -1,11 +1,11 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=b9529aa';
-import { anchorFromSelection } from './anchor.js?v=b9529aa';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=b9529aa';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=b9529aa';
-import { sealToBase64 } from './vendor/seal.js?v=b9529aa';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=b9529aa';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=b9529aa';
-import { loadConfig, dataRepoParts } from './config.js';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=d0ee84d';
+import { anchorFromSelection } from './anchor.js?v=d0ee84d';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=d0ee84d';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=d0ee84d';
+import { sealToBase64 } from './vendor/seal.js?v=d0ee84d';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=d0ee84d';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=d0ee84d';
+import { loadConfig, dataRepoParts } from './config.js?v=d0ee84d';
 // Load the instance config ONCE before the module body evaluates — every constant below derives
 // from footnote.config.json (owner, data repo, chapters, advisors, deadline, brand). Top-level await
 // in this module type; the boot IIFE at the bottom runs only after this resolves.
