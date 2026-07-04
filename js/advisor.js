@@ -15,7 +15,7 @@ function loadDemoChapter(){
   const cmt = document.getElementById('comments');
   const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
   el.innerHTML = `<article id="doc">
-    <h1>Chapter 3 · Sample (tour preview)</h1>
+    <h1>${UNITC} 3 · Sample (tour preview)</h1>
     <p id="tour-demo-select">This preview chapter shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; radio-frequency heating enables rapid, volumetric energy delivery through a dielectric medium. Select any words here to attach a comment.</p>
     <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</p>
     <figure><img alt="Sample figure" src="${fig}"><figcaption>Figure 3.1. A sample figure — click it to comment on the figure itself.</figcaption></figure>
@@ -28,7 +28,7 @@ function loadDemoChapter(){
     cmt.style.display = '';
     cmt.innerHTML = `<div class="lbl">MY COMMENTS<span style="margin-left:auto">1 active</span></div>
       <div id="tour-demo-note" style="border:.5px solid var(--border);border-radius:9px;padding:10px;margin-bottom:10px">
-        <div style="font-size:11px;color:var(--text-3)">§ Chapter 3 · on "reviewing works"</div>
+        <div style="font-size:11px;color:var(--text-3)">§ ${UNITC} 3 · on "reviewing works"</div>
         <div style="font-size:13px;margin:5px 0 7px;color:var(--text)">Consider clarifying this sentence for a general reader.</div>
         <span class="chip" style="background:var(--wording-bg);color:var(--wording)">wording</span></div>
       `;
@@ -119,7 +119,7 @@ const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;
 const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
 let DATA_REPO = '';        // populated from footnote.config.json at boot
 let CHAPTERS = [];         // the adopter's chapter manifest (config.chapters), populated at boot
-let DOC = '', DOCC = '', UNIT = '';   // document nouns for copy (config.doc), populated at boot
+let DOC = '', DOCC = '', UNIT = '', UNITC = '';   // document nouns for copy (config.doc), populated at boot
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
 const TAGS = ['suggestion','wording','figure','question','clarity','citation'];
 const shortTitle = t => { const s = t.split(':')[0].trim(); return s.length <= 34 ? s : s.slice(0,34).replace(/\s\S*$/,'') + '…'; };
@@ -251,7 +251,7 @@ function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catc
 async function loadChapter(ch){
   if (ch === '__outline__'){ loadOutline(); return; }   // the outline isn't a real chapter
   current = ch; review = loadLocal(ch);
-  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading Chapter ${chMeta(ch).n}…</div></div>`;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading ${UNITC} ${chMeta(ch).n}…</div></div>`;
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
   renderTopbar(); renderComments();
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
@@ -260,7 +260,7 @@ async function loadChapter(ch){
   try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status); renderDoc(await r.text()); }
   catch(e){ if (is401(e)) return showKeyExpired();
-    read.innerHTML = `<div class="empty">Couldn't load Chapter ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
+    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -762,7 +762,7 @@ function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilt
 function renderTopbar(){ const m=chMeta(current);
   document.getElementById('topbar').innerHTML=`
     <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
-    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
+    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${UNITC} ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -805,7 +805,7 @@ function enterHome(){
   const list=CHAPTERS.filter(c=>released.includes(c.id));
   const cards=list.map(c=>{ const r=JSON.parse(localStorage.getItem(localKey(c.id))||'null'); const n=r?.comments?.length||0;
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
-      <div style="font-size:11.5px;color:var(--text-3)">Chapter ${c.n}</div>
+      <div style="font-size:11.5px;color:var(--text-3)">${UNITC} ${c.n}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
       <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
@@ -875,7 +875,7 @@ function renderResponses(groups){
         <div class="resp-replybox" style="display:none"><textarea rows="2" placeholder="If this wasn't fully addressed, add a note for the author…"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary resp-send">Send reply</button><button class="btn resp-cancel">Cancel</button></div></div>
       </div>`;
   };
-  const head=g=>g.ch==='__outline__'?'Proposed outline':`Chapter ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
+  const head=g=>g.ch==='__outline__'?'Proposed outline':`${UNITC} ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
   const activeSecs=groups.map(g=>{ const cs=(g.comments||[]).filter(c=>!_isArchived(c)); return cs.length?`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${cs.map(c=>item(c,g.ch)).join('')}</div>`:''; }).join('');
   const resolved=groups.flatMap(g=>(g.comments||[]).filter(c=>_isArchived(c)).map(c=>({c,ch:g.ch})));
   const resolvedHtml=resolved.length?`<div class="resp-resolved-grp"><button class="resp-resolved-head"><i class="ti ti-chevron-${_respResolvedOpen?'down':'right'}"></i><span>Resolved</span><span class="rcount">${resolved.length}</span></button><div class="resp-resolved-body" style="display:${_respResolvedOpen?'block':'none'}">${resolved.map(r=>item(r.c,r.ch)).join('')}</div></div>`:'';
@@ -1033,7 +1033,7 @@ const _expOpen = new Set();
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const m = chMeta(scope);
-  const title = scope==='__outline__' ? 'the proposed outline' : `Chapter ${m.n} · ${shortTitle(m.title)}`;
+  const title = scope==='__outline__' ? 'the proposed outline' : `${UNITC} ${m.n} · ${shortTitle(m.title)}`;
   const back=document.createElement('div'); back.id='expdlg';
   back.style.cssText='position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
   back.innerHTML=`<div style="background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(440px,92vw);padding:20px 22px">
@@ -1100,7 +1100,7 @@ async function renderAdvisorDownloads(){
   const groups={}; for(const j of jobs){ (groups[j.chapter] ||= []).push(j); }
   box.innerHTML=header+Object.keys(groups).map(scope=>{
     const list=groups[scope]; const m=chMeta(scope);
-    const name=scope==='__outline__'?'Proposed outline':`Chapter ${m.n} · ${shortTitle(m.title)}`;
+    const name=scope==='__outline__'?'Proposed outline':`${UNITC} ${m.n} · ${shortTitle(m.title)}`;
     const pending=list.filter(j=>j.status!=='done').length; const open=_expOpen.has(scope);
     const versions=list.map(j=>{
       const when=j.done_ts?fmtDate(j.done_ts):(j.requested_ts?fmtDate(j.requested_ts):'');
@@ -1143,7 +1143,7 @@ async function boot(){
   setConfig(_eff);
   ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_eff));
   DATA_REPO = _eff.dataRepo;
-  DOC = _eff.doc.noun; UNIT = _eff.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
+  DOC = _eff.doc.noun; UNIT = _eff.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1); UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);
   CHAPTERS = await loadChapters(tok());   // parsed manifest from the (project's) data repo, not shipped in config
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }

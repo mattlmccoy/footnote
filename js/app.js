@@ -33,6 +33,7 @@ setConfig(_CFG);
 // "thesis"/"section" or "paper"/"part"). Capitalized variants for sentence starts.
 const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
 const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
+const UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // "Chapter"/"Section"/… for visible unit labels
 
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
@@ -199,7 +200,7 @@ function renderTopbar(){
   const m = chMeta(current);
   document.getElementById('topbar').innerHTML = `
     <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
-    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>Chapter ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
+    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${UNITC} ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -1250,7 +1251,7 @@ async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   const p = partitionByDecision(review.comments);
   if (!p.approved.length){ flash('Approve at least one edit first.'); return; }
-  if (!confirm(`Queue ${p.approved.length} approved edit(s) for merge in Chapter ${chMeta(current).n}?` +
+  if (!confirm(`Queue ${p.approved.length} approved edit(s) for merge in ${UNITC} ${chMeta(current).n}?` +
                (p.rejected.length?`\n${p.rejected.length} rejected edit(s) will be discarded.`:'') +
                (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:''))) return;
   const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
@@ -1350,7 +1351,7 @@ async function sendJob(type){
       jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:current,
         agents:_CFG.reviewAgents, status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: agents '+current);
-      flash(`Requested adversary review of Chapter ${chMeta(current).n}`);
+      flash(`Requested adversary review of ${UNITC} ${chMeta(current).n}`);
       return;
     }
     const open = review.comments.filter(c => c.status === 'open');
@@ -1371,7 +1372,7 @@ function flash(msg){ const t = document.createElement('div'); t.textContent = ms
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const whole = scope === '__all__';
-  const title = whole ? `the whole ${DOC}` : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+  const title = whole ? `the whole ${DOC}` : `${UNITC} ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
   const back = document.createElement('div'); back.id = 'expdlg';
   back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
   back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
@@ -1433,7 +1434,7 @@ async function renderHomeDownloads(){
   const order = Object.keys(groups).sort((a,b) => (a==='__all__'?99:chMeta(a).n) - (b==='__all__'?99:chMeta(b).n));
   box.innerHTML = header + order.map(scope => {
     const list = groups[scope];
-    const name = scope === '__all__' ? `Whole ${DOC}` : `Chapter ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+    const name = scope === '__all__' ? `Whole ${DOC}` : `${UNITC} ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
     const pending = list.filter(j => j.status !== 'done').length;
     const open = _expOpen.has(scope);
     const versions = list.map(j => {
@@ -1644,7 +1645,7 @@ async function exportAdvisorResponse(){
             <td class="cm">${escapeHtml(c.body)}</td>
             <td class="rs"><b>${status}</b>${r?.note?`<div>${escapeHtml(r.note)}</div>`:''}</td></tr>`;
         }).join('');
-        return `<h3>Chapter ${chMeta(g.ch).n} — ${escapeHtml(shortTitle(chMeta(g.ch).title))}</h3>
+        return `<h3>${UNITC} ${chMeta(g.ch).n} — ${escapeHtml(shortTitle(chMeta(g.ch).title))}</h3>
           <table><thead><tr><th>Passage</th><th>Comment</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table>`;
       }).join('');
       return `<section><h2>Response to ${escapeHtml(name)}</h2>${items}</section>`;
@@ -1788,7 +1789,7 @@ function homeHtml(){
       <i class="ti ti-player-play" style="font-size:22px;color:var(--accent)"></i>
       <div style="min-width:0">
         <div style="font-size:11.5px;color:var(--text-2)">Continue where you left off</div>
-        <div style="font-size:14px;font-weight:500">Chapter ${lm.n} · ${shortTitle(lm.title)}</div>
+        <div style="font-size:14px;font-weight:500">${UNITC} ${lm.n} · ${shortTitle(lm.title)}</div>
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
@@ -1799,7 +1800,7 @@ function homeHtml(){
     const status = done ? `<span style="color:var(--success)">complete</span>` : s.checked>0 ? `${s.checked}/${s.sec} sections` : `not started`;
     const right = s.open ? `<span style="color:var(--accent)">${s.open} open</span>` : s.merged ? `${s.merged} merged` : `<span style="color:var(--text-3)">—</span>`;
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
-        <div style="font-size:11.5px;color:var(--text-3)">Chapter ${c.n}</div>
+        <div style="font-size:11.5px;color:var(--text-3)">${UNITC} ${c.n}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
@@ -1847,7 +1848,7 @@ function renderHistoryShell(commits, file){
   const m = chMeta(current);
   read.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:.5px solid var(--border);background:var(--bg-2)">
-        <i class="ti ti-history"></i><strong style="font-weight:600">History · Chapter ${m.n}</strong>
+        <i class="ti ti-history"></i><strong style="font-weight:600">History · ${UNITC} ${m.n}</strong>
         <button class="btn" id="hist-close" style="margin-left:auto"><i class="ti ti-x"></i>Close</button></div>
       <div style="flex:1;display:flex;min-height:0">
         <div id="hist-list" style="flex:0 0 290px;border-right:.5px solid var(--border);overflow:auto;padding:12px 10px"></div>
@@ -1949,7 +1950,7 @@ function cycleComment(dir){
 const SHORTCUTS = [['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/',`search this ${UNIT}`],[`${MOD}\\`,`search the whole ${DOC}`],[`${MOD}↵`,'open the Send menu'],['⌥1–5 (in popover)','pick a tag'],['Esc','close popover / overlay'],['?','show this help']];
 const BUTTONS = [
   ['ti-layout-grid','Home — the chapter library'],
-  ['ti-book-2','Chapter switcher'],
+  ['ti-book-2',`${UNITC} switcher`],
   ['ti-search',`Search this chapter (${MOD}\\ = whole ${DOC})`],
   ['ti-arrows-diagonal-minimize-2','Focus mode — hide both side panes'],
   ['ti-history','Version history & diffs for this chapter'],
@@ -2073,7 +2074,7 @@ async function openReleasePanel(){
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
     <div class="rel-sec">Which chapters each reviewer can see</div>
-    <table class="rel-tbl"><thead><tr><th>Chapter</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
+    <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => {
         // Legacy committee members have dedicated pages; the shared lab pool uses review-lab.html;
