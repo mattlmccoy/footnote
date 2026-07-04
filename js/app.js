@@ -1771,6 +1771,15 @@ function importDocument(){
   };
 }
 
+// Creator credit + contact for the reviewer home (mirrors the launcher footer; Footnote's own authorship).
+const CREDIT_FOOTER = `<div style="margin-top:48px;padding-top:16px;border-top:.5px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;font-size:11.5px;color:var(--text-3)">
+  <span>Footnote · Built by <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener" style="color:var(--text-2);text-decoration:none;font-weight:500">@mattlmccoy</a></span>
+  <span style="display:flex;align-items:center;gap:4px">
+    <a href="mailto:mail@matthewmccoy.info" title="Email" aria-label="Email" style="width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-3)"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg></a>
+    <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub profile" style="width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-3)"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg></a>
+    <a href="https://github.com/mattlmccoy/footnote/issues" target="_blank" rel="noopener" title="Report an issue" aria-label="Report an issue" style="width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-3)"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg></a>
+  </span>
+</div>`;
 function homeHtml(){
   const last = localStorage.getItem('lastChapter');
   const lm = last && chMeta(last);
@@ -1810,7 +1819,8 @@ function homeHtml(){
       ${cont}
       ${allCh}
       <div id="inbox-panel" class="ibx" style="display:none;margin-top:28px;margin-bottom:0"></div>
-      <div id="home-downloads" style="margin-top:36px"></div></div>`;
+      <div id="home-downloads" style="margin-top:36px"></div>
+      ${CREDIT_FOOTER}</div>`;
 }
 
 // ---------- history / version timeline (data repo content commits — readable with the data-repo token) ----------
