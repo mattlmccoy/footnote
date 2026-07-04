@@ -44,6 +44,13 @@
   .fn-h1 em{font-style:italic;color:var(--accent-ink)}
   .fn-lead{font-size:16.5px;color:var(--muted);max-width:34em;margin:18px 0 30px;line-height:1.6}
 
+  /* first-run stepper */
+  .fn-steps{display:flex;align-items:center;gap:9px;margin:6px 0 24px;font-size:11.5px;flex-wrap:wrap}
+  .fn-stepx{display:inline-flex;align-items:center;gap:6px;color:var(--faint)}
+  .fn-stepx b{width:19px;height:19px;border-radius:50%;border:1px solid var(--line);display:inline-flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:600;color:var(--faint);font-style:normal}
+  .fn-stepx.is-done{color:var(--muted)} .fn-stepx.is-done b{background:var(--accent);border-color:var(--accent);color:#fff}
+  .fn-stepx.is-now{color:var(--accent-ink);font-weight:600} .fn-stepx.is-now b{border-color:var(--accent);color:var(--accent)}
+  .fn-stepsep{color:var(--faint);font-style:normal}
   .fn-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 24px 26px;box-shadow:var(--shadow);max-width:440px}
   .fn-step{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
   .fn-field{display:block;position:relative;font-size:12.5px;color:var(--muted);margin-bottom:14px;font-weight:500}

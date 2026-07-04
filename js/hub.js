@@ -40,6 +40,13 @@ export function greetName(user) {
   const first = String(u.name || '').trim().split(/\s+/)[0];
   return first || u.login || 'there';
 }
+// First-run onboarding: which of the three setup steps the user is on (null once they have a project).
+export const ONBOARD_STEPS = ['Connect', 'Workspace', 'First project'];
+export function onboardingStep({ hasToken, hasHub, hasProjects } = {}) {
+  if (hasProjects) return null;                       // onboarding complete
+  const index = !hasToken ? 0 : !hasHub ? 1 : 2;
+  return { index, total: ONBOARD_STEPS.length, label: ONBOARD_STEPS[index] };
+}
 
 // ---- I/O + DOM (browser only) ----
 
@@ -126,6 +133,11 @@ const FOOTER = `<footer class="fn-foot">
   </span>
 </footer>`;
 
+// First-run progress: the 3 setup steps with the current one highlighted (idx = 0-based current step).
+const stepperHtml = idx => `<div class="fn-steps">${ONBOARD_STEPS
+  .map((s, i) => `<span class="fn-stepx ${i < idx ? 'is-done' : i === idx ? 'is-now' : ''}"><b>${i + 1}</b>${esc(s)}</span>`)
+  .join('<i class="fn-stepsep">→</i>')}</div>`;
+
 export async function launch() {
   const cfg = await loadConfig();
   const root = document.getElementById('app') || document.body;
@@ -167,6 +179,7 @@ export async function launch() {
 
   function connect() {
     frame(`<div class="fn-hero fn-reveal">
+      ${stepperHtml(0)}
       <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
       <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
       <div class="fn-card">
@@ -185,6 +198,7 @@ export async function launch() {
 
   function setupWorkspace() {
     frame(`<div class="fn-hero fn-reveal">
+      ${stepperHtml(1)}
       <h1 class="fn-h1">Set up your <em>workspace</em>.</h1>
       <p class="fn-lead">This is just a small private repo that holds the <b>list</b> of your projects — <b>not</b> your document or its comments. You'll pick those next, one per project. Create it now, or choose one you already have.</p>
       <div class="fn-card">
@@ -226,7 +240,7 @@ export async function launch() {
     frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
       ${list.length
         ? `<div class="fn-shelf">${books}${addTile}</div><div class="fn-shelf-board"></div>`
-        : `<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
+        : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
              <h2 class="fn-empty-h">Your shelf is empty</h2>
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}

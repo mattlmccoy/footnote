@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -81,6 +81,24 @@ test('updateProject deep-merges doc so unitNoun survives a noun edit', () => {
   const a = out.find(p => p.id === 'a');
   assert.equal(a.doc.noun, 'paper');
   assert.equal(a.doc.unitNoun, 'section');   // NOT reset to the default
+});
+
+test('onboardingStep walks Connect → Workspace → First project, then completes', () => {
+  assert.ok(Array.isArray(ONBOARD_STEPS) && ONBOARD_STEPS.length === 3);
+  // no token → step 0 (Connect)
+  assert.equal(onboardingStep({ hasToken: false, hasHub: false, hasProjects: false }).index, 0);
+  // token, no hub → step 1 (Workspace)
+  assert.equal(onboardingStep({ hasToken: true, hasHub: false, hasProjects: false }).index, 1);
+  // token + hub, no projects → step 2 (First project)
+  assert.equal(onboardingStep({ hasToken: true, hasHub: true, hasProjects: false }).index, 2);
+  // has projects → onboarding done (null)
+  assert.equal(onboardingStep({ hasToken: true, hasHub: true, hasProjects: true }), null);
+});
+
+test('onboardingStep reports total + a label for the current step', () => {
+  const s = onboardingStep({ hasToken: true, hasHub: false, hasProjects: false });
+  assert.equal(s.total, 3);
+  assert.equal(s.label, ONBOARD_STEPS[1]);
 });
 
 test('greetName uses the first name, falling back to login then a generic', () => {
