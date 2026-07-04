@@ -5,6 +5,7 @@ import {
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
+  writeProjectPatch,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -195,4 +196,27 @@ test('getConfig throws before load and returns the cached config after', async (
   assert.throws(() => getConfig(), ConfigError);
   await loadConfig(async () => ({ ok: true, json: async () => MIN }), { force: true });
   assert.equal(getConfig().owner, 'alice');
+});
+
+test('writeProjectPatch GETs projects.json, patches the matching entry, and PUTs it back', async () => {
+  const arr = [{ id: 'a', name: 'A', dataRepo: 'alice/a-data', sourceRepo: '' }, { id: 'b', name: 'B', dataRepo: 'alice/b-data' }];
+  const b64 = Buffer.from(JSON.stringify(arr)).toString('base64');
+  let putBody = null;
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, status: 200, json: async () => ({ content: { sha: 'z' } }) }; }
+    return { ok: true, status: 200, json: async () => ({ content: b64, sha: 'sha1' }) };
+  };
+  const out = await writeProjectPatch(APP, 'a', { sourceRepo: 'alice/a-source' }, 'tok', fake);
+  // PUT carried the fetched sha (in-place update, no clobber)
+  assert.equal(putBody.sha, 'sha1');
+  const written = JSON.parse(Buffer.from(putBody.content, 'base64').toString('utf8'));
+  assert.equal(written.find(p => p.id === 'a').sourceRepo, 'alice/a-source');
+  assert.equal(written.find(p => p.id === 'b').dataRepo, 'alice/b-data');   // sibling untouched
+  assert.equal(out.find(p => p.id === 'a').sourceRepo, 'alice/a-source');   // returns updated list
+});
+
+test('writeProjectPatch throws for an unknown project id', async () => {
+  const b64 = Buffer.from(JSON.stringify([{ id: 'a', name: 'A', dataRepo: 'alice/a-data' }])).toString('base64');
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ content: b64, sha: 's' }) });
+  await assert.rejects(() => writeProjectPatch(APP, 'nope', { sourceRepo: 'x' }, 'tok', fake), ConfigError);
 });

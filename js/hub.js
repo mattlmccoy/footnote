@@ -4,6 +4,7 @@
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject } from './config.js?v=406ae14';
 import { seedDataRepo } from './seed.js?v=406ae14';
+import { importFormat, sourceRepoSuggestion, ensureRepo, commitSourceFile } from './importdoc.js?v=406ae14';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -282,14 +283,23 @@ export async function launch() {
       <div class="fn-sheet-h">${editing ? 'Edit project' : 'New project'}</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false" value="${esc(v.name)}"></label>
       <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing — e.g. your dissertation repo (Overleaf-synced or local). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/phd-dissertation" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
+      ${editing ? '' : `<div class="fn-upload-row" style="margin:-8px 0 14px"><label style="font-size:11.5px;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:5px"><i class="ti ti-upload"></i> or upload a .tex — Footnote creates the source repo &amp; commits it as main.tex<input id="np-tex" type="file" accept=".tex" style="display:none"></label> <span id="np-tex-name" style="font-size:11.5px;color:var(--text-3)"></span></div>`}
       <label class="fn-field">${editing ? 'Comments repo' : 'New comments repo'} <span class="fn-sub">${editing ? 'where this project’s comments live — fixed once created' : 'a separate private repo Footnote writes comments + the reading view into — NOT your document'}</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false" value="${esc(v.dataRepo || '')}"${editing ? ' disabled' : ''}></label>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="${esc((v.doc && v.doc.noun) || 'thesis')}" spellcheck="false"></label>
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">${editing ? 'Save changes' : 'Create project'}</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
+    let pendingTex = null;   // { name, text } — a .tex upload to commit as main.tex into the source repo
     attachRepoPicker(q('#np-src'), tok());
     if (!editing) attachRepoPicker(q('#np-data'), tok());
+    if (!editing) q('#np-tex').onchange = async e => {
+      const f = e.target.files[0]; if (!f) return;
+      if (importFormat(f.name) !== 'tex') { q('#np-err').textContent = 'Upload a .tex file (.docx conversion is coming soon).'; return; }
+      pendingTex = { name: f.name, text: await f.text() };
+      q('#np-tex-name').textContent = f.name;
+      if (!q('#np-src').value.trim()) q('#np-src').value = sourceRepoSuggestion(q('#np-name').value.trim() || 'project', cfg.owner);
+    };
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
@@ -303,8 +313,15 @@ export async function launch() {
         }
         const dataRepo = q('#np-data').value.trim();
         if (!name || !dataRepo) return q('#np-err').textContent = 'Name and data repo are required.';
+        if (pendingTex && !sourceRepo) return q('#np-err').textContent = 'Set a source repo name for the uploaded .tex.';
         const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo, doc: { noun, unitNoun: 'chapter' } });
         q('#np-save').disabled = true;
+        if (pendingTex) {   // upload path: create the source repo and commit the LaTeX before registering the project
+          q('#np-err').textContent = `Creating the source repo ${sourceRepo}…`;
+          await ensureRepo(tok(), sourceRepo);
+          q('#np-err').textContent = 'Committing main.tex…';
+          await commitSourceFile(sourceRepo, 'main.tex', pendingTex.text, tok(), 'Footnote import: main.tex');
+        }
         q('#np-err').textContent = 'Creating the comments repo…';
         await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
         q('#np-err').textContent = 'Setting up background email/notify…';

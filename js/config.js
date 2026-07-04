@@ -179,6 +179,30 @@ export async function loadProjects(appCfg, token, fetchImpl) {
   return list.map(normalizeProject);
 }
 
+// Patch one project's fields in the hub's projects.json (e.g. set sourceRepo after an import) and write
+// it back in place. Loads the raw file for its sha, shallow-merges `patch` into the matching entry (id
+// stays fixed), and PUTs. Returns the updated normalized project list. fetchImpl is injectable for tests.
+export async function writeProjectPatch(appCfg, projectId, patch, token, fetchImpl) {
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) throw new ConfigError('no fetch available to write projects.json');
+  const url = `https://api.github.com/repos/${appCfg.hubRepo}/contents/projects.json?t=${Date.now()}`;
+  const res = await f(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+  if (!res || !res.ok) throw new ConfigError(`could not read projects.json (status ${res && res.status})`);
+  const d = await res.json();
+  const raw = JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
+  const list = Array.isArray(raw) ? raw : (raw.projects || []);
+  if (!list.some(p => p.id === projectId)) throw new ConfigError(`unknown project: ${projectId}`);
+  const next = list.map(p => (p.id === projectId ? { ...p, ...(patch || {}), id: p.id } : p));
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(next, null, 2))));
+  const put = await f(`https://api.github.com/repos/${appCfg.hubRepo}/contents/projects.json`, {
+    method: 'PUT',
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: `project ${projectId}: update`, content, sha: d.sha }),
+  });
+  if (!put.ok) throw new ConfigError(`could not write projects.json (status ${put.status})`);
+  return next.map(normalizeProject);
+}
+
 // The live chapter list is discovered by parsing the adopter's document and stored as chapters.json
 // in the DATA repo (not shipped in config). Fetch it with the reader's token. Returns [] when there is
 // no token or no chapters.json yet (fresh instance → the app shows the "import your document" state).

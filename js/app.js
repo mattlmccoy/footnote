@@ -5,8 +5,9 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=406ae14';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=406ae14';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=406ae14';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig } from './config.js?v=406ae14';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=406ae14';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=406ae14';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=406ae14';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1723,12 +1724,18 @@ function importDocument(){
   const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
+  let pendingTex = null;   // { name, text } — a .tex upload we'll commit as main.tex into a source repo
+  const suggestion = src || sourceRepoSuggestion(_CFG.projectName || DOC, _CFG.owner);
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   scrim.innerHTML = `<div class="sheet" style="max-width:560px">
     <div style="font-size:16px;font-weight:600;margin-bottom:4px">Import your ${escapeHtml(DOC)}</div>
     <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Footnote parses your source to find ${escapeHtml(UNIT)}s — nothing is hardcoded.</div>
     ${src ? `<button class="btn" id="imp-repo" style="width:100%;margin-bottom:10px"><i class="ti ti-brand-github"></i> Detect from <code>${escapeHtml(src)}</code></button>` : ''}
     <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Upload a .tex or .docx file<input id="imp-file" type="file" accept=".tex,.docx" style="display:none"></label>
+    <div id="imp-srcwrap" style="display:none;margin-top:12px">
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:5px">Save the uploaded LaTeX into this source repo <span style="color:var(--text-3)">— created if it doesn't exist. Footnote commits it as <code>main.tex</code>.</span></div>
+      <input id="imp-src" value="${escapeHtml(suggestion)}" spellcheck="false" style="width:100%;box-sizing:border-box;padding:8px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
+    </div>
     <div id="imp-status" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
     <div id="imp-preview" style="margin-top:6px;max-height:230px;overflow:auto"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -1750,6 +1757,7 @@ function importDocument(){
   scrim.onclick = e => { if (e.target === scrim) close(); };
   $('#imp-cancel').onclick = close;
   if (src) $('#imp-repo').onclick = async () => {
+    pendingTex = null; $('#imp-srcwrap').style.display = 'none';   // detecting from the repo: nothing to commit
     const entry = prompt('Entry .tex file in the source repo:', 'main.tex'); if (!entry) return;
     status(`Reading ${entry} from ${src}…`);
     try { preview(await detectFromRepo(src, entry.trim(), t)); status(''); }
@@ -1759,15 +1767,38 @@ function importDocument(){
     const f = e.target.files[0]; if (!f) return;
     status(`Parsing ${f.name}…`);
     try {
-      if (/\.docx$/i.test(f.name)) preview(parseDocxChapters(await docxToXml(await f.arrayBuffer())));
-      else preview(parseLatexChapters(await f.text(), () => null));
+      if (importFormat(f.name) === 'docx') {
+        pendingTex = null; $('#imp-srcwrap').style.display = 'none';
+        preview(parseDocxChapters(await docxToXml(await f.arrayBuffer())));
+      } else {
+        const text = await f.text();
+        pendingTex = { name: f.name, text };                       // stage for commit into the source repo
+        $('#imp-srcwrap').style.display = 'block';
+        preview(parseLatexChapters(text, () => null));
+      }
       status('');
     } catch (err){ status('Could not parse ' + f.name + ': ' + err.message); }
   };
   $('#imp-save').onclick = async () => {
-    $('#imp-save').disabled = true; status('Saving…');
-    try { await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();
-          CHAPTERS = await loadChapters(t); enterHome(); }
+    $('#imp-save').disabled = true;
+    try {
+      if (pendingTex) {
+        const repo = $('#imp-src').value.trim();
+        if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter a source repo as owner/name.');
+        status(`Preparing ${repo}…`);        await ensureRepo(t, repo);
+        if (await repoFileSha(repo, 'main.tex', t).catch(() => null)) {
+          if (!confirm(`main.tex already exists in ${repo}. Overwrite it with this upload?`)) { status('Cancelled.'); $('#imp-save').disabled = false; return; }
+        }
+        status(`Committing main.tex to ${repo}…`);
+        await commitSourceFile(repo, 'main.tex', pendingTex.text, t, 'Footnote import: main.tex');
+        // Persist the source repo on the project (multi-project mode writes projects.json).
+        if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { sourceRepo: repo }, t); } catch (e) { console.warn('sourceRepo persist:', e.message); } }
+        _CFG.sourceRepo = repo; setConfig(_CFG);
+      }
+      status('Saving…');
+      await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();
+      CHAPTERS = await loadChapters(t); enterHome();
+    }
     catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
   };
 }
