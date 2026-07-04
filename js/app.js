@@ -1435,7 +1435,7 @@ async function renderHomeDownloads(){
   const box = document.getElementById('home-downloads'); if (!box) return;
   const jobs = await listExports();
   const header = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
-      <div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin:0">DOWNLOADS</div>
+      <div class="home-allch" style="margin:0">DOWNLOADS</div>
       <button class="btn" id="dl-export-all" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export whole ${DOC}…</button></div>`;
   if (!jobs.length){ box.innerHTML = header + `<div style="font-size:12.5px;color:var(--text-3)">No exports yet. Use a ${UNIT}'s “…” menu → Export, or the button above.</div>`;
     box.querySelector('#dl-export-all').onclick = () => exportDialog('__all__'); return; }
@@ -1975,7 +1975,7 @@ function homeHtml(){
       <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Point Footnote at your LaTeX source (<code>main.tex</code>) or a Word <code>.docx</code>. Footnote parses it to find your ${UNIT}s — nothing is hardcoded.${hasTok ? '' : ' Add your access token first.'}</div>
       <button class="btn btn-primary" id="import-doc" style="padding:8px 16px">${hasTok ? `Import ${DOC}` : 'Add token'}</button></div>`;
   const allCh = CHAPTERS.length
-    ? `<div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+    ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
@@ -2173,7 +2173,7 @@ function toggleAssistant(){
 }
 function manageToken(){
   const cur = tok();
-  const v = prompt(cur ? 'Access token is set. Paste a new one to replace it, or leave blank and OK to remove it:' : 'Paste a fine-grained PAT (Contents: read/write on the data repo):', '');
+  const v = prompt(cur ? '❯ Access token is set. Paste a new one to replace it, or leave blank and OK to remove it:' : '❯ Paste a fine-grained PAT (Contents: read/write on the data repo):', '');
   if (v === null) return;
   if (v.trim() === ''){ if (cur && confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); } return; }
   localStorage.setItem('ghpat', v.trim()); flash('Token saved.'); if (document.getElementById('doc') || current) loadChapter(current);

@@ -142,7 +142,7 @@ function showKeyExpired(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Your access key has expired</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px;max-width:430px">Access keys are time-limited for security. Please request a fresh key, then enter it below to pick up where you left off — your comments are saved.</div>
     <button class="btn btn-primary" id="newkey">Enter a new key</button></div>`;
-  read.querySelector('#newkey').onclick = () => { const v = prompt('New access key:'); if (v && v.trim()){ localStorage.setItem('ghpat', v.trim()); keyBad = false; boot(); } };
+  read.querySelector('#newkey').onclick = () => { const v = prompt('❯ New access key:'); if (v && v.trim()){ localStorage.setItem('ghpat', v.trim()); keyBad = false; boot(); } };
 }
 function showRevoked(){
   document.getElementById('nav').style.display = 'none';
@@ -267,7 +267,7 @@ function renderConnect(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Enter your access key</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Paste the access key you were emailed. It's stored only in this browser.</div>
     <button class="btn" id="connect">Add access key</button></div>`;
-  document.getElementById('connect').onclick = () => { const v = prompt('Access key:'); if (v){ localStorage.setItem('ghpat', v.trim()); boot(); } };
+  document.getElementById('connect').onclick = () => { const v = prompt('❯ Access key:'); if (v){ localStorage.setItem('ghpat', v.trim()); boot(); } };
 }
 
 // ---------- document rendering (math, footnotes, figures, cross-refs) ----------
@@ -774,7 +774,7 @@ function renderTopbar(){ const m=chMeta(current);
   document.getElementById('chsel').onclick=openChapterMenu;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-export').onclick=()=>exportDialog(current);
-  document.getElementById('btn-key').onclick=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  document.getElementById('btn-key').onclick=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
   const si=document.getElementById('search'); si.addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(si.value); if(e.key==='Escape'){ si.value=''; clearSearch(); } });
 }
 function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old){ old.remove(); return; } const menu=document.createElement('div'); menu.id='chmenu';
@@ -792,7 +792,7 @@ function enterHome(){
      <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>
      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  const askKey=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  const askKey=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
   document.getElementById('btn-key').onclick=askKey;
   // first-run: no access key yet — prompt for it before anything else
   if(!tok()){
@@ -983,7 +983,7 @@ function renderOutlineTopbar(){
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button></div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-key').onclick=()=>{ const v=prompt('Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  document.getElementById('btn-key').onclick=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
 }
 function renderOutline(data){
   const cnt=(label,sec)=>review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===sec).length;

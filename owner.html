@@ -4,6 +4,8 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Footnote</title>
 <link rel="icon" type="image/svg+xml" href="brand/footnote-mark.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
 <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
@@ -17,7 +19,9 @@
   --claim:#0c447c; --claim-bg:#e6f1fb; --figure:#3c3489; --figure-bg:#edebfb;
   --wording:#44443f; --wording-bg:#efece4; --citation:#72243e; --citation-bg:#fbe9ef; --question:#7a4a09; --question-bg:#f9efd8;
   --suggestion:#1c6b4a; --suggestion-bg:#e4f3ec; --clarity:#0d5a66; --clarity-bg:#e0f1f4;
+  --kw:#2c64c4; --str:#4a7c59; --cmt:#a4744a;   /* code-hint "syntax" tints: command / string / comment (mirrors the launcher) */
   --font:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 }
 .dark{
   --bg:#1b1a18; --bg-2:#222120; --bg-3:#2b2a27; --text:#f4f2ec; --text-2:#b1afa6; --text-3:#85837b;
@@ -27,6 +31,7 @@
   --claim:#bcd6f5; --claim-bg:#17293f; --figure:#c9c2f2; --figure-bg:#262147;
   --wording:#cdcbc2; --wording-bg:#33322e; --citation:#f0b6c8; --citation-bg:#3a2029; --question:#ecc483; --question-bg:#3a2f17;
   --suggestion:#a6dcc4; --suggestion-bg:#16302a; --clarity:#a3d6df; --clarity-bg:#15303a;
+  --kw:#6aa0ec; --str:#7bbd93; --cmt:#c79b6f;   /* code-hint tints, lightened for dark */
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%}
@@ -52,7 +57,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .search input{flex:1;border:none;background:none;outline:none;font:inherit;color:var(--text)}
 .panes{flex:1;display:flex;min-height:0}
 .nav{flex:0 0 210px;border-right:.5px solid var(--border);overflow:auto;padding:18px 10px}
-.nav .lbl{display:flex;font-size:11px;letter-spacing:.08em;color:var(--text-3);padding:0 8px 10px}
+.nav .lbl{display:flex;font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt);padding:0 8px 10px}
 .nav a{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:var(--r-sm);color:var(--text-2);font-size:13.5px;cursor:pointer;line-height:1.35;margin-bottom:1px}
 .nav a .chk{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:15px;color:var(--text-3);border-radius:50%}
 .nav a .chk:hover{color:var(--accent)} .nav a .chk.on{color:var(--success)}
@@ -93,7 +98,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 #doc a.xref:hover{border-bottom-color:var(--accent);background:var(--accent-bg)}
 .flash{background:var(--warn-bg);border-radius:3px;transition:background .3s}
 .comments{flex:0 0 320px;border-left:.5px solid var(--border);background:var(--bg-2);overflow:auto;padding:16px 14px}
-.comments .lbl{display:flex;font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:12px}
+.comments .lbl{display:flex;font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt);margin-bottom:12px}
 .ccard{background:var(--bg);border:.5px solid var(--border);border-radius:var(--r-md);padding:11px 12px;margin-bottom:10px;cursor:pointer}
 .ccard:hover{border-color:var(--border-2)}
 .ccard .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
@@ -114,7 +119,10 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .katex{font-size:1.02em}
 /* release page */
 .rel-page{max-width:760px;margin:0 auto;padding:26px 24px 90px}
-.rel-sec{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-3);margin:0 0 12px}
+/* section labels as code comments — "% reviewers", lowercase mono, the % in command-blue (mirrors the launcher eyebrows) */
+.rel-sec,.home-allch{font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt)}
+.rel-sec{margin:0 0 12px}
+.rel-sec::before,.nav .lbl::before,.comments .lbl::before,.home-allch::before{content:"% ";color:var(--kw);font-weight:500}
 .rel-tbl{width:100%;border-collapse:collapse;font-size:13px} .rel-tbl th,.rel-tbl td{border-bottom:.5px solid var(--border);padding:7px 9px;text-align:left} .rel-tbl th{font-size:12px;font-weight:600}
 .rel-tbl input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .rel-links{margin-top:8px;font-size:11.5px;color:var(--text-2);line-height:1.7} .rel-links code{background:var(--bg-3);padding:1px 6px;border-radius:5px;font-size:11px}
@@ -192,7 +200,7 @@ span.cqd{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var
 .ol-composer textarea{width:100%;border:.5px solid var(--accent);border-radius:7px;padding:7px 9px;font:inherit;font-size:13px;background:var(--bg);color:var(--text);resize:vertical;outline:none}
 .ol-cactions{display:flex;gap:7px}
 .rel-fup{font-size:12.5px;line-height:1.45;color:var(--text);background:var(--accent-bg);border-left:2px solid var(--accent);border-radius:0 6px 6px 0;padding:5px 9px;margin-top:6px}
-.cmeta{color:var(--text-3);font-size:11px;font-style:normal}
+.cmeta{color:var(--text-3);font-size:11px;font-style:normal;font-family:var(--mono)}
 /* chapter history — old-vs-new diff */
 .hdiff{border:.5px solid var(--border);border-radius:var(--r-md);overflow:hidden;font-size:13px;line-height:1.55}
 .hdiff > div{padding:2px 12px}
@@ -312,10 +320,10 @@ span.cqd{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var
 .dl-grp{border:.5px solid var(--border);border-radius:var(--r-md);margin-bottom:8px;overflow:hidden;background:var(--bg-2)}
 .dl-grp-h{display:flex;align-items:center;gap:9px;width:100%;text-align:left;padding:11px 13px;font:inherit;font-size:13.5px;font-weight:500;color:var(--text);cursor:pointer}
 .dl-grp-h:hover{background:var(--bg-3)} .dl-grp-h i{font-size:16px;color:var(--text-3);flex:0 0 auto}
-.dl-grp-h .dl-count{margin-left:auto;font-size:11px;font-weight:400;color:var(--text-3)}
+.dl-grp-h .dl-count{margin-left:auto;font-family:var(--mono);font-size:11px;font-weight:400;color:var(--str)}
 .dl-grp-body{padding:2px 13px 10px 34px}
 .dl-ver{padding:8px 0;border-top:.5px solid var(--border)} .dl-ver:first-child{border-top:none}
-.dl-ver-h{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--text-3)}
+.dl-ver-h{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11.5px;color:var(--str)}
 .dl-del{margin-left:auto;width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;color:var(--text-3);font-size:14px;cursor:pointer} .dl-del:hover{background:var(--citation-bg);color:var(--citation)}
 /* export dialog */
 #expdlg .exp-sec{font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin:0 0 7px}
@@ -331,7 +339,7 @@ span.cqd{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var
 .ovl-sub{color:var(--text-2);font-size:13px;margin:0 0 14px}
 .ovl-sub code{background:var(--bg-3);padding:1px 5px;border-radius:5px}
 .ovl-grp{margin:0 0 18px}
-.ovl-grp-h{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;color:var(--text);background:var(--bg-3);padding:6px 10px;border-radius:8px;display:inline-block;margin-bottom:6px}
+.ovl-grp-h{font-family:var(--mono);font-size:13px;color:var(--str);background:var(--bg-3);padding:6px 10px;border-radius:8px;display:inline-block;margin-bottom:6px}
 .ovl-grp-h .ovl-n{color:var(--text-3)}
 .ovl-item{display:flex;gap:10px;padding:10px 2px;border-top:.5px solid var(--border);cursor:pointer}
 .ovl-item.done{opacity:.5}
