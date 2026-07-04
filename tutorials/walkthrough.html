@@ -25,6 +25,7 @@ body{
 #dots{position:fixed;top:16px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:50}
 #dots button{width:8px;height:8px;border-radius:50%;border:none;background:rgba(255,255,255,.22);cursor:pointer;padding:0;transition:.2s}
 #dots button.on{background:#fff;width:22px;border-radius:4px}
+body.embed #ctrls,body.embed #dots{display:none}   /* clean thumbnail when embedded via ?embed */
 #ctrls{position:fixed;bottom:22px;right:26px;display:flex;gap:10px;z-index:50}
 #ctrls button{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:.15s}
 #ctrls button:hover{background:rgba(255,255,255,.16)}
@@ -167,6 +168,7 @@ body{
   </div>
 
 <script>
+if (/[?&]embed/.test(location.search)) document.body.classList.add('embed');   // hide controls for a clean landing-page thumbnail
 const LOGO = '../brand/footnote-mark.svg';
 const stage = document.getElementById('stage');
 const cap = document.getElementById('cap');

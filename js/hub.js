@@ -180,18 +180,39 @@ export async function launch() {
   }
 
   function connect() {
-    frame(`<div class="fn-hero fn-reveal">
+    frame(`<style>
+      .fn-shell{max-width:1160px}
+      .fn-split{display:grid;grid-template-columns:minmax(0,1fr) 520px;gap:54px;align-items:center;margin-top:8px}
+      .fn-split .fn-lead{max-width:32em}
+      .fn-vid{display:block;position:relative;width:520px;aspect-ratio:16/10;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:0 34px 80px -26px rgba(20,24,48,.55);background:#0c0f1e;text-decoration:none}
+      .fn-vid iframe{position:absolute;top:0;left:0;width:1300px;height:812px;border:0;transform:scale(.4);transform-origin:top left;pointer-events:none}
+      .fn-vid-badge{position:absolute;left:13px;bottom:13px;z-index:2;display:inline-flex;align-items:center;gap:7px;background:rgba(12,15,30,.62);color:#fff;font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:22px;backdrop-filter:blur(4px);transition:background .15s}
+      .fn-vid:hover .fn-vid-badge{background:#2c64c4}
+      .fn-vid-badge .pg{display:inline-flex;width:17px;height:17px;border-radius:50%;background:#fff;color:#2c64c4;align-items:center;justify-content:center;font-size:8px;padding-left:1px}
+      @media(max-width:960px){ .fn-shell{max-width:880px} .fn-split{grid-template-columns:1fr} .fn-vid-col{display:none} }
+    </style>
+    <div class="fn-hero fn-reveal">
       ${stepperHtml(0)}
-      <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
-      <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
-      <a class="fn-watch" href="tutorials/walkthrough.html" style="display:inline-flex;align-items:center;gap:9px;margin:0 0 24px;padding:10px 17px;border:1px solid #2c64c4;border-radius:11px;color:#2c64c4;text-decoration:none;font-weight:600;font-size:14px;background:#fff"><span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:#2c64c4;color:#fff;align-items:center;justify-content:center;font-size:9px;padding-left:2px">▶</span>See how it works — 90-second walkthrough</a>
-      <div class="fn-card">
-        <div class="fn-step">Connect GitHub</div>
-        <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
-        <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> + <code>workflow</code> scopes (full read/write, private included; workflow lets Footnote set up your background email/convert Actions). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
-        <div class="fn-err" id="fn-err"></div>
-        <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
-      </div></div>`);
+      <div class="fn-split">
+        <div class="fn-split-l">
+          <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
+          <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
+          <div class="fn-card">
+            <div class="fn-step">Connect GitHub</div>
+            <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
+            <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> + <code>workflow</code> scopes (full read/write, private included; workflow lets Footnote set up your background email/convert Actions). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
+            <div class="fn-err" id="fn-err"></div>
+            <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
+          </div>
+        </div>
+        <div class="fn-vid-col">
+          <a class="fn-vid" href="tutorials/walkthrough.html" title="Watch the full walkthrough">
+            <iframe src="tutorials/walkthrough.html?embed=1" title="Footnote walkthrough" loading="lazy" scrolling="no" tabindex="-1"></iframe>
+            <span class="fn-vid-badge"><span class="pg">▶</span>Watch the 90-second walkthrough</span>
+          </a>
+        </div>
+      </div>
+    </div>`);
     const go = async () => { const v = document.getElementById('fn-tok').value.trim();
       if (!v) { document.getElementById('fn-err').textContent = 'Paste your token to continue.'; return; }
       localStorage.setItem(TOK_KEY, v); _ownerFetched = false; await refreshOwner(); render(); };
