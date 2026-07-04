@@ -1,7 +1,7 @@
 // GitHub Actions secrets / variables / workflow-dispatch helper for the owner Connect-email flow.
 // Every network fn takes an explicit token argument — it NEVER reads localStorage, so a one-time
 // elevated token can flow through without being persisted. Repo mirrors gh.js (the data repo).
-import { getConfig, dataRepoParts } from './config.js?v=1f08e80';
+import { getConfig, dataRepoParts } from './config.js?v=f4347c3';
 const API = 'https://api.github.com';
 // data repo + invite workflow are read from footnote.config.json (loaded at boot), not hardcoded.
 const slug = () => { const { owner, repo } = dataRepoParts(getConfig()); return `${owner}/${repo}`; };
