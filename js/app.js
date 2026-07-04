@@ -1,14 +1,14 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=f481d1d';
-import { anchorFromSelection } from './anchor.js?v=f481d1d';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=f481d1d';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=f481d1d';
-import { sealToBase64 } from './vendor/seal.js?v=f481d1d';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=f481d1d';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=f481d1d';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled } from './config.js?v=f481d1d';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=f481d1d';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=f481d1d';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=f481d1d';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=1c3b29c';
+import { anchorFromSelection } from './anchor.js?v=1c3b29c';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=1c3b29c';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=1c3b29c';
+import { sealToBase64 } from './vendor/seal.js?v=1c3b29c';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=1c3b29c';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=1c3b29c';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled } from './config.js?v=1c3b29c';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=1c3b29c';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=1c3b29c';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=1c3b29c';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
