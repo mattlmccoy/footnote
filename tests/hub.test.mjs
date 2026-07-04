@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS, texFileName } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -99,6 +99,14 @@ test('onboardingStep reports total + a label for the current step', () => {
   const s = onboardingStep({ hasToken: true, hasHub: false, hasProjects: false });
   assert.equal(s.total, 3);
   assert.equal(s.label, ONBOARD_STEPS[1]);
+});
+
+test('texFileName renders a doc noun as a LaTeX source filename', () => {
+  assert.equal(texFileName('thesis'), 'thesis.tex');
+  assert.equal(texFileName('Grant Proposal'), 'grant-proposal.tex');   // slug, lowercased
+  assert.equal(texFileName('  Paper #2  '), 'paper-2.tex');
+  assert.equal(texFileName(''), 'document.tex');                        // fallback
+  assert.equal(texFileName(null), 'document.tex');
 });
 
 test('greetName uses the first name, falling back to login then a generic', () => {

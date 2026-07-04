@@ -9,6 +9,7 @@
 <style>
   :root{
     --accent:#2c64c4; --accent-ink:#204b96;
+    --kw:#2c64c4; --str:#4a7c59; --cmt:#a4744a;   /* code-hint "syntax" tints: command / string / comment */
     --paper:#f4f1ea; --paper-2:#efece3;
     --card:#fffdf8; --ink:#211f1a; --muted:#6d685d; --faint:#a49e90; --line:#e4dfd2;
     --shadow:0 1px 2px rgba(40,34,20,.04), 0 12px 30px -14px rgba(40,34,20,.16);
@@ -30,7 +31,9 @@
   .fn-shell{max-width:880px;margin:0 auto;padding:0 28px 26px;position:relative;display:flex;flex-direction:column;min-height:100vh}
   /* the manuscript margin rule — the "footnote" motif. Lives inside .fn-main so it spans only the
      content and never runs into the footer. */
-  .fn-rule{position:absolute;left:0;top:14px;bottom:10px;width:2px;background:linear-gradient(var(--accent),rgba(44,100,196,.15));border-radius:2px}
+  /* code-editor line-number gutter (was the plain margin rule) */
+  .fn-rule{position:absolute;left:-6px;top:15px;width:24px;text-align:right;font-family:var(--mono);font-size:10px;line-height:2.25;color:#c9bea7;user-select:none;pointer-events:none;border-right:1px solid var(--line);padding-right:7px}
+  .fn-rule span{display:block}
   @media(max-width:640px){.fn-rule{display:none}}
   .fn-top{display:flex;align-items:center;height:78px;gap:12px}
   .fn-brand{display:inline-flex;align-items:center;gap:11px}
@@ -53,7 +56,8 @@
   .fn-stepx.is-now{color:var(--accent-ink);font-weight:600} .fn-stepx.is-now b{border-color:var(--accent);color:var(--accent)}
   .fn-stepsep{color:var(--faint);font-style:normal}
   .fn-card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px 24px 26px;box-shadow:var(--shadow);max-width:440px}
-  .fn-step{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:16px}
+  .fn-step{font-family:var(--mono);font-size:12px;letter-spacing:0;text-transform:none;color:var(--cmt);margin-bottom:16px}
+  .fn-eyebrow .pct,.fn-step .pct,.fn-cred .pct{color:var(--accent);font-weight:500}
   .fn-field{display:block;position:relative;font-size:12.5px;color:var(--muted);margin-bottom:14px;font-weight:500}
   .fn-sub{color:var(--faint);font-weight:400;display:block;margin-top:2px}
   .fn-field input{display:block;width:100%;margin-top:6px;padding:11px 13px;border:1px solid var(--line);border-radius:10px;font-family:var(--mono);font-size:13px;background:#fffefb;color:var(--ink);transition:border-color .15s,box-shadow .15s}
@@ -92,7 +96,7 @@
 
   .fn-head{margin:20px 0 30px}
   .fn-head .fn-h1{margin:2px 0 0}
-  .fn-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent)}
+  .fn-eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.01em;text-transform:none;color:var(--cmt)}
 
   /* ── Document library: books standing face-out on a shelf ── */
   .fn-shelf{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 22px;padding:6px 4px 0}
@@ -111,23 +115,31 @@
     box-shadow:1px 0 0 rgba(0,0,0,.12), inset -2px 0 3px rgba(0,0,0,.18)}
   .fn-book:hover{transform:translateY(-8px) rotate(-.4deg);
     box-shadow:0 1px 0 rgba(255,255,255,.6) inset, 0 26px 40px -18px rgba(40,34,20,.55), 0 6px 10px -6px rgba(40,34,20,.35)}
-  .fn-book-type{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint)}
+  .fn-book-type{font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:none;color:var(--str)}
+  .fn-book-type .fn-ext{color:var(--faint)}
   .fn-book-title{font-family:var(--serif);font-weight:500;font-size:20px;line-height:1.15;letter-spacing:-.01em;
     color:var(--ink);margin-top:10px;
     display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
-  .fn-book-repo{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:auto;padding-top:14px;
+  .fn-book-repo{font-family:var(--mono);font-size:10.5px;color:var(--str);margin-top:auto;padding-top:14px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fn-book-go{font-size:12px;font-weight:600;color:var(--accent);margin-top:6px;opacity:0;transform:translateY(4px);
+  .fn-book-go{font-family:var(--mono);font-size:11.5px;font-weight:500;color:var(--accent);margin-top:6px;opacity:0;transform:translateY(4px);
     transition:opacity .18s,transform .18s}
+  .fn-book-go::before{content:"❯ ";color:var(--faint)}
   .fn-book:hover .fn-book-go{opacity:1;transform:translateY(0)}
   /* add-a-book tile */
   .fn-book-new{align-items:center;justify-content:center;gap:8px;
     background:transparent;border:1.5px dashed #cfc7b4;border-left:1.5px dashed #cfc7b4;border-radius:12px;
     box-shadow:none;color:var(--muted)}
   .fn-book-new:hover{transform:translateY(-8px);border-color:var(--accent);color:var(--accent);box-shadow:0 20px 34px -20px rgba(40,34,20,.4)}
-  .fn-book-plus{font-size:30px;font-weight:300;line-height:1;color:var(--faint)}
+  .fn-book-plus{font-size:22px;font-weight:300;line-height:1;color:var(--faint)}
   .fn-book-new:hover .fn-book-plus{color:var(--accent)}
-  .fn-book-newlabel{font-size:13.5px;font-weight:500}
+  .fn-book-newlabel{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--accent)}
+  .fn-book-newlabel .bs{color:var(--faint)}
+  .fn-book-newhint{font-size:11.5px;color:var(--faint)}
+  /* terminal-prompt token field */
+  .fn-term{position:relative;display:block;margin-top:6px}
+  .fn-term .fn-termsig{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:13px;color:var(--accent);pointer-events:none}
+  .fn-term input{margin-top:0;padding-left:30px}
   @media(max-width:640px){.fn-book{width:calc(50% - 11px)}}
   /* per-book manage (⋯) button + dropdown menu */
   .fn-book-manage{position:absolute;top:9px;right:9px;width:26px;height:22px;padding:0;border:none;border-radius:7px;

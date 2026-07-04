@@ -32,6 +32,11 @@ export function defaultHubRepo(cfg) { return `${cfg.owner}/footnote-projects`; }
 export function projectIdFromName(name) {
   return String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'project';
 }
+// A doc noun as a LaTeX source filename — the "code hint" doc-type tag on a book spine (thesis.tex).
+export function texFileName(noun) {
+  const slug = String(noun == null ? '' : noun).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+  return `${slug || 'document'}.tex`;
+}
 // Book-spine palette for the shelf — warm editorial hues that harmonize with the paper background.
 // Each project gets a spine color by its position so the shelf reads like a row of different books.
 export const SPINES = ['#2c64c4', '#b5643c', '#4a7c59', '#7a4b73', '#c08a2d', '#2f7d80', '#93313e'];
@@ -122,6 +127,8 @@ function attachRepoPicker(input, t) {
   input.addEventListener('blur', () => setTimeout(() => { menu.style.display = 'none'; }, 200));
 }
 
+// Line-number gutter for the shell's left margin (code-editor motif; purely decorative).
+const GUTTER = Array.from({ length: 18 }, (_, i) => `<span>${i + 1}</span>`).join('');
 const MARK = accent => `<svg class="fn-mark" viewBox="0 0 52 52" aria-hidden="true"><rect x="3" y="3" width="46" height="46" rx="13" fill="${accent}"/><line x1="19" y1="13" x2="19" y2="39" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.7" fill="#fff"/></svg>`;
 
 // Creator credit + contact — Footnote's own authorship (global product identity, not the adopter's data).
@@ -129,7 +136,7 @@ const IC_MAIL = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" str
 const IC_GH = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82a7.6 7.6 0 014 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>`;
 const IC_ISSUE = `<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true"><path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg>`;
 const FOOTER = `<footer class="fn-foot">
-  <span class="fn-cred">Footnote · Built by <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener">@mattlmccoy</a></span>
+  <span class="fn-cred"><span class="pct">%</span> built by <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener">@mattlmccoy</a></span>
   <span class="fn-foot-links">
     <a href="mailto:mail@matthewmccoy.info" title="Email" aria-label="Email">${IC_MAIL}</a>
     <a href="https://github.com/mattlmccoy" target="_blank" rel="noopener" title="GitHub" aria-label="GitHub profile">${IC_GH}</a>
@@ -173,7 +180,7 @@ export async function launch() {
         <span class="fn-brand">${MARK(cfg.brand.accent)}<span class="fn-word">${esc(cfg.brand.name)}</span></span>
         ${userbar}
       </header>
-      <main class="fn-main"><div class="fn-rule"></div>${inner}</main>
+      <main class="fn-main"><div class="fn-rule" aria-hidden="true">${GUTTER}</div>${inner}</main>
       ${FOOTER}
     </div>`;
     const so = document.getElementById('fn-signout');
@@ -199,8 +206,8 @@ export async function launch() {
           <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
           <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
           <div class="fn-card">
-            <div class="fn-step">Connect GitHub</div>
-            <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
+            <div class="fn-step"><span class="pct">%</span> connect github</div>
+            <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><span class="fn-term"><span class="fn-termsig">❯</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></span></label>
             <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> + <code>workflow</code> scopes (full read/write, private included; workflow lets Footnote set up your background email/convert Actions). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
             <div class="fn-err" id="fn-err"></div>
             <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
@@ -227,7 +234,7 @@ export async function launch() {
       <h1 class="fn-h1">Set up your <em>workspace</em>.</h1>
       <p class="fn-lead">This is just a small private repo that holds the <b>list</b> of your projects — <b>not</b> your document or its comments. You'll pick those next, one per project. Create it now, or choose one you already have.</p>
       <div class="fn-card">
-        <div class="fn-step">Workspace repo</div>
+        <div class="fn-step"><span class="pct">%</span> workspace repo</div>
         <label class="fn-field">Projects index <span class="fn-sub">a tiny private repo, e.g. footnote-projects</span><input id="fn-hub" value="${esc(defaultHubRepo(cfg))}" spellcheck="false"></label>
         <div class="fn-err" id="fn-err"></div>
         <div class="fn-actions">
@@ -255,14 +262,14 @@ export async function launch() {
     const books = list.map((p, i) => `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
         <span class="fn-book-spine"></span>
         <button class="fn-book-manage" data-mid="${esc(p.id)}" title="Manage project" aria-label="Manage ${esc(p.name)}">⋯</button>
-        <span class="fn-book-type">${esc(p.doc.noun)}</span>
+        <span class="fn-book-type">${esc(texFileName(p.doc.noun).replace(/\.tex$/, ''))}<span class="fn-ext">.tex</span></span>
         <span class="fn-book-title">${esc(p.name)}</span>
         <span class="fn-book-repo">${esc(p.dataRepo)}</span>
-        <span class="fn-book-go">Open →</span></a>`).join('');
+        <span class="fn-book-go">open</span></a>`).join('');
     // "Add a book" tile stands at the end of the shelf, same footprint as the books.
     const addTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
-        <span class="fn-book-plus">＋</span><span class="fn-book-newlabel">New project</span></button>`;
-    frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
+        <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
+    frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow"><span class="pct">%</span> your library</span><h1 class="fn-h1">Documents in review</h1></div>
       ${list.length
         ? `<div class="fn-shelf">${books}${addTile}</div><div class="fn-shelf-board"></div>`
         : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
