@@ -1,13 +1,13 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=1406ac8';
-import { anchorFromSelection } from './anchor.js?v=1406ac8';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=1406ac8';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=1406ac8';
-import { sealToBase64 } from './vendor/seal.js?v=1406ac8';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=1406ac8';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=1406ac8';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=1406ac8';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=1406ac8';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=1406ac8';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=9f90fb9';
+import { anchorFromSelection } from './anchor.js?v=9f90fb9';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=9f90fb9';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=9f90fb9';
+import { sealToBase64 } from './vendor/seal.js?v=9f90fb9';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=9f90fb9';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=9f90fb9';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=9f90fb9';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=9f90fb9';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=9f90fb9';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
