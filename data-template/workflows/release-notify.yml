@@ -24,6 +24,9 @@ jobs:
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
           AUTHOR_NAME: ${{ vars.AUTHOR_NAME }}
+          DOC_NOUN: ${{ vars.DOC_NOUN }}
+          BRAND_NAME: ${{ vars.BRAND_NAME }}
+          OWNER_PORTAL_FILE: ${{ vars.OWNER_PORTAL_FILE }}
           PORTAL_BASE: ${{ vars.PORTAL_BASE }}
         run: python3 ci_notify_advisors.py
       - name: Commit notify state
