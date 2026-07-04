@@ -169,8 +169,7 @@ export async function launch() {
         <span class="fn-brand">${MARK(cfg.brand.accent)}<span class="fn-word">${esc(cfg.brand.name)}</span></span>
         ${userbar}
       </header>
-      <div class="fn-rule"></div>
-      <main class="fn-main">${inner}</main>
+      <main class="fn-main"><div class="fn-rule"></div>${inner}</main>
       ${FOOTER}
     </div>`;
     const so = document.getElementById('fn-signout');

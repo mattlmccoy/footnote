@@ -27,9 +27,10 @@
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.035'/%3E%3C/svg%3E");}
   #app{position:relative;z-index:1}
 
-  .fn-shell{max-width:880px;margin:0 auto;padding:0 28px 80px;position:relative}
-  /* the manuscript margin rule — the "footnote" motif */
-  .fn-rule{position:absolute;left:28px;top:96px;bottom:70px;width:2px;background:linear-gradient(var(--accent),rgba(44,100,196,.15));border-radius:2px}
+  .fn-shell{max-width:880px;margin:0 auto;padding:0 28px 26px;position:relative;display:flex;flex-direction:column;min-height:100vh}
+  /* the manuscript margin rule — the "footnote" motif. Lives inside .fn-main so it spans only the
+     content and never runs into the footer. */
+  .fn-rule{position:absolute;left:0;top:14px;bottom:10px;width:2px;background:linear-gradient(var(--accent),rgba(44,100,196,.15));border-radius:2px}
   @media(max-width:640px){.fn-rule{display:none}}
   .fn-top{display:flex;align-items:center;height:78px;gap:12px}
   .fn-brand{display:inline-flex;align-items:center;gap:11px}
@@ -37,7 +38,7 @@
   .fn-word{font-family:var(--serif);font-weight:600;font-size:22px;letter-spacing:-.01em}
   .fn-link{margin-left:auto;background:none;border:none;color:var(--muted);font-family:var(--sans);font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line)}
   .fn-link:hover{color:var(--accent)}
-  .fn-main{padding-left:34px}
+  .fn-main{padding-left:34px;position:relative;flex:1 0 auto}
   @media(max-width:640px){.fn-main{padding-left:0}}
 
   .fn-h1{font-family:var(--serif);font-weight:500;font-size:clamp(30px,5.2vw,46px);line-height:1.05;letter-spacing:-.02em;margin:22px 0 0}
