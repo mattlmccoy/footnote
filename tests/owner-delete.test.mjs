@@ -57,3 +57,26 @@ test('app.reconcileReview still pulls in a remote-only comment that was NOT dele
   const m = reconcile({ comments: [] }, { comments: [{ id: 'inj', status: 'open' }] }, true);
   assert.ok(m.comments.find(c => c.id === 'inj'), 'remote-only comment preserved (no over-delete)');
 });
+
+// The other half of the no-downgrade invariant (OWNER-152, app.js:170-171): FINAL states
+// (merged/declined) are terminal — a remote FINAL is adopted over a local working state, and a
+// local FINAL is never overwritten by a lagging/working remote, in BOTH sync directions.
+test('app.reconcileReview adopts a remote FINAL status over a local working one (no downgrade)', () => {
+  const reconcile = loadReconcile();
+  const remote = { comments: [{ id: 'c1', status: 'merged' }] };   // server finalized it
+  const local  = { comments: [{ id: 'c1', status: 'open' }] };      // local still working
+  for (const preferRemote of [true, false]) {
+    const m = reconcile(local, remote, preferRemote);
+    assert.equal(m.comments.find(c => c.id === 'c1').status, 'merged', `remote FINAL adopted (preferRemote=${preferRemote})`);
+  }
+});
+
+test('app.reconcileReview keeps a local FINAL status against a working remote (a merge/decline cannot be undone)', () => {
+  const reconcile = loadReconcile();
+  const remote = { comments: [{ id: 'c1', status: 'open' }] };      // remote back to a working state
+  const local  = { comments: [{ id: 'c1', status: 'declined' }] };  // local finalized
+  for (const preferRemote of [true, false]) {
+    const m = reconcile(local, remote, preferRemote);
+    assert.equal(m.comments.find(c => c.id === 'c1').status, 'declined', `local FINAL preserved (preferRemote=${preferRemote})`);
+  }
+});

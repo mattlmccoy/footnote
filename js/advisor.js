@@ -16,7 +16,7 @@ function loadDemoChapter(){
   const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
   el.innerHTML = `<article id="doc">
     <h1>${UNITC} 3 · Sample (tour preview)</h1>
-    <p id="tour-demo-select">This preview chapter shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; radio-frequency heating enables rapid, volumetric energy delivery through a dielectric medium. Select any words here to attach a comment.</p>
+    <p id="tour-demo-select">This preview ${UNIT} shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; radio-frequency heating enables rapid, volumetric energy delivery through a dielectric medium. Select any words here to attach a comment.</p>
     <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi.</p>
     <figure><img alt="Sample figure" src="${fig}"><figcaption>Figure 3.1. A sample figure — click it to comment on the figure itself.</figcaption></figure>
     <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
@@ -232,7 +232,7 @@ function renderBanner(){
   if (keyBad || !chs.length){ if (el) el.remove(); return; }
   if (!el){ el = document.createElement('div'); el.id = 'syncbanner'; document.body.appendChild(el); }
   const n = chs.length;
-  el.innerHTML = `<i class="ti ti-cloud-up"></i><span>${n} chapter${n>1?'s have':' has'} comments not yet saved to the server — keep this browser open.</span><button id="syncretry">Retry now</button>`;
+  el.innerHTML = `<i class="ti ti-cloud-up"></i><span>${n} ${UNIT}${n>1?'s have':' has'} comments not yet saved to the server; keep this browser open.</span><button id="syncretry">Retry now</button>`;
   el.querySelector('#syncretry').onclick = () => { el.querySelector('#syncretry').textContent = 'Retrying…'; retryPending(); };
 }
 
@@ -761,13 +761,13 @@ function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilt
 // ---------- top bar / home / search ----------
 function renderTopbar(){ const m=chMeta(current);
   document.getElementById('topbar').innerHTML=`
-    <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
+    <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${UNITC} ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
-    <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter"></div>
+    <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT}"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="icbtn" id="btn-export" title="Download this chapter (Word · Markdown)"><i class="ti ti-file-export"></i></button>
+      <button class="icbtn" id="btn-export" title="Download this ${UNIT} (Word · Markdown)"><i class="ti ti-file-export"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
@@ -798,7 +798,7 @@ function enterHome(){
   if(!tok()){
     read.innerHTML=`<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
       <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Welcome, ${escapeHtml(ADVISOR.name)}</div>
-      <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Enter the access key you were emailed to open the chapters shared with you for review. It's stored only in this browser.</div>
+      <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Enter the access key you were emailed to open the ${UNIT}s shared with you for review. It's stored only in this browser.</div>
       <button class="btn btn-primary" id="connect">Enter access key</button></div>`;
     read.querySelector('#connect').onclick=askKey; return;
   }
@@ -810,19 +810,19 @@ function enterHome(){
       <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
-      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The chapters released for your review are below. Open one to read it and leave comments or suggested edits — each one is shared with the author as soon as you add it.</div>
+      <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The ${UNIT}s released for your review are below. Open one to read it and leave comments or suggested edits; each one is shared with the author as soon as you add it.</div>
       <button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed ${DOC} outline</div>
-        <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it — available before chapters are released.</div></div>
+        <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it, available before ${UNIT}s are released.</div></div>
         <span style="margin-left:auto;font-size:11.5px;color:var(--text-2);white-space:nowrap">${ocn?ocn+' comment'+(ocn>1?'s':''):'open to review'} <i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>
       ${responsesReleased ? `<button id="responses-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--success);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--success-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-message-check" style="font-size:22px;color:var(--success)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Responses to your comments</div>
         <div style="font-size:11.5px;color:var(--text-2)">See how the author addressed each comment you submitted.</div></div>
         <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>` : ''}
-      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">CHAPTERS FOR REVIEW</div>
-      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No chapters have been released for your review yet. You'll see them here once they're shared.</div>`}<div id="adv-downloads"></div></div>`;
+      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">${UNIT.toUpperCase()}S FOR REVIEW</div>
+      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No ${UNIT}s have been released for your review yet. You'll see them here once they're shared.</div>`}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   document.getElementById('outline-card').onclick=loadOutline;
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
@@ -831,7 +831,7 @@ function enterHome(){
 // ---------- responses to your comments (read-only; gated by the owner's release toggle) ----------
 async function loadResponses(){
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
-  document.getElementById('topbar').innerHTML=`<button class="icbtn" id="resp-back" title="All chapters"><i class="ti ti-layout-grid"></i></button>
+  document.getElementById('topbar').innerHTML=`<button class="icbtn" id="resp-back" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Responses to your comments</strong>`;
   document.getElementById('resp-back').onclick=enterHome;
   read.innerHTML=`<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading…</div></div>`;
@@ -975,7 +975,7 @@ async function loadOutline(){
 }
 function renderOutlineTopbar(){
   document.getElementById('topbar').innerHTML=`
-    <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
+    <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel" style="cursor:default"><i class="ti ti-list-tree"></i><span>Proposed outline</span></button>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -1028,7 +1028,7 @@ function flash(msg, ms=2600){ const t=document.createElement('div'); t.textConte
 // ---------- download a chapter as Word / Markdown / PDF, with your comments ----------
 // Mirrors the owner reviewer's export: queue a build job, the cloud pipeline (pandoc +
 // LaTeX) produces the files, and they appear under Downloads on the home screen.
-const _EXP_FMT = { docx:'Word', pdf:'PDF', md:'Markdown' };
+const _EXP_FMT = { docx:'Word', md:'Markdown' };   // pdf removed — export is docx/md only
 const _expOpen = new Set();
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
@@ -1092,9 +1092,9 @@ async function renderAdvisorDownloads(){
   const jobs=await listExports();
   const header=`<div style="display:flex;align-items:center;gap:10px;margin:24px 0 13px">
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3)">DOWNLOADS</div>
-      <button class="btn" id="adv-export-btn" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export a chapter…</button></div>`;
+      <button class="btn" id="adv-export-btn" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export a ${UNIT}…</button></div>`;
   if(!jobs.length){
-    box.innerHTML=header+`<div style="font-size:12.5px;color:var(--text-3);line-height:1.6">No downloads yet. Use <strong>Export a chapter…</strong> above (or the export icon inside any chapter) to download it as Word, Markdown, or PDF with your comments.</div>`;
+    box.innerHTML=header+`<div style="font-size:12.5px;color:var(--text-3);line-height:1.6">No downloads yet. Use <strong>Export a ${UNIT}…</strong> above (or the export icon inside any ${UNIT}) to download it as Word or Markdown with your comments.</div>`;
     box.querySelector('#adv-export-btn').onclick=e=>exportPick(e.currentTarget); return;
   }
   const groups={}; for(const j of jobs){ (groups[j.chapter] ||= []).push(j); }
