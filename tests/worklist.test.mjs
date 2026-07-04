@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { buildWorklist } from '../js/worklist.js';
+import { buildWorklist, worklistToMarkdown } from '../js/worklist.js';
 
 const CH = [
   { id: 'ch_results', n: 3, title: 'Results', sourceFile: 'chapters/results.tex' },
@@ -48,4 +48,45 @@ test('buildWorklist: open count excludes actioned', () => {
 test('buildWorklist: chapter with no review is skipped', () => {
   const wl = buildWorklist(CH, { ch_results: rev([cmt({})]) }, CFG);
   assert.deepEqual(wl.map(g => g.file), ['chapters/results.tex']);
+});
+
+const META = { docTitle: 'My Thesis', generatedTs: '2026-07-03T12:00:00Z' };
+
+test('worklistToMarkdown: empty worklist yields the caught-up line', () => {
+  const md = worklistToMarkdown([], META);
+  assert.match(md, /# Review worklist — My Thesis/);
+  assert.match(md, /0 open items/);
+  assert.match(md, /No open comments — you're all caught up\./);
+});
+
+test('worklistToMarkdown: renders file heading, search locator, comment, edit', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({
+    edit: { op: 'replace', find: 'was pronounced', replacement: 'was measurable' } })]) }, CFG);
+  const md = worklistToMarkdown(wl, META);
+  assert.match(md, /## chapters\/results\.tex/);
+  assert.match(md, /- \[ \] §3\.2 — You · 2026-07-01/);
+  assert.match(md, /search: "the melt-pool contrast was pronounced"/);
+  assert.match(md, /Comment: Overstates it\./);
+  assert.match(md, /before: "was pronounced"  →  after: "was measurable"/);
+});
+
+test('worklistToMarkdown: actioned item uses a checked box', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({ actioned: true })]) }, CFG);
+  assert.match(worklistToMarkdown(wl, META), /- \[x\] /);
+});
+
+test('worklistToMarkdown: shows line number only when synctex present', () => {
+  const withLine = buildWorklist(CH, { ch_results: rev([cmt({
+    anchor: { quote: 'foo', synctex: { line: 142 }, section: '§3.2' } })]) }, CFG);
+  assert.match(worklistToMarkdown(withLine, META), /search: "foo"  · line 142/);
+  const noLine = buildWorklist(CH, { ch_results: rev([cmt({})]) }, CFG);
+  assert.doesNotMatch(worklistToMarkdown(noLine, META), /· line/);
+});
+
+test('worklistToMarkdown: empty-quote item locates by label, omits edit block', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({
+    kind: 'figure', anchor: { quote: '', synctex: null, figure: 'Figure 3.2', section: '§3.2' } })]) }, CFG);
+  const md = worklistToMarkdown(wl, META);
+  assert.match(md, /Find in Overleaf → Figure 3\.2/);
+  assert.doesNotMatch(md, /before:/);
 });

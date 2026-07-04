@@ -72,3 +72,39 @@ export function buildWorklist(chapters, reviews, config) {
   });
   return groups;
 }
+
+// Escape for inline Markdown: neutralize backticks, collapse newlines.
+const esc = s => String(s == null ? '' : s).replace(/`/g, '‘').replace(/\r?\n/g, ' ');
+
+export function worklistToMarkdown(worklist, meta) {
+  const m = meta || {};
+  const totalOpen = (worklist || []).reduce((n, g) => n + (g.open || 0), 0);
+  const head = [
+    `# Review worklist — ${m.docTitle || 'document'}`,
+    `Generated ${(m.generatedTs || '').slice(0, 10)} · ${totalOpen} open item${totalOpen === 1 ? '' : 's'}`,
+    '',
+  ];
+  if (!worklist || !worklist.length) {
+    return [...head, "No open comments — you're all caught up.", ''].join('\n');
+  }
+  const lines = [...head];
+  for (const g of worklist) {
+    lines.push(`## ${g.file || g.title}`, '');
+    for (const it of g.items) {
+      const box = it.actioned ? 'x' : ' ';
+      const who = `${it.section ? it.section + ' — ' : ''}${it.reviewerName} · ${(it.ts || '').slice(0, 10)}`;
+      lines.push(`- [${box}] ${who}`);
+      if (it.locator.quote) {
+        lines.push(`  Find in Overleaf → search: "${esc(it.locator.quote)}"${it.locator.line ? `  · line ${it.locator.line}` : ''}`);
+      } else if (it.locator.label) {
+        lines.push(`  Find in Overleaf → ${esc(it.locator.label)}`);
+      }
+      if (it.comment) lines.push(`  Comment: ${esc(it.comment)}`);
+      if (it.before != null && it.after != null) {
+        lines.push(`  Suggested edit — before: "${esc(it.before)}"  →  after: "${esc(it.after)}"`);
+      }
+      lines.push('');
+    }
+  }
+  return lines.join('\n');
+}
