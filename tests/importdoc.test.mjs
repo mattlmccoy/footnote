@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -103,4 +103,33 @@ test('commitSourceFile passes the existing sha so an update overwrites in place'
   };
   await commitSourceFile('alice/src', 'main.tex', 'x', 'tok', 'import', fake);
   assert.equal(putBody.sha, 'old');
+});
+
+// ---- dataRepoSuggestion: auto-name the private comments/data repo from the project name ----
+test('dataRepoSuggestion slugifies the name and appends -footnote-data', () => {
+  assert.equal(dataRepoSuggestion('My Thesis', 'alice'), 'alice/my-thesis-footnote-data');
+  assert.equal(dataRepoSuggestion('', 'alice'), 'alice/project-footnote-data');
+  assert.equal(dataRepoSuggestion('My Thesis'), 'my-thesis-footnote-data');
+});
+
+// ---- planNewProjectRepos: resolve source+data repo names for a new project given the entry mode ----
+test('planNewProjectRepos auto-names both repos for the local-file path', () => {
+  const r = planNewProjectRepos({ mode: 'local', name: 'My Thesis', owner: 'alice' });
+  assert.deepEqual(r, { sourceRepo: 'alice/my-thesis-source', dataRepo: 'alice/my-thesis-footnote-data' });
+});
+
+test('planNewProjectRepos uses the picked repo in github mode and still auto-names the data repo', () => {
+  const r = planNewProjectRepos({ mode: 'github', name: 'My Thesis', owner: 'alice', sourceOverride: 'alice/existing-latex' });
+  assert.equal(r.sourceRepo, 'alice/existing-latex');
+  assert.equal(r.dataRepo, 'alice/my-thesis-footnote-data');
+});
+
+test('planNewProjectRepos lets Advanced overrides win over the auto names', () => {
+  const r = planNewProjectRepos({ mode: 'local', name: 'My Thesis', owner: 'alice', sourceOverride: 'alice/custom-src', dataOverride: 'alice/custom-data' });
+  assert.deepEqual(r, { sourceRepo: 'alice/custom-src', dataRepo: 'alice/custom-data' });
+});
+
+test('planNewProjectRepos leaves sourceRepo empty in github mode when nothing is picked (caller validates)', () => {
+  const r = planNewProjectRepos({ mode: 'github', name: 'My Thesis', owner: 'alice' });
+  assert.equal(r.sourceRepo, '');
 });

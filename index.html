@@ -67,6 +67,20 @@
   .fn-ac-diag{padding:6px 12px;font-size:10.5px;color:var(--faint);border-top:1px solid var(--line);font-family:var(--mono)}
   .fn-hint{font-size:12.5px;color:var(--faint);margin:0 0 16px}
   .fn-hint a{color:var(--accent);text-decoration:none;font-weight:500}.fn-hint a:hover{text-decoration:underline}
+  .fn-hint code{font-family:var(--mono);font-size:11.5px;background:var(--paper-2);padding:1px 5px;border-radius:5px}
+  .fn-field-lbl{font-size:12.5px;color:var(--muted);font-weight:500;margin-bottom:8px}
+  .fn-seg{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap}
+  .fn-seg-b{flex:1;min-width:110px;font-family:var(--sans);font-size:12.5px;font-weight:500;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--muted);cursor:pointer;transition:border-color .12s,background .12s,color .12s}
+  .fn-seg-b:hover{border-color:var(--accent)}
+  .fn-seg-b.on{border-color:var(--accent);background:rgba(44,100,196,.08);color:var(--ink)}
+  .fn-drop{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:20px;margin-bottom:8px;border:1.5px dashed var(--line);border-radius:12px;background:var(--paper-2);color:var(--muted);font-size:13px;cursor:pointer;transition:border-color .15s,background .15s}
+  .fn-drop:hover{border-color:var(--accent);background:#fffefb}
+  .fn-adv{margin:2px 0 14px;font-size:12.5px}
+  .fn-adv summary{cursor:pointer;color:var(--faint);font-weight:500;list-style:none;user-select:none}
+  .fn-adv summary::-webkit-details-marker{display:none}
+  .fn-adv summary::before{content:"\25B8  "}
+  .fn-adv[open] summary::before{content:"\25BE  "}
+  .fn-adv .fn-field{margin-top:12px}
   .fn-err{color:#b23b2e;font-size:12.5px;min-height:16px;margin-bottom:4px}
   .fn-actions{display:flex;gap:10px;flex-wrap:wrap}.fn-actions.fn-right{justify-content:flex-end}
 

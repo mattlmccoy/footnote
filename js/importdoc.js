@@ -31,6 +31,23 @@ export function sourceRepoSuggestion(projectName, owner) {
   return owner ? `${owner}/${name}` : name;
 }
 
+// Suggested private comments/data-repo full name: owner/<slug>-footnote-data (owner optional).
+export function dataRepoSuggestion(projectName, owner) {
+  const name = `${slug(projectName)}-footnote-data`;
+  return owner ? `${owner}/${name}` : name;
+}
+
+// Resolve the source + comments repo names for a NEW project. Beginners never type a repo name: both are
+// auto-derived from the project name. `mode` is where their writing lives — 'local' (upload) / 'overleaf'
+// (sync then create) auto-name the source repo; 'github' uses the repo they pick. Advanced overrides win.
+export function planNewProjectRepos({ mode, name, owner, sourceOverride, dataOverride } = {}) {
+  const dataRepo = (dataOverride || '').trim() || dataRepoSuggestion(name, owner);
+  const sourceRepo = mode === 'github'
+    ? (sourceOverride || '').trim()
+    : ((sourceOverride || '').trim() || sourceRepoSuggestion(name, owner));
+  return { sourceRepo, dataRepo };
+}
+
 // ---- source-repo I/O (injectable fetch; default global fetch in the browser) ----
 // These write to the ADOPTER's OWN source repo with their OWN token — no Footnote-held credential.
 

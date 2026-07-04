@@ -4,7 +4,8 @@
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject } from './config.js?v=a011de4';
 import { seedDataRepo } from './seed.js?v=a011de4';
-import { importFormat, sourceRepoSuggestion, ensureRepo, commitSourceFile } from './importdoc.js?v=a011de4';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile } from './importdoc.js?v=a011de4';
+import { parseLatexChapters } from './docparse.js?v=a011de4';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -298,56 +299,132 @@ export async function launch() {
   // One sheet for both New (existing=null) and Edit. On edit the comments repo is read-only (it's the
   // project's identity + holds all existing comments) and no repo is created/seeded — only projects.json changes.
   function projectSheet(list, existing) {
-    const editing = !!existing;
-    const v = existing || { name: '', sourceRepo: '', dataRepo: '', doc: { noun: 'thesis' } };
+    if (existing) return editProjectSheet(list, existing);
+    return newProjectSheet(list);
+  }
+
+  // Edit: rename, repoint the source repo, change the noun. Never creates/seeds repos; the comments repo
+  // is the project's identity and stays fixed.
+  function editProjectSheet(list, v) {
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
-      <div class="fn-sheet-h">${editing ? 'Edit project' : 'New project'}</div>
+      <div class="fn-sheet-h">Edit project</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false" value="${esc(v.name)}"></label>
-      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing — e.g. your dissertation repo (Overleaf-synced or local). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/phd-dissertation" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
-      ${editing ? '' : `<div class="fn-upload-row" style="margin:-8px 0 14px"><label style="font-size:11.5px;color:var(--accent);cursor:pointer;display:inline-flex;align-items:center;gap:5px"><i class="ti ti-upload"></i> or upload a .tex — Footnote creates the source repo &amp; commits it as main.tex<input id="np-tex" type="file" accept=".tex" style="display:none"></label> <span id="np-tex-name" style="font-size:11.5px;color:var(--text-3)"></span></div>`}
-      <label class="fn-field">${editing ? 'Comments repo' : 'New comments repo'} <span class="fn-sub">${editing ? 'where this project’s comments live — fixed once created' : 'a separate private repo Footnote writes comments + the reading view into — NOT your document'}</span><input id="np-data" placeholder="${esc(cfg.owner)}/my-review-data" spellcheck="false" value="${esc(v.dataRepo || '')}"${editing ? ' disabled' : ''}></label>
+      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing (a GitHub repo, Overleaf-synced or not). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
+      <label class="fn-field">Comments repo <span class="fn-sub">where this project’s comments live — fixed once created</span><input id="np-data" value="${esc(v.dataRepo || '')}" disabled></label>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="${esc((v.doc && v.doc.noun) || 'thesis')}" spellcheck="false"></label>
       <div class="fn-err" id="np-err"></div>
-      <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">${editing ? 'Save changes' : 'Create project'}</button></div></div>`;
+      <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Save changes</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
-    let pendingTex = null;   // { name, text } — a .tex upload to commit as main.tex into the source repo
     attachRepoPicker(q('#np-src'), tok());
-    if (!editing) attachRepoPicker(q('#np-data'), tok());
-    if (!editing) q('#np-tex').onchange = async e => {
-      const f = e.target.files[0]; if (!f) return;
-      if (importFormat(f.name) !== 'tex') { q('#np-err').textContent = 'Upload a .tex file (.docx conversion is coming soon).'; return; }
-      pendingTex = { name: f.name, text: await f.text() };
-      q('#np-tex-name').textContent = f.name;
-      if (!q('#np-src').value.trim()) q('#np-src').value = sourceRepoSuggestion(q('#np-name').value.trim() || 'project', cfg.owner);
-    };
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
       const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document', sourceRepo = q('#np-src').value.trim();
+      if (!name) return q('#np-err').textContent = 'Name is required.';
       try {
-        if (editing) {
-          if (!name) return q('#np-err').textContent = 'Name is required.';
-          q('#np-save').disabled = true; q('#np-err').textContent = 'Saving…';
-          await writeProjects(hub(), tok(), updateProject(list, existing.id, { name, sourceRepo, doc: { noun } }));
-          close(); render(); return;
-        }
-        const dataRepo = q('#np-data').value.trim();
-        if (!name || !dataRepo) return q('#np-err').textContent = 'Name and data repo are required.';
-        if (pendingTex && !sourceRepo) return q('#np-err').textContent = 'Set a source repo name for the uploaded .tex.';
+        q('#np-save').disabled = true; q('#np-err').textContent = 'Saving…';
+        await writeProjects(hub(), tok(), updateProject(list, v.id, { name, sourceRepo, doc: { noun } }));
+        close(); render();
+      } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
+    };
+    setTimeout(() => q('#np-name').focus(), 30);
+  }
+
+  // New project onboarding, organized around "Where's your writing?" so a beginner with a local file never
+  // has to know what a repo is. Both repos are auto-named from the project name; power users override under
+  // Advanced. mode='local' uploads a .tex (Footnote creates the repo + commits it); 'github'/'overleaf'
+  // point at an existing repo.
+  function newProjectSheet(list) {
+    let mode = 'local', pendingTex = null, srcDirty = false, dataDirty = false;
+    const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
+    scrim.innerHTML = `<div class="fn-sheet fn-reveal">
+      <div class="fn-sheet-h">New project</div>
+      <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false"></label>
+      <div class="fn-field-lbl">Where's your writing?</div>
+      <div class="fn-seg" id="np-modes">
+        <button type="button" class="fn-seg-b on" data-mode="local">On my computer</button>
+        <button type="button" class="fn-seg-b" data-mode="github">In a GitHub repo</button>
+        <button type="button" class="fn-seg-b" data-mode="overleaf">In Overleaf</button>
+      </div>
+      <div id="np-panel"></div>
+      <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="thesis" spellcheck="false"></label>
+      <details class="fn-adv"><summary>Advanced — repo names</summary>
+        <label class="fn-field">Source repo <span class="fn-sub">where your LaTeX lives / will be created</span><input id="np-src" spellcheck="false"></label>
+        <label class="fn-field">Comments repo <span class="fn-sub">a private repo Footnote creates for comments + the reading view — not your document</span><input id="np-data" spellcheck="false"></label>
+      </details>
+      <div class="fn-err" id="np-err"></div>
+      <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
+    root.appendChild(scrim);
+    const q = s => scrim.querySelector(s), close = () => scrim.remove();
+    // Keep the auto-named repo fields in sync with the project name until the user edits them by hand.
+    const syncNames = () => {
+      const name = q('#np-name').value.trim();
+      if (!srcDirty && mode === 'local') q('#np-src').value = sourceRepoSuggestion(name || 'project', cfg.owner);
+      if (!dataDirty) q('#np-data').value = dataRepoSuggestion(name || 'project', cfg.owner);
+    };
+    const renderPanel = () => {
+      const p = q('#np-panel');
+      if (mode === 'local') {
+        p.innerHTML = `<label class="fn-drop"><i class="ti ti-upload"></i> <span id="np-tex-name">Choose your .tex file</span><input id="np-tex" type="file" accept=".tex" style="display:none"></label>
+          <div class="fn-hint">Footnote creates a private repo for it and commits it as <code>main.tex</code>. <code>.docx</code> support is coming.</div>`;
+        q('#np-tex').onchange = async e => {
+          const f = e.target.files[0]; if (!f) return;
+          if (importFormat(f.name) !== 'tex') { q('#np-err').textContent = 'Please choose a .tex file (.docx is coming soon).'; return; }
+          pendingTex = { name: f.name, text: await f.text() }; q('#np-tex-name').textContent = f.name; q('#np-err').textContent = '';
+        };
+      } else {
+        pendingTex = null;
+        const overleaf = mode === 'overleaf';
+        p.innerHTML = `${overleaf ? `<div class="fn-hint">In Overleaf: <b>Menu → GitHub → Sync</b> to a new repo, then pick it here.</div>` : ''}
+          <label class="fn-field">${overleaf ? 'Your synced GitHub repo' : 'Pick the repo with your LaTeX'}<input id="np-pick" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false"></label>
+          <div class="fn-hint">Already on GitHub? Point Footnote at it — read-only, never edited.</div>`;
+        const pick = q('#np-pick'); attachRepoPicker(pick, tok());
+        pick.addEventListener('input', () => { srcDirty = true; q('#np-src').value = pick.value.trim(); });
+      }
+      syncNames();
+    };
+    q('#np-modes').querySelectorAll('.fn-seg-b').forEach(b => b.onclick = () => {
+      if (mode === b.dataset.mode) return;
+      mode = b.dataset.mode;
+      if (mode !== 'local') srcDirty = false;   // a picked repo re-marks dirty; auto-name resumes for local
+      q('#np-modes').querySelectorAll('.fn-seg-b').forEach(x => x.classList.toggle('on', x === b));
+      renderPanel();
+    });
+    q('#np-name').addEventListener('input', syncNames);
+    q('#np-src').addEventListener('input', () => { srcDirty = true; });
+    q('#np-data').addEventListener('input', () => { dataDirty = true; });
+    attachRepoPicker(q('#np-src'), tok());
+    syncNames(); renderPanel();
+    scrim.onclick = e => { if (e.target === scrim) close(); };
+    q('#np-x').onclick = close;
+    q('#np-save').onclick = async () => {
+      const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document';
+      if (!name) return q('#np-err').textContent = 'Give your project a name.';
+      const { sourceRepo, dataRepo } = planNewProjectRepos({ mode, name, owner: cfg.owner, sourceOverride: q('#np-src').value, dataOverride: q('#np-data').value });
+      if (mode === 'local' && !pendingTex) return q('#np-err').textContent = 'Choose your .tex file to upload.';
+      if (mode !== 'local' && !sourceRepo) return q('#np-err').textContent = 'Pick the repo where your LaTeX lives.';
+      try {
         const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo, doc: { noun, unitNoun: 'chapter' } });
         q('#np-save').disabled = true;
-        if (pendingTex) {   // upload path: create the source repo and commit the LaTeX before registering the project
-          q('#np-err').textContent = `Creating the source repo ${sourceRepo}…`;
+        let chapters = null;
+        if (pendingTex) {   // local upload: create the source repo, commit the LaTeX, parse its chapters
+          q('#np-err').textContent = `Creating ${sourceRepo}…`;
           await ensureRepo(tok(), sourceRepo);
           q('#np-err').textContent = 'Committing main.tex…';
           await commitSourceFile(sourceRepo, 'main.tex', pendingTex.text, tok(), 'Footnote import: main.tex');
+          chapters = parseLatexChapters(pendingTex.text, () => null);
         }
         q('#np-err').textContent = 'Creating the comments repo…';
         await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
         q('#np-err').textContent = 'Setting up background email/notify…';
         try { await seedDataRepo(dataRepo, tok()); } catch (e) { console.warn('seed:', e.message); }   // non-fatal; can re-run later
+        if (chapters && chapters.length) {   // seed chapters.json so the project opens ready, not empty
+          q('#np-err').textContent = `Saving ${chapters.length} chapter${chapters.length !== 1 ? 's' : ''}…`;
+          try { await commitSourceFile(dataRepo, 'chapters.json', JSON.stringify(chapters, null, 2), tok(), `import: ${chapters.length} chapters from main.tex`); }
+          catch (e) { console.warn('chapters:', e.message); }
+        }
         q('#np-err').textContent = 'Saving…';
         await writeProjects(hub(), tok(), next); close(); render();
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
