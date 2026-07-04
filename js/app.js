@@ -8,6 +8,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=367e8c5';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=367e8c5';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=367e8c5';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=367e8c5';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=367e8c5';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1523,6 +1524,7 @@ function enterHome(){
      <button class="btn" id="btn-token" style="padding:6px 12px${_CFG.deadline?'':';margin-left:auto'}${tok()?'':';color:var(--warn);border-color:var(--warn)'}" title="Your GitHub access token"><i class="ti ti-key"></i>${tok()?'Token':'Add token'}</button>
      <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what reviewers see)"><i class="ti ti-list-tree"></i>Outline</button>
      <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to reviewer comments"><i class="ti ti-file-text"></i>Response</button>
+     <button class="btn" id="btn-overleaf" style="padding:6px 12px" title="Take reviewer feedback back to Overleaf"><i class="ti ti-file-symlink"></i>To Overleaf</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
@@ -1530,6 +1532,7 @@ function enterHome(){
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
   document.getElementById('btn-export').onclick = exportAdvisorResponse;
+  document.getElementById('btn-overleaf').onclick = () => openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message));
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
   document.getElementById('btn-token').onclick = manageToken;
   document.getElementById('btn-tour').onclick = openTourMenu;
@@ -1540,6 +1543,79 @@ function enterHome(){
   refreshInbox();
   renderHomeDownloads();
 }
+// ---------- take reviewer feedback back to Overleaf ----------
+function ensureOverleafPanel(){
+  let ov = document.getElementById('ovl-back');
+  if (ov) return ov;
+  ov = document.createElement('div'); ov.id = 'ovl-back'; ov.className = 'ovl-back'; ov.hidden = true;
+  ov.innerHTML = `<div class="ovl-panel" role="dialog" aria-label="Take to Overleaf">
+    <div class="ovl-head">
+      <b>Take reviewer feedback to Overleaf</b>
+      <div class="ovl-actions">
+        <button class="btn" id="ovl-copy" style="padding:5px 10px;font-size:12px"><i class="ti ti-copy"></i>Copy all as Markdown</button>
+        <button class="btn" id="ovl-download" style="padding:5px 10px;font-size:12px"><i class="ti ti-download"></i>Download .md</button>
+        <button class="btn" id="ovl-print" style="padding:5px 10px;font-size:12px"><i class="ti ti-printer"></i>Print</button>
+        <button class="icbtn" id="ovl-close" aria-label="Close"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <p class="ovl-sub">Each item shows where to edit in your <code>.tex</code> and what to change. Search the quoted text in Overleaf; tick items off as you go.</p>
+    <div id="ovl-body" class="ovl-body"></div>
+  </div>`;
+  document.body.appendChild(ov);
+  ov.addEventListener('click', e => { if (e.target === ov) ov.hidden = true; });
+  document.getElementById('ovl-close').onclick = () => { ov.hidden = true; };
+  document.getElementById('ovl-copy').onclick = async () => {
+    const md = ov.dataset.md || '';
+    try { await navigator.clipboard.writeText(md); flash('Worklist copied to clipboard ✓'); }
+    catch { const ta = document.createElement('textarea'); ta.value = md; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); flash('Worklist copied ✓'); }
+  };
+  document.getElementById('ovl-download').onclick = () => {
+    const md = ov.dataset.md || ''; const stamp = new Date().toISOString().slice(0, 10);
+    const base = (_CFG.doc && _CFG.doc.title) || (_CFG.brand && _CFG.brand.name) || 'document';
+    const name = `${base.replace(/[^\w-]+/g, '-').toLowerCase()}-overleaf-worklist-${stamp}.md`;
+    const blob = new Blob([md], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob); const a = document.createElement('a');
+    a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url);
+  };
+  document.getElementById('ovl-print').onclick = () => window.print();
+  document.getElementById('ovl-body').addEventListener('change', onOverleafToggle);
+  return ov;
+}
+
+async function onOverleafToggle(e){
+  const cb = e.target.closest('.ovl-cb'); if (!cb) return;
+  const item = cb.closest('.ovl-item'); const cid = item.dataset.cid, ch = item.dataset.ch;
+  const actioned = cb.checked; item.classList.toggle('done', actioned);
+  try {
+    const t = tok();
+    const { json, sha } = await getJson(t, reviewPath(ch));
+    if (!json) throw new Error('review not found');
+    const next = updateComment(json, cid, { actioned });
+    await putJson(t, reviewPath(ch), next, sha, `worklist: ${actioned ? 'actioned' : 'reopened'} ${cid} in ${ch}`, false);
+    await openOverleafPanel();   // rebuild from source of truth so counts + copyable Markdown stay in sync
+  } catch (err) {
+    cb.checked = !actioned; item.classList.toggle('done', !actioned);
+    flash('Could not save: ' + err.message);
+  }
+}
+
+async function openOverleafPanel(){
+  const t = tok(); const ov = ensureOverleafPanel();
+  const body = document.getElementById('ovl-body');
+  body.innerHTML = `<div class="ovl-empty">Loading…</div>`;
+  ov.hidden = false;
+  const chapters = CHAPTERS || [];
+  const reviews = {};
+  await Promise.all(chapters.map(async ch => {
+    try { const { json } = await getJson(t, reviewPath(ch.id)); if (json) reviews[ch.id] = json; }
+    catch(e){ /* missing review file for a chapter is normal; skip */ }
+  }));
+  const wl = buildWorklist(chapters, reviews, _CFG);
+  const body2 = document.getElementById('ovl-body');
+  body2.innerHTML = wl.length ? worklistToHtml(wl, escapeHtml) : `<div class="ovl-empty">No open comments — you're all caught up.</div>`;
+  ov.dataset.md = worklistToMarkdown(wl, { docTitle: (_CFG.doc && _CFG.doc.title) || (_CFG.brand && _CFG.brand.name) || 'document', generatedTs: new Date().toISOString() });
+}
+
 // ---------- proposed outline (read-only view of what advisors see) ----------
 async function loadOwnerOutline(){
   current = '__outline__'; review = loadLocalReview('__outline__'); localStorage.setItem('lastChapter', '__outline__');
