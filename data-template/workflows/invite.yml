@@ -55,6 +55,9 @@ jobs:
           SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
           ADVISOR_KEY: ${{ secrets.ADVISOR_KEY }}
           AUTHOR_NAME: ${{ vars.AUTHOR_NAME }}
+          DOC_NOUN: ${{ vars.DOC_NOUN }}
+          BRAND_NAME: ${{ vars.BRAND_NAME }}
+          OWNER_PORTAL_FILE: ${{ vars.OWNER_PORTAL_FILE }}
           PORTAL_BASE: ${{ vars.PORTAL_BASE }}
           TEST_EMAIL: ${{ steps.check.outputs.test_email }}
         run: python3 ci_invite.py
