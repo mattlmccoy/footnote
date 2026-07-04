@@ -5,7 +5,7 @@ import {
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
-  writeProjectPatch,
+  writeProjectPatch, assistantEnabled,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -219,4 +219,12 @@ test('writeProjectPatch throws for an unknown project id', async () => {
   const b64 = Buffer.from(JSON.stringify([{ id: 'a', name: 'A', dataRepo: 'alice/a-data' }])).toString('base64');
   const fake = async () => ({ ok: true, status: 200, json: async () => ({ content: b64, sha: 's' }) });
   await assert.rejects(() => writeProjectPatch(APP, 'nope', { sourceRepo: 'x' }, 'tok', fake), ConfigError);
+});
+
+test('assistantEnabled is off by default, on via the local flag or a configured reviewAgents list', () => {
+  assert.equal(assistantEnabled({ reviewAgents: [] }, null), false);      // default: off
+  assert.equal(assistantEnabled({ reviewAgents: [] }, '0'), false);
+  assert.equal(assistantEnabled({ reviewAgents: [] }, '1'), true);        // user enabled it in Settings
+  assert.equal(assistantEnabled({ reviewAgents: ['adversary'] }, null), true);  // instance ships agents
+  assert.equal(assistantEnabled({}, null), false);                        // no reviewAgents key
 });

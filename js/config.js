@@ -226,5 +226,13 @@ export async function loadChapters(token, fetchImpl) {
   return Array.isArray(data) ? data : (data.chapters || []);
 }
 
+// Whether the optional AI assistant (Send to Claude / run review agents) is on. OFF by default — the
+// deterministic review→stage→approve→merge path is the core product. Enabled either by a per-user local
+// flag (Settings toggle → localStorage 'footnote:assistant' === '1') or by an instance that ships a
+// reviewAgents list in its config. `flag` is the raw localStorage value (string | null).
+export function assistantEnabled(cfg, flag) {
+  return flag === '1' || ((cfg && cfg.reviewAgents) || []).length > 0;
+}
+
 // Test-only: reset the module cache.
 export function _resetConfigCache() { _cache = null; }

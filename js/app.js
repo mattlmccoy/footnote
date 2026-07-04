@@ -5,7 +5,7 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=f481d1d';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=f481d1d';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=f481d1d';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=f481d1d';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled } from './config.js?v=f481d1d';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=f481d1d';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=f481d1d';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=f481d1d';
@@ -36,6 +36,10 @@ setConfig(_CFG);
 const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
 const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
 const UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // "Chapter"/"Section"/… for visible unit labels
+// Optional AI assistant (Send to Claude / run agents) — OFF by default; the deterministic review→stage→
+// approve→merge flow is core. Toggled per-user in ⋯ menu (localStorage) or shipped on via reviewAgents.
+const ASSIST_KEY = 'footnote:assistant';
+const assistantOn = () => assistantEnabled(_CFG, localStorage.getItem(ASSIST_KEY));
 
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
@@ -209,7 +213,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="btn btn-primary" id="btn-send"><i class="ti ti-send"></i>Send to Claude</button>
+      <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
@@ -264,7 +268,12 @@ async function loadChapter(ch){
       <button class="btn btn-primary" id="connect">Enter a new token</button></div>`;
       document.getElementById('connect').onclick = () => { const v = prompt('New fine-grained PAT:'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
       return; }
-    read.innerHTML = `<div class="empty">Couldn't pull chapter ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
+    if (/\b404\b/.test(e.message)){   // source is imported but this unit's reading HTML hasn't been built yet
+      read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">Your LaTeX source is in place, but Footnote hasn't rendered ${escapeHtml(UNIT)} ${chMeta(ch).n} to readable HTML yet. That build step (LaTeX → HTML) is coming — your comments and structure are safe in the meantime.</div></div>`;
+      return; }
+    read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(UNIT)} ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -2139,14 +2148,28 @@ function openMoreMenu(){
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
     <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
     <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
+    <div class="mmi" data-act="assistant"><i class="ti ti-robot-face"></i>AI assistant: ${assistantOn()?'on — turn off':'off — turn on'}</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
   const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
-      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } } };
+      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
+    assistant: toggleAssistant };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
+}
+// Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
+// Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
+function toggleAssistant(){
+  if (assistantOn()){
+    if (_CFG.reviewAgents.length){ flash('This project ships an AI agent list in its config — edit the config to disable it.'); return; }
+    localStorage.removeItem(ASSIST_KEY); flash('AI assistant off. “Review actions” (stage → approve → merge) still works.');
+  } else {
+    localStorage.setItem(ASSIST_KEY, '1');
+    alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN data repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
+  }
+  if (document.getElementById('btn-send')) renderTopbar();   // refresh the top-bar button label
 }
 function manageToken(){
   const cur = tok();
