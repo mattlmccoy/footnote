@@ -128,3 +128,36 @@ test('parseLatexChapters dedupes colliding ids by suffixing', () => {
   const chs = parseLatexChapters(main, () => null);
   assert.deepEqual(chs.map(c => c.id), ['intro', 'intro-2']);
 });
+
+// ---- \section fallback: articles (elsarticle etc.) have no \chapter — use \section as the unit ----
+test('parseLatexChapters falls back to \\section when a single-file doc has no \\chapter', () => {
+  const tex = `\\documentclass{elsarticle}
+\\begin{document}
+\\section{Introduction}\\label{sec:intro}
+text
+\\subsection{Background}
+more text
+\\section{Methodology}
+\\subsection{Design}
+\\section{Conclusions}
+\\end{document}`;
+  const chs = parseLatexChapters(tex);
+  assert.deepEqual(chs.map(c => c.title), ['Introduction', 'Methodology', 'Conclusions']);   // sections only, not subsections
+  assert.equal(chs[0].sourceFile, 'main.tex');
+  assert.equal(chs.length, 3);
+});
+
+test('parseLatexChapters counts starred sections too (e.g. Acknowledgments)', () => {
+  const tex = `\\section{Introduction}\n\\section*{Acknowledgments}\n`;
+  assert.deepEqual(parseLatexChapters(tex).map(c => c.title), ['Introduction', 'Acknowledgments']);
+});
+
+test('parseLatexChapters still prefers \\chapter when both chapters and sections exist', () => {
+  const tex = `\\chapter{One}\n\\section{A}\n\\chapter{Two}\n\\section{B}\n`;
+  assert.deepEqual(parseLatexChapters(tex).map(c => c.title), ['One', 'Two']);
+});
+
+test('parseLatexChapters does not treat \\subsection as a top-level \\section unit', () => {
+  const tex = `\\section{Only}\n\\subsection{Nested}\n\\subsubsection{Deeper}\n`;
+  assert.deepEqual(parseLatexChapters(tex).map(c => c.title), ['Only']);
+});

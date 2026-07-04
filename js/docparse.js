@@ -25,10 +25,11 @@ function stripComments(tex) {
   return String(tex).replace(/(^|[^\\])%.*$/gm, '$1');
 }
 
-// Extract the balanced-brace argument of the first \chapter (optionally \chapter[short]) after `from`.
-// Returns { title, end } or null. Handles one level of nested braces in the title.
-function firstChapter(tex, from = 0) {
-  const re = /\\chapter\b\s*(\[[^\]]*\])?\s*\{/g;
+// Extract the balanced-brace argument of the first \<level> command (optionally starred / \cmd[short])
+// after `from`. `level` is 'chapter' or 'section'. Returns { title, end } or null. Handles one level of
+// nested braces in the title. \b after the level name means \section never matches \subsection.
+function firstSectioning(tex, level, from = 0) {
+  const re = new RegExp(`\\\\${level}\\b\\*?\\s*(\\[[^\\]]*\\])?\\s*\\{`, 'g');
   re.lastIndex = from;
   const m = re.exec(tex);
   if (!m) return null;
@@ -42,10 +43,10 @@ function firstChapter(tex, from = 0) {
   return { title: latexTitleText(buf), end: i };
 }
 
-function allChapters(tex) {
+function allSectioning(tex, level) {
   const out = [];
   let pos = 0, hit;
-  while ((hit = firstChapter(tex, pos))) { out.push(hit.title); pos = hit.end + 1; }
+  while ((hit = firstSectioning(tex, level, pos))) { out.push(hit.title); pos = hit.end + 1; }
   return out;
 }
 
@@ -112,24 +113,32 @@ export function parseDocxChapters(documentXml) {
   return finalizeChapters(raw);
 }
 
-// Parse chapters from a LaTeX document. resolveFile(path) → the content of an \include/\input'd file
-// (path as written, without .tex), or null. Order follows the includes; a single-file doc falls back to
-// its own \chapter commands. Files/None with no \chapter are skipped. Ids are deduped.
+// Parse the reading units from a LaTeX document. resolveFile(path) → the content of an \include/\input'd
+// file (path as written, without .tex), or null. The unit is \chapter when the assembled document has any
+// \chapter (books, dissertations), else \section (journal articles: elsarticle, IEEEtran, article — which
+// have no \chapter). Order follows the includes; a single-file doc parses its own commands. Ids are deduped.
 export function parseLatexChapters(mainTex, resolveFile = () => null) {
   const clean = stripComments(mainTex);
   const includeRe = /\\(?:include|input)\s*\{([^}]+)\}/g;
-  const raw = [];
+  const includes = [];
   let m;
   while ((m = includeRe.exec(clean))) {
     const path = m[1].trim().replace(/\.tex$/, '');
     const content = resolveFile(path);
-    if (content == null) continue;
-    const title = (firstChapter(stripComments(content)) || {}).title;
-    if (title) raw.push({ title, id: slugifyId(path.split('/').pop()), sourceFile: `${path}.tex` });
+    includes.push({ path, content: content == null ? null : stripComments(content) });
   }
-  // Single-file fallback: no includes produced chapters → parse \chapter in the main file itself.
+  // Pick the unit level once, from the whole assembled document, so a mixed / article doc is consistent.
+  const hasChapter = /\\chapter\b/.test(clean) || includes.some(i => i.content && /\\chapter\b/.test(i.content));
+  const level = hasChapter ? 'chapter' : 'section';
+  const raw = [];
+  for (const inc of includes) {
+    if (inc.content == null) continue;
+    const title = (firstSectioning(inc.content, level) || {}).title;
+    if (title) raw.push({ title, id: slugifyId(inc.path.split('/').pop()), sourceFile: `${inc.path}.tex` });
+  }
+  // Single-file fallback: no includes produced units → parse the level's commands in the main file itself.
   if (raw.length === 0) {
-    for (const title of allChapters(clean)) raw.push({ title, id: slugifyId(title), sourceFile: 'main.tex' });
+    for (const title of allSectioning(clean, level)) raw.push({ title, id: slugifyId(title), sourceFile: 'main.tex' });
   }
   return finalizeChapters(raw);
 }
