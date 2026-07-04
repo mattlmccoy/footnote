@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -132,4 +132,46 @@ test('planNewProjectRepos lets Advanced overrides win over the auto names', () =
 test('planNewProjectRepos leaves sourceRepo empty in github mode when nothing is picked (caller validates)', () => {
   const r = planNewProjectRepos({ mode: 'github', name: 'My Thesis', owner: 'alice' });
   assert.equal(r.sourceRepo, '');
+});
+
+// ---- folder upload: pick the entry .tex, strip the chosen-folder prefix, classify text vs binary ----
+test('pickEntryTex prefers a file named main.tex', () => {
+  const files = [{ path: 'proj/intro.tex', text: '\\section{x}' }, { path: 'proj/main.tex', text: '\\documentclass{article}\\begin{document}\\end{document}' }];
+  assert.equal(pickEntryTex(files), 'proj/main.tex');
+});
+
+test('pickEntryTex falls back to the file with \\documentclass + \\begin{document}', () => {
+  const files = [{ path: 'a/chap1.tex', text: '\\chapter{One}' }, { path: 'a/root.tex', text: '\\documentclass{book}\n\\begin{document}\n\\include{chap1}\n\\end{document}' }];
+  assert.equal(pickEntryTex(files), 'a/root.tex');
+});
+
+test('pickEntryTex returns null when there is no .tex', () => {
+  assert.equal(pickEntryTex([{ path: 'a/refs.bib', text: '@article{x}' }]), null);
+  assert.equal(pickEntryTex([]), null);
+});
+
+test('stripTopFolder removes the selected-folder prefix so files land at the repo root', () => {
+  assert.equal(stripTopFolder('mydraft/main.tex'), 'main.tex');
+  assert.equal(stripTopFolder('mydraft/figures/fig1.pdf'), 'figures/fig1.pdf');
+  assert.equal(stripTopFolder('main.tex'), 'main.tex');
+});
+
+test('isTextPath treats source files as text and figures as binary', () => {
+  assert.equal(isTextPath('main.tex'), true);
+  assert.equal(isTextPath('references.bib'), true);
+  assert.equal(isTextPath('elsarticle.cls'), true);
+  assert.equal(isTextPath('figures/plot.pdf'), false);
+  assert.equal(isTextPath('figures/scan.PNG'), false);
+  assert.equal(isTextPath('logo.jpg'), false);
+});
+
+test('commitSourceBinary PUTs already-base64 content unchanged', async () => {
+  let body = null;
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { body = JSON.parse(opts.body); return { ok: true, status: 201, json: async () => ({ content: { sha: 'b1' } }) }; }
+    return { ok: false, status: 404 };
+  };
+  const sha = await commitSourceBinary('a/src', 'figures/x.png', 'QUJD', 'tok', 'add fig', fake);
+  assert.equal(sha, 'b1');
+  assert.equal(body.content, 'QUJD');
 });

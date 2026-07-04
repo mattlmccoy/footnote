@@ -48,6 +48,31 @@ export function planNewProjectRepos({ mode, name, owner, sourceOverride, dataOve
   return { sourceRepo, dataRepo };
 }
 
+// ---- folder upload: a real article needs its figures + .bib, so we commit the whole project ----
+
+// Which uploaded .tex is the document root: prefer a file literally named main.tex, else the one that
+// carries \documentclass + \begin{document}, else the first .tex. files: [{ path, text }]. → path | null.
+export function pickEntryTex(files) {
+  const tex = (files || []).filter(f => /\.tex$/i.test(f.path));
+  if (!tex.length) return null;
+  const named = tex.find(f => /(^|\/)main\.tex$/i.test(f.path));
+  if (named) return named.path;
+  const root = tex.find(f => /\\documentclass/.test(f.text || '') && /\\begin\s*\{document\}/.test(f.text || ''));
+  return (root || tex[0]).path;
+}
+
+// webkitdirectory paths are prefixed with the chosen folder name; strip that first segment so files land
+// at the source-repo root (mydraft/figures/x.pdf → figures/x.pdf).
+export function stripTopFolder(relPath) {
+  const p = String(relPath);
+  const i = p.indexOf('/');
+  return i === -1 ? p : p.slice(i + 1);
+}
+
+// Commit text files as utf8; everything else (figures) as raw bytes. Source extensions are text.
+const TEXT_EXT = /\.(tex|bib|cls|sty|bst|txt|md|json|yml|yaml|csv|clo|ltx)$/i;
+export function isTextPath(path) { return TEXT_EXT.test(String(path)); }
+
 // ---- source-repo I/O (injectable fetch; default global fetch in the browser) ----
 // These write to the ADOPTER's OWN source repo with their OWN token — no Footnote-held credential.
 
@@ -82,15 +107,26 @@ export async function repoFileSha(repo, path, token, fetchImpl) {
   return (await r.json()).sha;
 }
 
-// Commit text to a repo path (create or update in place). Returns the new content sha.
-export async function commitSourceFile(repo, path, text, token, msg, fetchImpl) {
-  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+// PUT already-base64 content to a repo path (create or update in place). Returns the new content sha.
+async function putBase64(repo, path, base64, token, msg, f) {
   const sha = await repoFileSha(repo, path, token, f).catch(() => null);
   const r = await f(`${API}/repos/${repo}/contents/${path}`, {
     method: 'PUT',
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message: msg, content: b64(text), sha: sha || undefined }),
+    body: JSON.stringify({ message: msg, content: base64, sha: sha || undefined }),
   });
   if (!r.ok) throw new Error(`commit ${repo}/${path} failed (${r.status})`);
   return (await r.json()).content.sha;
+}
+
+// Commit text to a repo path (create or update in place). Returns the new content sha.
+export async function commitSourceFile(repo, path, text, token, msg, fetchImpl) {
+  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+  return putBase64(repo, path, b64(text), token, msg, f);
+}
+
+// Commit an already-base64-encoded binary (e.g. a figure) to a repo path. Returns the new content sha.
+export async function commitSourceBinary(repo, path, base64, token, msg, fetchImpl) {
+  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+  return putBase64(repo, path, base64, token, msg, f);
 }

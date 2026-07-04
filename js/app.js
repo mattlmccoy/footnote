@@ -7,7 +7,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=dcbaba1';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=dcbaba1';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=dcbaba1';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=dcbaba1';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=dcbaba1';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1724,16 +1724,19 @@ function importDocument(){
   const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
-  let pendingTex = null;   // { name, text } — a .tex upload we'll commit as main.tex into a source repo
+  let pendingTex = null;    // { name, text } — a single .tex we'll commit as main.tex
+  let pendingFiles = null;  // [{ path, isText, text?, base64? }] — a whole project folder
   const suggestion = src || sourceRepoSuggestion(_CFG.projectName || DOC, _CFG.owner);
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   scrim.innerHTML = `<div class="sheet" style="max-width:560px">
     <div style="font-size:16px;font-weight:600;margin-bottom:4px">Import your ${escapeHtml(DOC)}</div>
     <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Footnote parses your source to find ${escapeHtml(UNIT)}s — nothing is hardcoded.</div>
     ${src ? `<button class="btn" id="imp-repo" style="width:100%;margin-bottom:10px"><i class="ti ti-brand-github"></i> Detect from <code>${escapeHtml(src)}</code></button>` : ''}
-    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Upload a .tex or .docx file<input id="imp-file" type="file" accept=".tex,.docx" style="display:none"></label>
+    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;margin-bottom:8px"><i class="ti ti-folder"></i> Upload your whole project folder<input id="imp-folder" type="file" webkitdirectory directory multiple style="display:none"></label>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:10px;text-align:center">Recommended — brings your <code>figures/</code> and <code>.bib</code> so nothing breaks.</div>
+    <label class="btn" style="width:100%;display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer"><i class="ti ti-upload"></i> Or a single .tex / .docx<input id="imp-file" type="file" accept=".tex,.docx" style="display:none"></label>
     <div id="imp-srcwrap" style="display:none;margin-top:12px">
-      <div style="font-size:12px;color:var(--text-2);margin-bottom:5px">Save the uploaded LaTeX into this source repo <span style="color:var(--text-3)">— created if it doesn't exist. Footnote commits it as <code>main.tex</code>.</span></div>
+      <div style="font-size:12px;color:var(--text-2);margin-bottom:5px" id="imp-srchelp">Save the uploaded LaTeX into this source repo <span style="color:var(--text-3)">— created if it doesn't exist.</span></div>
       <input id="imp-src" value="${escapeHtml(suggestion)}" spellcheck="false" style="width:100%;box-sizing:border-box;padding:8px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
     </div>
     <div id="imp-status" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
@@ -1756,8 +1759,9 @@ function importDocument(){
   const close = () => scrim.remove();
   scrim.onclick = e => { if (e.target === scrim) close(); };
   $('#imp-cancel').onclick = close;
+  const showSrc = (help) => { $('#imp-srchelp').innerHTML = help; $('#imp-srcwrap').style.display = 'block'; };
   if (src) $('#imp-repo').onclick = async () => {
-    pendingTex = null; $('#imp-srcwrap').style.display = 'none';   // detecting from the repo: nothing to commit
+    pendingTex = null; pendingFiles = null; $('#imp-srcwrap').style.display = 'none';   // detecting from the repo: nothing to commit
     const entry = prompt('Entry .tex file in the source repo:', 'main.tex'); if (!entry) return;
     status(`Reading ${entry} from ${src}…`);
     try { preview(await detectFromRepo(src, entry.trim(), t)); status(''); }
@@ -1765,6 +1769,7 @@ function importDocument(){
   };
   $('#imp-file').onchange = async e => {
     const f = e.target.files[0]; if (!f) return;
+    pendingFiles = null;
     status(`Parsing ${f.name}…`);
     try {
       if (importFormat(f.name) === 'docx') {
@@ -1773,24 +1778,65 @@ function importDocument(){
       } else {
         const text = await f.text();
         pendingTex = { name: f.name, text };                       // stage for commit into the source repo
-        $('#imp-srcwrap').style.display = 'block';
+        showSrc(`Footnote commits this as <code>main.tex</code> into this source repo <span style="color:var(--text-3)">— created if it doesn't exist. A single file won't carry figures/refs; use the folder upload for a full project.</span>`);
         preview(parseLatexChapters(text, () => null));
       }
       status('');
     } catch (err){ status('Could not parse ' + f.name + ': ' + err.message); }
   };
+  // Whole-folder upload: read every file (source as text, figures as bytes), find the entry .tex, parse it
+  // with the other .tex files as the include resolver, and stage all files to commit preserving structure.
+  $('#imp-folder').onchange = async e => {
+    const picked = [...e.target.files]; if (!picked.length) return;
+    pendingTex = null;
+    status(`Reading ${picked.length} files…`);
+    try {
+      const MAX = 40 * 1024 * 1024; let skipped = 0;
+      const files = [];
+      for (const f of picked) {
+        const rel = stripTopFolder(f.webkitRelativePath || f.name);
+        if (/(^|\/)\./.test(rel)) continue;                        // skip dotfiles / .git
+        if (f.size > MAX) { skipped++; continue; }
+        if (isTextPath(rel)) files.push({ path: rel, isText: true, text: await f.text() });
+        else {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          let bin = ''; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+          files.push({ path: rel, isText: false, base64: btoa(bin) });
+        }
+      }
+      const entry = pickEntryTex(files.filter(f => f.isText));
+      if (!entry) { status('No .tex file found in that folder.'); return; }
+      pendingFiles = files;
+      const map = {};
+      for (const f of files) if (/\.tex$/i.test(f.path)) map[f.path.replace(/\.tex$/i, '')] = f.text;
+      const entryText = files.find(f => f.path === entry).text;
+      const nfig = files.filter(f => !f.isText).length;
+      showSrc(`Commit this project (<b>${files.length}</b> files${nfig ? `, ${nfig} figure${nfig!==1?'s':''}` : ''}${skipped ? `; ${skipped} skipped >40&nbsp;MB` : ''}) into this source repo, entry <code>${escapeHtml(entry)}</code> <span style="color:var(--text-3)">— created if it doesn't exist.</span>`);
+      preview(parseLatexChapters(entryText, p => (p in map ? map[p] : null)));
+      status('');
+    } catch (err){ status('Could not read the folder: ' + err.message); }
+  };
   $('#imp-save').onclick = async () => {
     $('#imp-save').disabled = true;
     try {
-      if (pendingTex) {
+      if (pendingFiles || pendingTex) {
         const repo = $('#imp-src').value.trim();
         if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter a source repo as owner/name.');
         status(`Preparing ${repo}…`);        await ensureRepo(t, repo);
         if (await repoFileSha(repo, 'main.tex', t).catch(() => null)) {
           if (!confirm(`main.tex already exists in ${repo}. Overwrite it with this upload?`)) { status('Cancelled.'); $('#imp-save').disabled = false; return; }
         }
-        status(`Committing main.tex to ${repo}…`);
-        await commitSourceFile(repo, 'main.tex', pendingTex.text, t, 'Footnote import: main.tex');
+        if (pendingFiles) {   // whole folder: commit every file preserving structure
+          let i = 0;
+          for (const f of pendingFiles) {
+            status(`Committing ${++i}/${pendingFiles.length} · ${f.path}…`);
+            if (f.isText) await commitSourceFile(repo, f.path, f.text, t, `Footnote import: ${f.path}`);
+            else await commitSourceBinary(repo, f.path, f.base64, t, `Footnote import: ${f.path}`);
+          }
+        } else {              // single .tex
+          status(`Committing main.tex to ${repo}…`);
+          await commitSourceFile(repo, 'main.tex', pendingTex.text, t, 'Footnote import: main.tex');
+        }
         // Persist the source repo on the project (multi-project mode writes projects.json).
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { sourceRepo: repo }, t); } catch (e) { console.warn('sourceRepo persist:', e.message); } }
         _CFG.sourceRepo = repo; setConfig(_CFG);
