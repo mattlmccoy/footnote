@@ -1,13 +1,13 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=3d639c0';
-import { anchorFromSelection } from './anchor.js?v=3d639c0';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=3d639c0';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=3d639c0';
-import { sealToBase64 } from './vendor/seal.js?v=3d639c0';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=3d639c0';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=3d639c0';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=3d639c0';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=3d639c0';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=3d639c0';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=9f90fb9';
+import { anchorFromSelection } from './anchor.js?v=9f90fb9';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=9f90fb9';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=9f90fb9';
+import { sealToBase64 } from './vendor/seal.js?v=9f90fb9';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=9f90fb9';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=9f90fb9';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch } from './config.js?v=9f90fb9';
+import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=9f90fb9';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile } from './importdoc.js?v=9f90fb9';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -40,13 +40,13 @@ const UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // "Chapter"/"Sect
 // is mis-highlighted. The engine skips any step whose element is absent.
 const OWNER_TOUR = [
   { sel:'#btn-token', title:'Add your access token', body:'The reviewer reads your private data with a GitHub token that stays only in this browser. Paste a fine-grained token with Contents read/write on your data repo here first.' },
-  { sel:'.chcard', title:'Your chapters', body:'Each card opens a chapter to read and to work through your reviewers\' comments. The bar shows how far along you are.' },
-  { sel:'#inbox-panel', title:'Needs you', body:'Your triage center. Across every chapter it gathers comments waiting on you, edits staged to approve, and finished jobs. Click any count to jump straight there.' },
-  { sel:'#btn-releases', title:'Invite reviewers and release chapters', body:'Add reviewers, connect email so invites send on their own, and choose which chapters each reviewer can see.' },
-  { sel:'#btn-outline', title:'Share your outline early', body:'Post your planned structure so reviewers can comment on it before the full chapters are ready.' },
+  { sel:'.chcard', title:`Your ${UNIT}s`, body:`Each card opens a ${UNIT} to read and to work through your reviewers' comments. The bar shows how far along you are.` },
+  { sel:'#inbox-panel', title:'Needs you', body:`Your triage center. Across every ${UNIT} it gathers comments waiting on you, edits staged to approve, and finished jobs. Click any count to jump straight there.` },
+  { sel:'#btn-releases', title:`Invite reviewers and release ${UNIT}s`, body:`Add reviewers, connect email so invites send on their own, and choose which ${UNIT}s each reviewer can see.` },
+  { sel:'#btn-outline', title:'Share your outline early', body:`Post your planned structure so reviewers can comment on it before the full ${UNIT}s are ready.` },
   { sel:'#btn-export', title:'Show reviewers how you responded', body:'Generate a printable summary of how you addressed each reviewer\'s comments. This is a response summary, not a document export.' },
   { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word or Markdown with comments and tracked changes included.` },
-  { sel:'#btn-tour', title:'Replay anytime', body:'Reopen this tour or turn auto-show off from here. Open any chapter, then use the More menu for the reviewing walkthrough.' },
+  { sel:'#btn-tour', title:'Replay anytime', body:`Reopen this tour or turn auto-show off from here. Open any ${UNIT}, then use the More menu for the reviewing walkthrough.` },
 ];
 // Small menu on the home "?" button: replay the tour, or toggle auto-show for first-time users.
 function openTourMenu(){
@@ -57,7 +57,7 @@ function openTourMenu(){
   m.style.cssText = `position:absolute;top:${r.bottom+6}px;right:${Math.max(8, window.innerWidth-r.right)}px;z-index:46;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:230px`;
   const off = tourSeen('tour-owner-v1');
   m.innerHTML = `<div class="mmi" data-a="run"><i class="ti ti-help-circle"></i>Take the setup tour</div>
-    <div class="mmi" data-a="chapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
+    <div class="mmi" data-a="chapter"><i class="ti ti-book-2"></i>Reviewing a ${UNIT} (demo)</div>
     <div class="mmi" data-a="toggle"><i class="ti ti-${off?'eye-off':'eye-check'}"></i>Auto-show for new users: ${off?'off':'on'}</div>`;
   document.body.appendChild(m);
   m.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
@@ -98,8 +98,8 @@ function loadDemoChapterOwner(){
   // staged edit shown inline as tracked changes. All baked in; none of it is live.
   rd.innerHTML = `<div id="approvebar" class="approvebar"><i class="ti ti-git-pull-request"></i><span><b>1</b> staged change — <b>1</b> approved · 0 rejected · 0 to decide. shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>.</span><button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button><button class="btn btn-primary" id="merge-approved">Queue 1 for merge</button></div>
     <article id="doc">
-      <h1>Sample chapter (tour preview)</h1>
-      <p id="tour-demo-select">This preview chapter shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; <mark class="cmark" data-aid="demo-adv">radio-frequency heating enables rapid, volumetric energy delivery</mark> through a dielectric medium. Select any words here to attach a comment.</p>
+      <h1>Sample ${UNIT} (tour preview)</h1>
+      <p id="tour-demo-select">This preview ${UNIT} shows how reviewing works. Lorem ipsum dolor sit amet, consectetur adipiscing elit; <mark class="cmark" data-aid="demo-adv">radio-frequency heating enables rapid, volumetric energy delivery</mark> through a dielectric medium. Select any words here to attach a comment.</p>
       <p>Duis aute irure dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur. Ut enim ad minim veniam, <del class="tc-stage">quis nostrud exercitation ullamco laboris</del><ins class="tc-stage"> clearer, simpler wording</ins> nisi.</p>
       <figure><img alt="Sample figure" src="${fig}"><figcaption>Figure 3.1. A sample figure. Click it to comment on the figure itself.</figcaption></figure>
       <p>Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit anim id est laborum.</p>
@@ -115,7 +115,7 @@ function loadDemoChapterOwner(){
     else { current = prevCurrent; enterHome(); } };
 }
 const OWNER_CHAPTER_TOUR = [
-  { sel:'#doc h1', title:'Inside a chapter', body:'The reading view. We loaded a sample chapter with a sample reviewer comment and a staged edit so you can see the workflow. Nothing here is saved.' },
+  { sel:'#doc h1', title:`Inside a ${UNIT}`, body:`The reading view. We loaded a sample ${UNIT} with a sample reviewer comment and a staged edit so you can see the workflow. Nothing here is saved.` },
   { sel:'.ccard.adv', title:'Reviewers\' comments land here', body:'Every comment your reviewers leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
   { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to reviewer. They see the outcome in their Responses view.' },
   { sel:'.ccard.adv .a-send', title:'Or hand it to Claude', body:'Once you have read a comment, send it to Claude to draft the edit. You still approve the result before anything lands.' },
@@ -200,9 +200,9 @@ async function syncUp(){
 function renderTopbar(){
   const m = chMeta(current);
   document.getElementById('topbar').innerHTML = `
-    <button class="icbtn" id="btn-home" title="All chapters"><i class="ti ti-layout-grid"></i></button>
+    <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${UNITC} ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
-    <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search chapter · ${MOD}\\ for all"></div>
+    <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT} · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
@@ -1057,7 +1057,7 @@ function jumpTarget(c){
 }
 function jumpToAdvisor(c){
   const el = jumpTarget(c);
-  if (el) scrollFlash(el); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.');
+  if (el) scrollFlash(el); else flash(`Couldn’t find this passage in the ${UNIT}; it may have changed since the comment.`);
 }
 // jump after a chapter is still loading: retry until the doc is ready, then prefer the edit-diff
 function jumpWhenReady(c, tries = 14){
@@ -1066,7 +1066,7 @@ function jumpWhenReady(c, tries = 14){
       const el = jumpTarget(c);
       if (el){ scrollFlash(el); return; }
     }
-    if (tries-- > 0) setTimeout(tick, 280); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.');
+    if (tries-- > 0) setTimeout(tick, 280); else flash(`Couldn’t find this passage in the ${UNIT}; it may have changed since the comment.`);
   };
   tick();
 }
@@ -1094,7 +1094,7 @@ function editCard(c){
 function jumpTo(c){
   activeCommentId = c.id;
   const el = jumpTarget(c);
-  if (el) scrollFlash(el); else flash('Couldn’t find this passage in the chapter — it may have changed since the comment.');
+  if (el) scrollFlash(el); else flash(`Couldn’t find this passage in the ${UNIT}; it may have changed since the comment.`);
 }
 function activateComment(id){
   activeCommentId = id; renderComments();
@@ -1283,7 +1283,7 @@ async function togglePreview(ch){
     let html = null;
     if (dev){ const r = await fetch('./preview/'+ch+'.html'); if (r.ok) html = await r.text(); }
     if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/preview/${ch}.html?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
-    if (!html){ flash('No preview built yet for this chapter — it builds when changes are staged.'); return; }
+    if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }
     previewing = true; renderDoc(html);
   } catch(e){ flash('Preview failed: '+e.message); }
 }
@@ -1335,14 +1335,14 @@ function openSendMenu(){
   menu.innerHTML = `
     <div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>
     ${agentsRow}
-    <div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this chapter…</div><div class="smi-d">Word · PDF · Markdown, with comments</div></div></div>`;
+    <div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this ${UNIT}…</div><div class="smi-d">Word · Markdown, with comments</div></div></div>`;
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else sendJob(el.dataset.type); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 async function sendJob(type){
-  const t = tok(); if (!t){ flash('Add your access token first (click a chapter → connect).'); return; }
+  const t = tok(); if (!t){ flash(`Add your access token first (click a ${UNIT} → connect).`); return; }
   try {
     await syncUp();
     const { json, sha } = await getJson(t, 'jobs.json');
@@ -1369,7 +1369,7 @@ async function sendJob(type){
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2)';
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
-// ---------- export: chapter / dissertation -> Word · PDF · Markdown, with comments ----------
+// ---------- export: chapter / document -> Word · Markdown, with comments ----------
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const whole = scope === '__all__';
@@ -1419,7 +1419,7 @@ async function listExports(){
     .sort((a,b) => (b.requested_ts||'').localeCompare(a.requested_ts||''));
 }
 const _expOpen = new Set();   // which chapter groups are expanded (persists within the session)
-const FMT_NAME = { docx:'Word', pdf:'PDF', md:'Markdown' };
+const FMT_NAME = { docx:'Word', md:'Markdown' };   // pdf removed — export is docx/md only
 // Home Downloads: grouped by chapter, collapsible, versioned, with pending state + delete.
 async function renderHomeDownloads(){
   const box = document.getElementById('home-downloads'); if (!box) return;
@@ -1427,7 +1427,7 @@ async function renderHomeDownloads(){
   const header = `<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
       <div class="home-allch" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin:0">DOWNLOADS</div>
       <button class="btn" id="dl-export-all" style="margin-left:auto;padding:5px 11px;font-size:12px"><i class="ti ti-file-export"></i>Export whole ${DOC}…</button></div>`;
-  if (!jobs.length){ box.innerHTML = header + `<div style="font-size:12.5px;color:var(--text-3)">No exports yet. Use a chapter's “…” menu → Export, or the button above.</div>`;
+  if (!jobs.length){ box.innerHTML = header + `<div style="font-size:12.5px;color:var(--text-3)">No exports yet. Use a ${UNIT}'s “…” menu → Export, or the button above.</div>`;
     box.querySelector('#dl-export-all').onclick = () => exportDialog('__all__'); return; }
   // group by scope (chapter id or __all__)
   const groups = {};
@@ -1557,7 +1557,7 @@ async function loadOwnerOutline(){
     if (dev){ const r = await fetch('./outline.json'); if (r.ok) data = await r.json(); }
     if (!data){ const t = tok(); if (t){ const got = await getJson(t, 'outline.json'); data = got.json; } }
   } catch(e){}
-  if (!data){ read.innerHTML = `<div class="empty">Couldn't load the outline. Open a chapter once to connect your token, then retry.</div>`; return; }
+  if (!data){ read.innerHTML = `<div class="empty">Couldn't load the outline. Open a ${UNIT} once to connect your token, then retry.</div>`; return; }
   renderOwnerOutline(data); renderComments(); syncDown();
   loadAdvisorComments('__outline__').then(() => renderOwnerOutline(data));   // pull advisor outline comments into the rail + refresh node badges
 }
@@ -1865,13 +1865,13 @@ async function showHistory(){
   const t = tok();
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
-  if (!t){ read.innerHTML = `<div class="empty"><div style="font-size:15px;font-weight:500">History needs your access token</div><div style="font-size:13px;color:var(--text-2);margin-top:6px">Open a chapter and add your data-repo token first.</div></div>`; return; }
-  if (!current){ read.innerHTML = `<div class="empty">Open a chapter first, then view its history.</div>`; return; }
+  if (!t){ read.innerHTML = `<div class="empty"><div style="font-size:15px;font-weight:500">History needs your access token</div><div style="font-size:13px;color:var(--text-2);margin-top:6px">Open a ${UNIT} and add your data-repo token first.</div></div>`; return; }
+  if (!current){ read.innerHTML = `<div class="empty">Open a ${UNIT} first, then view its history.</div>`; return; }
   read.innerHTML = `<div class="empty">Loading history…</div>`;
   const file = `content/${current}.html`;
   try {
     const commits = await ghApi(t, `repos/${HIST_REPO}/commits?path=${encodeURIComponent(file)}&per_page=20`);
-    if (!commits.length){ read.innerHTML = `<div class="empty">No revision history recorded for this chapter yet.</div>`; return; }
+    if (!commits.length){ read.innerHTML = `<div class="empty">No revision history recorded for this ${UNIT} yet.</div>`; return; }
     renderHistoryShell(commits, file); selectCommit(commits[0].sha, file);
   } catch(e){ read.innerHTML = `<div class="empty">Couldn't load history (${e.message}).</div>`; }
 }
@@ -1910,7 +1910,7 @@ async function selectCommit(sha, file){
         <span>${f.changes||0} line${f.changes===1?'':'s'} changed</span></div>
       <div style="font-size:11px;letter-spacing:.05em;color:var(--text-3);margin-bottom:7px">WHAT CHANGED · removed text in red, added in green</div>
       ${renderPatch(f.patch)}
-      <div style="font-size:12px;color:var(--text-3);margin-top:16px;border-top:.5px solid var(--border);padding-top:12px">Diff of the chapter's published text; figure/image swaps show as a single line. The reading view above always reflects the latest published version.</div>`;
+      <div style="font-size:12px;color:var(--text-3);margin-top:16px;border-top:.5px solid var(--border);padding-top:12px">Diff of the ${UNIT}'s published text; figure/image swaps show as a single line. The reading view above always reflects the latest published version.</div>`;
   } catch(e){ diff.innerHTML = `<div style="color:var(--text-3)">Couldn't load this revision (${e.message}).</div>`; }
 }
 // readable old-vs-new diff of the chapter's published text: strip HTML tags so prose shows,
@@ -1980,11 +1980,11 @@ function cycleComment(dir){
 }
 const SHORTCUTS = [['j / k','next / previous comment'],['↵ on a comment','jump to its place in the text'],['f','focus (distraction-free) mode'],['[ / ]','collapse left nav / comments rail'],['/',`search this ${UNIT}`],[`${MOD}\\`,`search the whole ${DOC}`],[`${MOD}↵`,'open the Send menu'],['⌥1–5 (in popover)','pick a tag'],['Esc','close popover / overlay'],['?','show this help']];
 const BUTTONS = [
-  ['ti-layout-grid','Home — the chapter library'],
+  ['ti-layout-grid',`Home · the ${UNIT} library`],
   ['ti-book-2',`${UNITC} switcher`],
-  ['ti-search',`Search this chapter (${MOD}\\ = whole ${DOC})`],
+  ['ti-search',`Search this ${UNIT} (${MOD}\\ = whole ${DOC})`],
   ['ti-arrows-diagonal-minimize-2','Focus mode — hide both side panes'],
-  ['ti-history','Version history & diffs for this chapter'],
+  ['ti-history',`Version history & diffs for this ${UNIT}`],
   ['ti-moon','Light / dark theme'],
   ['ti-send','Send to Claude — apply edits or run review agents'],
   ['ti-circle','Check off a section as read (left rail)'],
@@ -2041,7 +2041,7 @@ async function openReleasePanel(){
   document.getElementById('comments').style.display = 'none';
   document.getElementById('topbar').innerHTML =
     `<strong style="font-size:16px;font-weight:600"><i class="ti ti-users" style="margin-right:7px"></i>Reviewers</strong>
-     <button class="btn" id="rel-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to chapters</button>`;
+     <button class="btn" id="rel-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to ${UNIT}s</button>`;
   document.getElementById('rel-close').onclick = enterHome;
   read.innerHTML = `<div class="rel-page"><div id="rel-body" style="color:var(--text-3)">Loading…</div></div>`;
   let rel, sha;
@@ -2095,7 +2095,7 @@ async function openReleasePanel(){
   }).join('');
   document.getElementById('rel-body').innerHTML = `
     <div class="rel-sec">Reviewers</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released chapters and write only review comments — keep it private.</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released ${UNIT}s and write only review comments; keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -2104,7 +2104,7 @@ async function openReleasePanel(){
     </div>
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
-    <div class="rel-sec">Which chapters each reviewer can see</div>
+    <div class="rel-sec">Which ${UNIT}s each reviewer can see</div>
     <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => {
@@ -2441,7 +2441,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
          <label style="font-size:12px">Your name (shown in the invite)<input id="ce-name" value="${escapeHtml(S.name)}" style="${inputCss};margin-bottom:9px"></label>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
-           <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read chapters + comment)</span>
+           <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read ${UNIT}s + comment)</span>
              <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
              <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the reviewer access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
@@ -2608,7 +2608,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   // release gate (their portal stops showing chapters); their already-submitted comments are kept.
   const removeAdvisor = async (id) => {
     const a = advReg.advisors.find(x => x.id === id); if (!a) return;
-    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their chapter access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
+    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their ${UNIT} access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
     if (typed === null) return;
     if (typed.trim() !== a.name.trim()){ flash('Name did not match — reviewer not removed.'); return; }
     try {
