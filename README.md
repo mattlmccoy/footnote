@@ -35,9 +35,16 @@ See `footnote.config.example.json` for every key and its default. `doc.noun`/`do
 user-facing copy ("thesis"/"section", "paper"/"part", …). `reviewAgents` is empty by default — the
 "Run review agents" AI shortcut only appears if you populate it (Footnote's core is AI-free).
 
+## Take reviewer feedback back to Overleaf
+Most authors write in Overleaf. The owner portal's **Take to Overleaf** button turns every open
+comment into a worklist grouped by source `.tex` file — each item gives a search string to find the
+spot in Overleaf, the reviewer's comment, and (for suggested edits) a literal before→after. Copy it
+all as Markdown, download a `.md` checklist, or print it; tick items off as you clear them. The
+quoted text is the locator, so it works with zero setup (no SyncTeX required).
+
 ## Walkthrough
 An animated, self-contained product tour of the full workflow (read → comment → live-on-owner-side →
-resolve → what-changed → direct edit → export) lives at **[`tutorials/walkthrough.html`](tutorials/walkthrough.html)** —
+resolve → what-changed → direct edit → back-to-Overleaf worklist) lives at **[`tutorials/walkthrough.html`](tutorials/walkthrough.html)** —
 autoplays with play/pause/replay and jump-to-scene dots. No dependencies; open it directly.
 
 ## Development
