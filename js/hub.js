@@ -55,7 +55,9 @@ const HUB_KEY = 'footnote:hub';
 const TOK_KEY = 'ghpat';
 const hdr = t => ({ Authorization: `Bearer ${t}`, Accept: 'application/vnd.github+json' });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo&description=Footnote';
+// repo + workflow: seeding a new project writes .github/workflows/*.yml (invite/notify/convert), which
+// GitHub blocks without the workflow scope. (The email wizard requests the same scopes separately.)
+const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
 
 async function hubSha(hub, t) {
   try { const r = await fetch(`${API}/repos/${hub}/contents/projects.json?t=${Date.now()}`, { headers: hdr(t), cache: 'no-store' });
@@ -184,7 +186,7 @@ export async function launch() {
       <div class="fn-card">
         <div class="fn-step">Connect GitHub</div>
         <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
-        <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> scope (full read/write, private included). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
+        <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> + <code>workflow</code> scopes (full read/write, private included; workflow lets Footnote set up your background email/convert Actions). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
         <div class="fn-err" id="fn-err"></div>
         <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
       </div></div>`);
