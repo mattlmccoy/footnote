@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footnote — walkthrough</title>
+<link rel="icon" type="image/svg+xml" href="../brand/footnote-mark.svg">
+<style>
+:root{
+  --accent:#2c64c4; --accent-2:#4f86e0; --ink:#1f1e1c; --ink-2:#605e58; --ink-3:#8f8d84;
+  --card:#ffffff; --line:rgba(0,0,0,.09); --box:#f4f6f8; --ok:#0f6e56; --ok-bg:#e1f5ee;
+  --warn:#9a6a12; --warn-bg:#faf0d8; --add-bg:#dcefe6;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1200px 700px at 50% -10%,#20264a 0%,#141830 45%,#0c0f1e 100%);
+  color:#fff;overflow:hidden;
+}
+#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;perspective:1600px}
+
+/* progress + controls */
+#bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;transition:width .25s linear;z-index:50;box-shadow:0 0 12px var(--accent)}
+#dots{position:fixed;top:16px;left:50%;transform:translateX(-50%);display:flex;gap:7px;z-index:50}
+#dots button{width:8px;height:8px;border-radius:50%;border:none;background:rgba(255,255,255,.22);cursor:pointer;padding:0;transition:.2s}
+#dots button.on{background:#fff;width:22px;border-radius:4px}
+#ctrls{position:fixed;bottom:22px;right:26px;display:flex;gap:10px;z-index:50}
+#ctrls button{width:40px;height:40px;border-radius:50%;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.06);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);transition:.15s}
+#ctrls button:hover{background:rgba(255,255,255,.16)}
+#ctrls svg{width:18px;height:18px;fill:#fff}
+
+/* caption */
+#cap{position:fixed;bottom:96px;left:0;right:0;text-align:center;z-index:40;pointer-events:none;padding:0 24px}
+#cap .k{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-2);font-weight:600;opacity:0;transform:translateY(8px);transition:.5s}
+#cap .t{font-size:29px;font-weight:600;letter-spacing:-.4px;margin-top:9px;opacity:0;transform:translateY(10px);transition:.55s .06s;line-height:1.25;max-width:760px;margin-left:auto;margin-right:auto}
+#cap.show .k,#cap.show .t{opacity:1;transform:none}
+
+/* the app frame */
+.frame{width:900px;max-width:92vw;height:560px;max-height:74vh;background:var(--card);border-radius:16px;
+  box-shadow:0 40px 120px -30px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);
+  color:var(--ink);overflow:hidden;display:flex;flex-direction:column;opacity:0;transform:scale(.965) translateY(12px);
+  transition:opacity .55s cubic-bezier(.2,.7,.2,1),transform .55s cubic-bezier(.2,.7,.2,1)}
+.frame.show{opacity:1;transform:none}
+.tb{height:52px;flex:0 0 52px;display:flex;align-items:center;gap:10px;padding:0 16px;border-bottom:1px solid var(--line);background:#fafafa}
+.tb .logo{width:22px;height:22px;border-radius:6px;flex:0 0 auto}
+.tb .brand{font-weight:600;font-size:15px}
+.tb .ctx{font-size:13px;color:var(--ink-2)}
+.tb .sp{margin-left:auto;display:flex;gap:7px}
+.pill{font-size:12px;padding:5px 11px;border-radius:8px;border:1px solid var(--line);color:var(--ink-2);background:#fff;white-space:nowrap}
+.pill.p{background:var(--accent);border-color:var(--accent);color:#fff}
+.body{flex:1;display:flex;min-height:0}
+
+/* reading surface */
+.side{width:190px;flex:0 0 190px;border-right:1px solid var(--line);padding:16px 14px;font-size:12.5px;color:var(--ink-2);overflow:hidden}
+.side .sh{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.side .s{padding:6px 8px;border-radius:7px;margin-bottom:2px;display:flex;align-items:center;gap:7px}
+.side .s .dot{width:7px;height:7px;border-radius:50%;border:1.5px solid var(--ink-3)}
+.side .s.on{background:var(--box);color:var(--ink);font-weight:500}
+.side .s.on .dot{border-color:var(--accent);background:var(--accent)}
+.doc{flex:1;padding:26px 34px;overflow:hidden;font-size:14px;line-height:1.72;color:var(--ink)}
+.doc h3{font-size:18px;font-weight:600;margin-bottom:12px}
+.doc p{margin-bottom:13px;color:#33322e}
+.cit{color:var(--accent);text-decoration:none}
+.math{font-style:italic;font-family:Georgia,serif}
+.rail{width:210px;flex:0 0 210px;border-left:1px solid var(--line);padding:16px 14px;font-size:12.5px;background:#fcfcfb}
+.rail .rh{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:12px}
+.rail .empty{color:var(--ink-3);font-size:12px;padding:6px 2px}
+
+/* comment card */
+.ccard{border:1px solid var(--line);border-radius:10px;padding:11px 12px;margin-bottom:9px;background:#fff;opacity:0;transform:translateY(8px);transition:.45s}
+.ccard.show{opacity:1;transform:none}
+.ccard.flash{animation:flash 1.6s ease-out}
+@keyframes flash{0%{box-shadow:0 0 0 3px var(--accent)}100%{box-shadow:0 0 0 0 transparent}}
+.ccard .who{display:flex;align-items:center;gap:7px;margin-bottom:5px}
+.ccard .av{width:20px;height:20px;border-radius:50%;background:#e6f1fb;color:var(--accent);font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.ccard .nm{font-size:12px;font-weight:600}
+.ccard .q{font-size:11.5px;color:var(--ink-2);font-style:italic;border-left:2px solid var(--accent);padding-left:7px;margin-bottom:5px}
+.ccard .bd{font-size:12.5px;color:var(--ink)}
+.ccard .rz{margin-top:8px;font-size:11.5px;color:var(--ok);background:var(--ok-bg);border-radius:7px;padding:6px 8px;opacity:0;max-height:0;overflow:hidden;transition:.4s}
+.ccard .rz.show{opacity:1;max-height:60px}
+
+/* selection + popover */
+.sel{background:#cfe0f9;border-radius:2px;transition:background .3s}
+.pop{position:absolute;z-index:20;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:0 18px 44px -12px rgba(0,0,0,.3);padding:12px;width:250px;opacity:0;transform:translateY(6px) scale(.97);transform-origin:top left;transition:.28s}
+.pop.show{opacity:1;transform:none}
+.pop textarea{width:100%;height:52px;border:1px solid var(--line);border-radius:8px;padding:8px;font:inherit;font-size:12.5px;resize:none;color:var(--ink)}
+.pop .pb{display:flex;justify-content:flex-end;gap:7px;margin-top:8px}
+.mk{background:var(--add-bg);border-radius:2px}   /* what-changed highlight */
+
+/* generic reveal + rows */
+.reveal{opacity:0;transform:translateY(10px);transition:.5s}
+.reveal.show{opacity:1;transform:none}
+.panel{padding:26px 30px;flex:1;overflow:hidden}
+.h2{font-size:19px;font-weight:600;margin-bottom:4px}
+.sub{font-size:13px;color:var(--ink-2);margin-bottom:20px}
+.row{display:flex;align-items:center;gap:12px;border:1px solid var(--line);border-radius:11px;padding:12px 14px;margin-bottom:10px;background:#fff}
+.row .av{width:34px;height:34px;border-radius:50%;background:#e6f1fb;color:var(--accent);font-weight:600;display:flex;align-items:center;justify-content:center;font-size:13px}
+.row .nm{font-size:14px;font-weight:500}
+.row .em{font-size:12px;color:var(--ink-3)}
+.row .st{margin-left:auto;font-size:11.5px;padding:4px 10px;border-radius:20px;background:var(--box);color:var(--ink-2)}
+.row .st.ok{background:var(--ok-bg);color:var(--ok)}
+.btn{font-size:13px;font-weight:500;border:1px solid var(--line);border-radius:9px;padding:9px 16px;background:#fff;color:var(--ink);cursor:default}
+.btn.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+.field{width:100%;border:1px solid var(--line);border-radius:9px;padding:11px 13px;font-size:13px;color:var(--ink);background:#fff;margin-bottom:10px}
+
+/* release matrix */
+.mx{width:100%;border-collapse:separate;border-spacing:0;font-size:12.5px}
+.mx th{font-size:11px;color:var(--ink-3);font-weight:500;padding:8px;text-align:center}
+.mx td{padding:9px 8px;border-top:1px solid var(--line);color:var(--ink)}
+.mx td:first-child{text-align:left;color:var(--ink-2)}
+.chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--ink-3);margin:0 auto;transition:.2s}
+.chk.on{background:var(--accent);border-color:var(--accent);position:relative}
+.chk.on::after{content:"";position:absolute;left:5px;top:2px;width:5px;height:9px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
+
+/* direct-edit */
+.pedit{width:100%;min-height:70px;border:1.5px solid var(--accent);border-radius:8px;padding:10px;font:inherit;font-size:13.5px;line-height:1.7;color:var(--ink);background:#fff}
+.diff{font-family:"SF Mono",Menlo,monospace;font-size:12px;line-height:1.6;background:var(--box);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-top:10px;white-space:pre-wrap}
+.del{color:#a3312c;background:#fbe7e6;text-decoration:line-through;border-radius:2px}
+.ins{color:var(--ok);background:var(--ok-bg);border-radius:2px}
+
+/* pencil */
+.pen{position:absolute;width:26px;height:26px;border-radius:7px;background:#fff;border:1px solid var(--line);box-shadow:0 6px 16px rgba(0,0,0,.14);display:flex;align-items:center;justify-content:center;opacity:0;transition:.25s;z-index:15}
+.pen.show{opacity:1}
+.pen svg{width:14px;height:14px;fill:none;stroke:var(--accent);stroke-width:2}
+
+/* email card */
+.mailcard{width:330px;background:#fff;border:1px solid var(--line);border-radius:13px;overflow:hidden;box-shadow:0 20px 50px -18px rgba(0,0,0,.3)}
+.mailcard .ac{height:4px;background:var(--accent)}
+.mailcard .mh{padding:14px 18px 6px;display:flex;align-items:center;gap:9px}
+.mailcard .mh .logo{width:22px;height:22px;border-radius:6px}
+.mailcard .mb{padding:6px 18px 18px;font-size:13px;color:var(--ink)}
+.mailcard .key{font-family:Menlo,monospace;font-size:12px;color:var(--accent);background:var(--box);border:1px solid var(--line);border-radius:8px;padding:9px 11px;margin:8px 0;word-break:break-all}
+.mailcard .cta{display:inline-block;background:var(--accent);color:#fff;font-size:13px;font-weight:600;padding:9px 18px;border-radius:8px;margin-top:4px}
+
+/* title / outro */
+.hero{text-align:center;opacity:0;transform:translateY(14px) scale(.98);transition:.7s cubic-bezier(.2,.7,.2,1)}
+.hero.show{opacity:1;transform:none}
+.hero .mark{width:74px;height:74px;margin:0 auto 22px;border-radius:19px;box-shadow:0 20px 60px -16px rgba(44,100,196,.7)}
+.hero h1{font-size:52px;font-weight:600;letter-spacing:-1.5px}
+.hero .tag{font-size:19px;color:#aeb6d6;margin-top:12px;font-weight:400}
+.hero .foot{font-size:14px;color:#8890b4;margin-top:26px}
+
+/* cursor */
+#cur{position:fixed;z-index:60;left:0;top:0;width:22px;height:22px;pointer-events:none;transition:transform .62s cubic-bezier(.5,0,.2,1);filter:drop-shadow(0 3px 5px rgba(0,0,0,.4))}
+#cur svg{width:100%;height:100%}
+#cur .ring{position:absolute;left:-9px;top:-9px;width:40px;height:40px;border-radius:50%;border:2px solid var(--accent);opacity:0;transform:scale(.3)}
+#cur.click .ring{animation:ring .5s ease-out}
+@keyframes ring{0%{opacity:.9;transform:scale(.3)}100%{opacity:0;transform:scale(1)}}
+
+.type-caret::after{content:"";display:inline-block;width:1.5px;height:1em;background:var(--accent);margin-left:1px;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+@media (max-width:640px){ #cap .t{font-size:22px} .frame{height:66vh} }
+</style>
+</head>
+<body>
+  <div id="bar"></div>
+  <div id="dots"></div>
+  <div id="stage"></div>
+  <div id="cap"><div class="k"></div><div class="t"></div></div>
+  <div id="cur"><div class="ring"></div>
+    <svg viewBox="0 0 24 24"><path d="M4 2 L4 20 L9 15 L12.5 22 L15 21 L11.5 14 L18 14 Z" fill="#fff" stroke="#1a1a1a" stroke-width="1"/></svg>
+  </div>
+  <div id="ctrls">
+    <button id="pp" aria-label="Play/pause"><svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg></button>
+    <button id="rp" aria-label="Replay"><svg viewBox="0 0 24 24"><path d="M12 5V1L7 6l5 5V7a5 5 0 1 1-5 5H5a7 7 0 1 0 7-7z"/></svg></button>
+  </div>
+
+<script>
+const LOGO = '../brand/footnote-mark.svg';
+const stage = document.getElementById('stage');
+const cap = document.getElementById('cap');
+const cur = document.getElementById('cur');
+const bar = document.getElementById('bar');
+const dotsEl = document.getElementById('dots');
+
+// ---- brand mark (inline SVG string so scenes can drop it in) ----
+const MARK = `<svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg>`;
+
+// ---- engine state ----
+let idx = 0, token = 0, paused = false, resumeResolve = null;
+// Cancellable waits: any pending sleep is resolved immediately when a new run starts (cancelWaits),
+// so the old loop's next hold() sees a token mismatch and unwinds cleanly (no hung timers).
+let waiters = new Set();
+function cancelWaits(){ for (const w of [...waiters]) w(); waiters.clear(); if (resumeResolve){ resumeResolve(); resumeResolve = null; } }
+const sleep = ms => new Promise(res => { const w = () => { clearTimeout(id); waiters.delete(w); res(); }; const id = setTimeout(w, ms); waiters.add(w); });
+function waitIfPaused(){ return paused ? new Promise(r => { resumeResolve = r; }) : Promise.resolve(); }
+async function hold(ms){ const my = token; await sleep(ms); if (my!==token) throw 'cancel'; await waitIfPaused(); if (my!==token) throw 'cancel'; }
+
+// ---- cursor helpers ----
+function cursorTo(el, off={x:0,y:0}){
+  const r = el.getBoundingClientRect();
+  cur.style.transform = `translate(${r.left + r.width/2 + off.x - 3}px, ${r.top + r.height/2 + off.y - 2}px)`;
+}
+function cursorXY(x,y){ cur.style.transform = `translate(${x}px, ${y}px)`; }
+async function moveTo(el, off){ cursorTo(el, off); await hold(680); }
+async function click(){ cur.classList.remove('click'); void cur.offsetWidth; cur.classList.add('click'); await hold(340); }
+async function typeInto(el, text, ms=34){ el.classList.add('type-caret'); el.textContent=''; for(const ch of text){ el.textContent+=ch; await hold(ms);} el.classList.remove('type-caret'); }
+
+function setCap(k,t){ cap.classList.remove('show'); cap.querySelector('.k').textContent=k; cap.querySelector('.t').innerHTML=t; requestAnimationFrame(()=>requestAnimationFrame(()=>cap.classList.add('show'))); }
+function frame(ctx, inner){ return `<div class="frame"><div class="tb"><img class="logo" src="${LOGO}"><span class="brand">Footnote</span>${ctx?`<span class="ctx">· ${ctx}</span>`:''}<span class="sp">${(ctx==='Reviewer')?'<span class="pill">Outline</span><span class="pill">Reviewers</span>':''}</span></div>${inner}</div>`; }
+async function showFrame(){ const f=stage.querySelector('.frame'); await hold(60); f.classList.add('show'); await hold(560); return f; }
+
+// small helpers for building content
+const S = (sel, root=document) => root.querySelector(sel);
+const doc1 = `<div class="doc"><h3>1 · Introduction</h3>
+  <p>Additive manufacturing has reshaped fabrication by enabling complex geometries and rapid prototyping <a class="cit">[1]</a>, <a class="cit">[2]</a>. Among powder-bed techniques, selective laser sintering is widely adopted for its geometric flexibility <a class="cit">[8]</a>.</p>
+  <p id="p2">The process is inherently energy-inefficient: only a small fraction of the supplied energy contributes to part formation, while the majority heats unused surrounding powder. Prolonged exposure degrades polymers such as <span class="mmath">PA<sub>12</sub></span>, which lose strength after a limited number of thermal cycles <a class="cit">[11]</a>.</p></div>`;
+const sidebar = (on=0)=>{ const secs=['Motivation','The Process','Background','Research Questions','Contributions']; return `<div class="side"><div class="sh">Sections</div>${secs.map((s,i)=>`<div class="s${i===on?' on':''}"><span class="dot"></span>${s}</div>`).join('')}</div>`; };
+
+// ================= SCENES =================
+const scenes = [
+// 0 — title
+{ k:'', t:'', dur:3200, build(){ stage.innerHTML = `<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Google Docs for native-LaTeX writing &amp; reviewing</div></div>`; },
+  async run(my){ cur.style.opacity=0; S('.hero').classList.add('show'); await hold(3000); } },
+
+// 1 — reading surface
+{ k:'Read', t:'A clean reading surface for your LaTeX — rendered to the web.', dur:8000,
+  build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}${doc1}<div class="rail"><div class="rh">My comments</div><div class="empty">Select text or a figure to leave a comment.</div></div></div>`); },
+  async run(my){ cur.style.opacity=1; await showFrame(); await moveTo(S('.side .s.on')); await moveTo(S('.doc h3')); const doc=S('.doc'); doc.style.transition='transform 1.8s ease'; doc.style.transform='translateY(-40px)'; await hold(2000); doc.style.transform='none'; await hold(700); } },
+
+// 2 — invite reviewers + connect email
+{ k:'Invite', t:'Invite reviewers by email — a private link and access key, no accounts.', dur:9500,
+  build(){ stage.innerHTML = frame('Reviewers', `<div class="panel"><div class="h2">Reviewers</div><div class="sub">Add a reviewer to create their private portal and send an invite.</div>
+    <div style="display:flex;gap:8px;margin-bottom:14px"><input class="field" style="flex:1;margin:0" value="Dr. Ada Byron" id="rn"><input class="field" style="flex:1;margin:0" value="ada@lab.edu"><button class="btn p" id="add">Add</button></div>
+    <div id="rlist"></div></div>`); },
+  async run(my){ await showFrame(); await moveTo(S('#add')); await click(); const list=S('#rlist');
+    list.innerHTML = `<div class="row reveal"><div class="av">AB</div><div><div class="nm">Dr. Ada Byron</div><div class="em">ada@lab.edu</div></div><div class="st ok" id="st">invite sent</div></div>`;
+    await hold(60); S('.row',list).classList.add('show'); await hold(1400);
+    // pop the email
+    const mail = document.createElement('div'); mail.style.cssText='position:absolute;right:5%;bottom:12%;z-index:30;opacity:0;transform:translateY(14px);transition:.5s';
+    mail.innerHTML = `<div class="mailcard"><div class="ac"></div><div class="mh"><img class="logo" src="${LOGO}"><b style="font-size:14px">Footnote</b></div><div class="mb">You're invited to review <b>The Thesis</b>.<div class="key">fk_ada_9x2b… (access key)</div><div class="cta">Open your review portal</div></div></div>`;
+    stage.appendChild(mail); await hold(60); mail.style.opacity=1; mail.style.transform='none'; await moveTo(mail.querySelector('.cta')); await hold(1500); } },
+
+// 3 — release chapters
+{ k:'Release', t:'Release chapters to each reviewer, on your schedule.', dur:7500,
+  build(){ const chs=['1 · Introduction','2 · Background','3 · Methods','4 · Results']; const advs=['Ada','Charles','Lab'];
+    stage.innerHTML = frame('Reviewers', `<div class="panel"><div class="h2">Which chapters each reviewer sees</div><div class="sub">Toggle access per reviewer; publish when ready.</div>
+    <table class="mx"><thead><tr><th></th>${advs.map(a=>`<th>${a}</th>`).join('')}</tr></thead><tbody>
+    ${chs.map((c,r)=>`<tr><td>${c}</td>${advs.map((a,ci)=>`<td><div class="chk${(r<2&&ci<2)?' on':''}" data-r="${r}" data-c="${ci}"></div></td>`).join('')}</tr>`).join('')}
+    </tbody></table></div>`); },
+  async run(my){ await showFrame(); const c1=S('.chk[data-r="2"][data-c="0"]'); await moveTo(c1); await click(); c1.classList.add('on'); await hold(300);
+    const c2=S('.chk[data-r="2"][data-c="1"]'); await moveTo(c2); await click(); c2.classList.add('on'); await hold(400);
+    const c3=S('.chk[data-r="3"][data-c="0"]'); await moveTo(c3); await click(); c3.classList.add('on'); await hold(1100); } },
+
+// 4 — advisor comments (select -> popover -> post)
+{ k:'Comment', t:'Reviewers highlight any text and comment inline — shared instantly, no submit step.', dur:11000,
+  build(){ stage.innerHTML = frame('Ada Byron', `<div class="body">${sidebar(0)}<div class="doc"><h3>1 · Introduction</h3>
+    <p id="p1">Additive manufacturing has reshaped fabrication by enabling <span id="tgt">complex geometries and rapid prototyping</span> <a class="cit">[1]</a>. Among powder-bed techniques, SLS is widely adopted for its geometric flexibility <a class="cit">[8]</a>.</p>
+    <p>The process is inherently energy-inefficient, and prolonged exposure degrades polymers such as <span class="math">PA<sub>12</sub></span>.</p></div>
+    <div class="rail"><div class="rh">My comments</div><div id="rl"><div class="empty">Select text to comment.</div></div></div></div>`); },
+  async run(my){ await showFrame(); const tgt=S('#tgt'); await moveTo(tgt); tgt.classList.add('sel'); await hold(500);
+    const r=tgt.getBoundingClientRect(), sr=stage.getBoundingClientRect();
+    const pop=document.createElement('div'); pop.className='pop';
+    pop.style.left=(r.left-sr.left)+'px'; pop.style.top=(r.bottom-sr.top+8)+'px';
+    pop.innerHTML=`<textarea readonly></textarea><div class="pb"><button class="btn" style="padding:6px 12px;font-size:12px">Suggest edit</button><button class="btn p" id="post" style="padding:6px 12px;font-size:12px">Comment</button></div>`;
+    S('.frame').appendChild(pop); await hold(60); pop.classList.add('show'); await moveTo(pop.querySelector('textarea')); await click();
+    await typeInto(pop.querySelector('textarea'),'Can you quantify "complex"? A metric here would strengthen the claim.'); await hold(300);
+    await moveTo(S('#post')); await click(); pop.classList.remove('show'); tgt.classList.remove('sel');
+    const rl=S('#rl'); rl.innerHTML=`<div class="ccard"><div class="who"><div class="av">AB</div><div class="nm">You</div></div><div class="q">"complex geometries and rapid prototyping"</div><div class="bd">Can you quantify "complex"? A metric would strengthen the claim.</div></div>`;
+    await hold(60); S('.ccard',rl).classList.add('show'); await hold(1500); } },
+
+// 5 — live on owner side
+{ k:'Live', t:'Comments land on your side live — no refresh, ever.', dur:8000,
+  build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}${doc1}<div class="rail"><div class="rh">Comments from reviewers</div><div id="ol"><div class="empty">Waiting for reviewer comments…</div></div></div></div>`); },
+  async run(my){ await showFrame(); await hold(900); const ol=S('#ol'); ol.innerHTML=`<div class="ccard flash"><div class="who"><div class="av">AB</div><div class="nm">Ada Byron</div></div><div class="q">"complex geometries and rapid prototyping"</div><div class="bd">Can you quantify "complex"? A metric would strengthen the claim.</div></div>`;
+    const c=S('.ccard',ol); await hold(40); c.classList.add('show'); await moveTo(c); await hold(2200); } },
+
+// 6 — reply + resolve
+{ k:'Resolve', t:'Reply, resolve, and the reviewer sees exactly how it was addressed.', dur:8500,
+  build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}${doc1}<div class="rail"><div class="rh">Comments from reviewers</div>
+    <div class="ccard show" id="cc"><div class="who"><div class="av">AB</div><div class="nm">Ada Byron</div></div><div class="q">"complex geometries…"</div><div class="bd">Can you quantify "complex"?</div>
+    <div style="display:flex;gap:6px;margin-top:9px"><button class="btn" style="padding:5px 11px;font-size:11.5px" id="reply">Reply</button><button class="btn p" style="padding:5px 11px;font-size:11.5px" id="res">Mark addressed</button></div>
+    <div class="rz" id="rz">Addressed by the author · added a geometric-complexity metric.</div></div></div></div>`); },
+  async run(my){ await showFrame(); await moveTo(S('#res')); await click(); S('#rz').classList.add('show'); await hold(2600); } },
+
+// 7 — what changed since last visit
+{ k:'What changed', t:'Reviewers see exactly what changed since they last looked — highlighted in place.', dur:9000,
+  build(){ stage.innerHTML = frame('Ada Byron', `<div class="body">${sidebar(0)}<div class="doc"><div style="background:#eaf1fb;border:1px solid var(--accent);border-radius:10px;padding:9px 13px;margin-bottom:16px;font-size:12.5px;color:var(--ink);display:flex;align-items:center;gap:8px" class="reveal" id="wn"><span style="color:var(--accent)">✦</span> <b>2</b> sections updated since your last visit — the new text is highlighted <span style="margin-left:auto;background:var(--accent);color:#fff;border-radius:7px;padding:3px 10px;font-size:11.5px">Jump to first change</span></div>
+    <h3>1 · Introduction</h3><p>The process is inherently energy-inefficient. Only <span class="mk" id="m1">a small fraction of the supplied energy</span> contributes to part formation, while the majority heats <span class="mk" id="m2">unused surrounding powder, driving thermal degradation</span>.</p></div><div class="rail"><div class="rh">My comments</div><div class="empty">1 addressed</div></div></div>`); },
+  async run(my){ await showFrame(); S('#wn').classList.add('show'); await hold(700); await moveTo(S('#wn span:last-child')); await hold(400); await moveTo(S('#m2')); await hold(2400); } },
+
+// 8 — direct edit -> LaTeX diff -> merge
+{ k:'Edit', t:'Edit the prose directly — Footnote writes it back to your LaTeX and stages the diff.', dur:11500,
+  build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}<div class="doc"><h3>1 · Introduction</h3>
+    <p id="ep">The process is inherently energy-inefficient and prolonged exposure degrades the polymer.</p>
+    <div id="editzone"></div></div><div class="rail"><div class="rh">Staged edits</div><div id="sl"><div class="empty">Hover a paragraph to edit.</div></div></div></div>`); },
+  async run(my){ await showFrame(); const ep=S('#ep'); const r=ep.getBoundingClientRect(), sr=S('.frame').getBoundingClientRect();
+    const pen=document.createElement('div'); pen.className='pen'; pen.style.left=(r.right-sr.left-34)+'px'; pen.style.top=(r.top-sr.top)+'px';
+    pen.innerHTML=`<svg viewBox="0 0 24 24"><path d="M4 20 L4 16 L15 5 L19 9 L8 20 Z"/></svg>`; S('.frame').appendChild(pen);
+    await moveTo(ep); pen.classList.add('show'); await hold(400); await moveTo(pen); await click(); pen.classList.remove('show');
+    const ta=document.createElement('div'); ta.className='pedit'; ta.contentEditable='true'; ta.textContent=ep.textContent; ep.replaceWith(ta);
+    await moveTo(ta); await hold(300); ta.textContent='The process is inherently energy-inefficient, and prolonged exposure degrades the polymer after only a few thermal cycles.'; ta.classList.add('type-caret'); await hold(700); ta.classList.remove('type-caret');
+    const ez=S('#editzone'); ez.innerHTML=`<div class="diff reveal" id="df">…prolonged exposure degrades the polymer<span class="ins"> after only a few thermal cycles</span>.</div><div style="margin-top:12px;display:flex;gap:8px"><button class="btn" style="font-size:12px">Cancel</button><button class="btn p" id="stage2" style="font-size:12px">Approve &amp; merge</button></div>`;
+    await hold(60); S('#df').classList.add('show'); await hold(600); await moveTo(S('#stage2')); await click();
+    S('#sl').innerHTML=`<div class="row reveal" style="padding:9px 11px"><div class="st ok" style="margin:0">merged → main</div></div>`; await hold(40); S('.row',S('#sl')).classList.add('show'); await hold(1800); } },
+
+// 9 — outro
+{ k:'', t:'', dur:5200, build(){ stage.innerHTML=`<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Read · comment · suggest · resolve · edit · export</div><div class="foot">Free &amp; serverless on GitHub. No AI required. Your source stays yours.</div></div>`; },
+  async run(my){ cur.style.opacity=0; S('.hero').classList.add('show'); await hold(4800); } },
+];
+
+// build dots
+scenes.forEach((_,i)=>{ const b=document.createElement('button'); b.onclick=()=>jump(i); dotsEl.appendChild(b); });
+function paintDots(){ [...dotsEl.children].forEach((d,i)=>d.classList.toggle('on',i===idx)); }
+
+async function playFrom(i){
+  token++; cancelWaits(); const my=token; idx=i; paintDots();
+  for(let s=i; s<scenes.length; s++){
+    if(my!==token) return; idx=s; paintDots();
+    const sc=scenes[s]; bar.style.width=((s)/(scenes.length-1)*100)+'%';
+    sc.build(); setCap(sc.k, sc.t);
+    try{ await sc.run(my); }catch(e){ if(e==='cancel') return; console.error('scene '+s+' failed:', e); }
+    bar.style.width=(((s+1))/(scenes.length-1)*100)+'%';
+    await waitIfPaused(); if(my!==token) return;
+  }
+  // loop back to title after a beat
+  await sleep(1200); if(my===token) playFrom(0);
+}
+function jump(i){ paused=false; syncPP(); playFrom(i); }
+
+// controls
+const pp=document.getElementById('pp'), rp=document.getElementById('rp');
+function syncPP(){ pp.innerHTML = paused ? '<svg viewBox="0 0 24 24"><path d="M7 4 L20 12 L7 20 Z"/></svg>' : '<svg viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/></svg>'; }
+pp.onclick=()=>{ paused=!paused; syncPP(); if(!paused && resumeResolve){ resumeResolve(); resumeResolve=null; } };
+rp.onclick=()=>jump(0);
+
+playFrom(0);
+</script>
+</body>
+</html>

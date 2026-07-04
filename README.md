@@ -35,6 +35,11 @@ See `footnote.config.example.json` for every key and its default. `doc.noun`/`do
 user-facing copy ("thesis"/"section", "paper"/"part", …). `reviewAgents` is empty by default — the
 "Run review agents" AI shortcut only appears if you populate it (Footnote's core is AI-free).
 
+## Walkthrough
+An animated, self-contained product tour of the full workflow (read → comment → live-on-owner-side →
+resolve → what-changed → direct edit → export) lives at **[`tutorials/walkthrough.html`](tutorials/walkthrough.html)** —
+autoplays with play/pause/replay and jump-to-scene dots. No dependencies; open it directly.
+
 ## Development
 ```
 npm test        # node --test tests/*.test.mjs  (unit tests)
