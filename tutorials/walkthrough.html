@@ -142,6 +142,20 @@ body.embed #ctrls,body.embed #dots{display:none}   /* clean thumbnail when embed
 .hero .tag{font-size:19px;color:#aeb6d6;margin-top:12px;font-weight:400}
 .hero .foot{font-size:14px;color:#8890b4;margin-top:26px}
 
+/* workflow flow diagram */
+.flow{display:flex;align-items:center;gap:6px}
+.fnode{width:196px;background:#171c33;border:1px solid rgba(255,255,255,.11);border-radius:16px;padding:22px 16px 20px;text-align:center;opacity:0;transform:translateY(16px) scale(.95);transition:.55s cubic-bezier(.2,.7,.2,1)}
+.fnode.on{opacity:1;transform:none}
+.fnode.hi{border-color:#2c64c4;box-shadow:0 0 0 1px #2c64c4,0 24px 60px -22px rgba(44,100,196,.6)}
+.fni{width:46px;height:46px;margin:0 auto 13px;border-radius:12px;overflow:hidden}
+.fni svg{width:46px;height:46px;display:block}
+.fnl{font-size:16px;font-weight:600;color:#fff}
+.fns{font-size:12px;color:#aeb6d6;margin-top:3px;line-height:1.35}
+.farrow{width:40px;height:2px;background:rgba(255,255,255,.2);position:relative;opacity:0;transform:scaleX(.15);transform-origin:left;transition:.5s}
+.farrow.on{opacity:1;transform:scaleX(1)}
+.farrow::after{content:"";position:absolute;right:-2px;top:-4px;border:5px solid transparent;border-left-color:rgba(255,255,255,.4)}
+@media(max-width:640px){ .flow{flex-direction:column} .farrow{width:2px;height:26px;transform:scaleY(.15);transform-origin:top} .farrow.on{transform:scaleY(1)} .farrow::after{right:-4px;top:auto;bottom:-2px;transform:rotate(90deg)} }
+
 /* cursor */
 #cur{position:fixed;z-index:60;left:0;top:0;width:22px;height:22px;pointer-events:none;transition:transform .62s cubic-bezier(.5,0,.2,1);filter:drop-shadow(0 3px 5px rgba(0,0,0,.4))}
 #cur svg{width:100%;height:100%}
@@ -178,6 +192,8 @@ const dotsEl = document.getElementById('dots');
 
 // ---- brand mark (inline SVG string so scenes can drop it in) ----
 const MARK = `<svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg>`;
+const OVERLEAF = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#138a07"/><path d="M13 13h13M13 20h20M13 27h13M13 33h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+const GITHUB = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#24292f"/><circle cx="16" cy="15" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="16" cy="31" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="30" cy="18" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M16 18v10M16 25c0-4 3.5-6.5 10-7" fill="none" stroke="#fff" stroke-width="2.2"/></svg>`;
 
 // ---- engine state ----
 let idx = 0, token = 0, paused = false, resumeResolve = null;
@@ -213,16 +229,27 @@ const sidebar = (on=0)=>{ const secs=['Motivation','The Process','Background','R
 // ================= SCENES =================
 const scenes = [
 // 0 — title
-{ k:'', t:'', dur:3200, build(){ stage.innerHTML = `<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Google Docs for native-LaTeX writing &amp; reviewing</div></div>`; },
-  async run(my){ cur.style.opacity=0; S('.hero').classList.add('show'); await hold(3000); } },
+{ k:'', t:'', dur:3200, build(){ stage.innerHTML = `<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">The distributed review layer for LaTeX</div></div>`; },
+  async run(my){ cur.style.opacity=0; S('.hero').classList.add('show'); await hold(2900); } },
+
+// 1 — the workflow / positioning
+{ k:'The workflow', t:'You keep writing in Overleaf. Your LaTeX lives in GitHub. Footnote adds the review layer on top.', dur:8800,
+  build(){ stage.innerHTML = `<div class="flow">
+    <div class="fnode" id="n1"><div class="fni">${OVERLEAF}</div><div class="fnl">Overleaf</div><div class="fns">write &amp; compile,<br>as you already do</div></div>
+    <div class="farrow" id="a1"></div>
+    <div class="fnode" id="n2"><div class="fni">${GITHUB}</div><div class="fnl">GitHub</div><div class="fns">your .tex source,<br>synced automatically</div></div>
+    <div class="farrow" id="a2"></div>
+    <div class="fnode hi" id="n3"><div class="fni">${MARK}</div><div class="fnl">Footnote</div><div class="fns">reviewers read<br>&amp; comment</div></div>
+  </div>`; S('#n3').classList.remove('hi'); },
+  async run(my){ cur.style.opacity=0; for(const s of ['#n1','#a1','#n2','#a2','#n3']){ S(s).classList.add('on'); await hold(560); } await hold(500); S('#n3').classList.add('hi'); await hold(2400); } },
 
 // 1 — reading surface
-{ k:'Read', t:'A clean reading surface for your LaTeX — rendered to the web.', dur:8000,
+{ k:'Read', t:'Reviewers get a clean reading surface — no LaTeX, no Overleaf seat, no account. Just a link.', dur:8000,
   build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}${doc1}<div class="rail"><div class="rh">My comments</div><div class="empty">Select text or a figure to leave a comment.</div></div></div>`); },
   async run(my){ cur.style.opacity=1; await showFrame(); await moveTo(S('.side .s.on')); await moveTo(S('.doc h3')); const doc=S('.doc'); doc.style.transition='transform 1.8s ease'; doc.style.transform='translateY(-40px)'; await hold(2000); doc.style.transform='none'; await hold(700); } },
 
 // 2 — invite reviewers + connect email
-{ k:'Invite', t:'Invite reviewers by email — a private link and access key, no accounts.', dur:9500,
+{ k:'Invite', t:'Invite anyone to review by email. Overleaf only lets your paid collaborators comment — Footnote opens it up.', dur:9500,
   build(){ stage.innerHTML = frame('Reviewers', `<div class="panel"><div class="h2">Reviewers</div><div class="sub">Add a reviewer to create their private portal and send an invite.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px"><input class="field" style="flex:1;margin:0" value="Dr. Ada Byron" id="rn"><input class="field" style="flex:1;margin:0" value="ada@lab.edu"><button class="btn p" id="add">Add</button></div>
     <div id="rlist"></div></div>`); },
@@ -283,7 +310,7 @@ const scenes = [
   async run(my){ await showFrame(); S('#wn').classList.add('show'); await hold(700); await moveTo(S('#wn span:last-child')); await hold(400); await moveTo(S('#m2')); await hold(2400); } },
 
 // 8 — direct edit -> LaTeX diff -> merge
-{ k:'Edit', t:'Edit the prose directly — Footnote writes it back to your LaTeX and stages the diff.', dur:11500,
+{ k:'Edit', t:'Address feedback right here if you like — or take the comments back to Overleaf. However you write, Footnote is your review layer.', dur:11500,
   build(){ stage.innerHTML = frame('Reviewer', `<div class="body">${sidebar(0)}<div class="doc"><h3>1 · Introduction</h3>
     <p id="ep">The process is inherently energy-inefficient and prolonged exposure degrades the polymer.</p>
     <div id="editzone"></div></div><div class="rail"><div class="rh">Staged edits</div><div id="sl"><div class="empty">Hover a paragraph to edit.</div></div></div></div>`); },
@@ -298,7 +325,7 @@ const scenes = [
     S('#sl').innerHTML=`<div class="row reveal" style="padding:9px 11px"><div class="st ok" style="margin:0">merged → main</div></div>`; await hold(40); S('.row',S('#sl')).classList.add('show'); await hold(1800); } },
 
 // 9 — outro
-{ k:'', t:'', dur:5200, build(){ stage.innerHTML=`<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Read · comment · suggest · resolve · edit · export</div><div class="foot">Free &amp; serverless on GitHub. No AI required. Your source stays yours.</div></div>`; },
+{ k:'', t:'', dur:5200, build(){ stage.innerHTML=`<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Write in Overleaf. Review in Footnote.</div><div class="foot">Reviewing is the real pain in LaTeX — Footnote fixes it. Free &amp; serverless on your GitHub. No AI required.</div></div>`; },
   async run(my){ cur.style.opacity=0; S('.hero').classList.add('show'); await hold(4800); } },
 ];
 
