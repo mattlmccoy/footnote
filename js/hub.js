@@ -184,6 +184,7 @@ export async function launch() {
       ${stepperHtml(0)}
       <h1 class="fn-h1">Margin notes for<br><em>native-LaTeX</em> writing.</h1>
       <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
+      <a class="fn-watch" href="tutorials/walkthrough.html" style="display:inline-flex;align-items:center;gap:9px;margin:0 0 24px;padding:10px 17px;border:1px solid #2c64c4;border-radius:11px;color:#2c64c4;text-decoration:none;font-weight:600;font-size:14px;background:#fff"><span style="display:inline-flex;width:22px;height:22px;border-radius:50%;background:#2c64c4;color:#fff;align-items:center;justify-content:center;font-size:9px;padding-left:2px">▶</span>See how it works — 90-second walkthrough</a>
       <div class="fn-card">
         <div class="fn-step">Connect GitHub</div>
         <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></label>
