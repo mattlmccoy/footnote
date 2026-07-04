@@ -73,6 +73,29 @@ export function buildWorklist(chapters, reviews, config) {
   return groups;
 }
 
+// Render the worklist groups as the inner HTML of the panel body. `escape` is
+// supplied by the caller (the owner portal passes its escapeHtml); pure string building.
+export function worklistToHtml(worklist, escape) {
+  const e = escape || (s => String(s == null ? '' : s));
+  return (worklist || []).map(g => `
+    <div class="ovl-grp">
+      <div class="ovl-grp-h">${e(g.file || g.title)} <span class="ovl-n">· ${g.open} open</span></div>
+      ${g.items.map(it => `
+        <label class="ovl-item${it.actioned ? ' done' : ''}" data-cid="${e(it.id)}" data-ch="${e(it.chapterId)}">
+          <input type="checkbox" class="ovl-cb"${it.actioned ? ' checked' : ''}>
+          <div>
+            <div class="ovl-meta">${it.section ? e(it.section) + ' · ' : ''}${e(it.reviewerName)} · ${(it.ts || '').slice(0, 10)}</div>
+            <div class="ovl-loc">${it.locator.quote
+              ? `Find in Overleaf → <code>search: "${e(it.locator.quote)}"</code>${it.locator.line ? ` · line ${it.locator.line}` : ''}`
+              : `Find in Overleaf → ${e(it.locator.label || g.title)}`}</div>
+            ${it.comment ? `<div class="ovl-cmt">${e(it.comment)}</div>` : ''}
+            ${(it.before != null && it.after != null)
+              ? `<div class="ovl-edit">before <span class="ba">"${e(it.before)}"</span> → after <span class="ba">"${e(it.after)}"</span></div>` : ''}
+          </div>
+        </label>`).join('')}
+    </div>`).join('');
+}
+
 // Escape for inline Markdown: neutralize backticks, collapse newlines.
 const esc = s => String(s == null ? '' : s).replace(/`/g, '‘').replace(/\r?\n/g, ' ');
 

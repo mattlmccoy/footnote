@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { buildWorklist, worklistToMarkdown } from '../js/worklist.js';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from '../js/worklist.js';
 
 const CH = [
   { id: 'ch_results', n: 3, title: 'Results', sourceFile: 'chapters/results.tex' },
@@ -89,4 +89,31 @@ test('worklistToMarkdown: empty-quote item locates by label, omits edit block', 
   const md = worklistToMarkdown(wl, META);
   assert.match(md, /Find in Overleaf → Figure 3\.2/);
   assert.doesNotMatch(md, /before:/);
+});
+
+const E = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+test('worklistToHtml: renders group header, checkbox, search chip, edit block', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({
+    edit: { op: 'replace', find: 'was pronounced', replacement: 'was measurable' } })]) }, CFG);
+  const html = worklistToHtml(wl, E);
+  assert.match(html, /class="ovl-grp-h">chapters\/results\.tex <span class="ovl-n">· 1 open/);
+  assert.match(html, /data-cid="c1" data-ch="ch_results"/);
+  assert.match(html, /type="checkbox" class="ovl-cb"/);
+  assert.match(html, /search: "the melt-pool contrast was pronounced"/);
+  assert.match(html, /before <span class="ba">"was pronounced"<\/span> → after <span class="ba">"was measurable"/);
+});
+
+test('worklistToHtml: actioned item gets done class + checked box', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({ actioned: true })]) }, CFG);
+  const html = worklistToHtml(wl, E);
+  assert.match(html, /class="ovl-item done"/);
+  assert.match(html, /class="ovl-cb" checked/);
+});
+
+test('worklistToHtml: escapes reviewer/comment via the provided escape fn', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({ body: '<script>x</script>' })]) }, CFG);
+  const html = worklistToHtml(wl, E);
+  assert.match(html, /&lt;script&gt;x&lt;\/script&gt;/);
+  assert.doesNotMatch(html, /<script>x<\/script>/);
 });
