@@ -156,6 +156,20 @@ body.embed #ctrls,body.embed #dots{display:none}   /* clean thumbnail when embed
 .farrow::after{content:"";position:absolute;right:-2px;top:-4px;border:5px solid transparent;border-left-color:rgba(255,255,255,.4)}
 @media(max-width:640px){ .flow{flex-direction:column} .farrow{width:2px;height:26px;transform:scaleY(.15);transform-origin:top} .farrow.on{transform:scaleY(1)} .farrow::after{right:-4px;top:auto;bottom:-2px;transform:rotate(90deg)} }
 
+/* back-to-overleaf worklist scene */
+.wl-wrap{display:flex;gap:26px;align-items:flex-start;justify-content:center;flex-wrap:wrap}
+.wl-card{background:#171c33;border:1px solid rgba(255,255,255,.11);border-radius:16px;padding:16px 18px;width:360px;text-align:left}
+.wl-h{font:600 13px ui-monospace,Menlo,monospace;color:#cfd7e6;display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.wl-h svg{width:22px;height:22px}
+.wl-row{border-top:1px solid rgba(255,255,255,.09);padding:9px 0;font-size:12.5px;color:#9aa3bd;line-height:1.7}
+.wl-chip{background:#0f1428;color:#e7ecf3;border-radius:5px;padding:2px 7px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.wl-ba{color:#e7ecf3}
+.wl-cta{margin-top:14px;background:#138a07;color:#fff;border-radius:9px;padding:9px 15px;font:600 13px system-ui;border:none;cursor:default}
+.wl-oe{background:#0f1622;border:1px solid #1f6f3f;border-radius:16px;padding:16px 18px;width:320px;text-align:left;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;color:#cfe8d6;line-height:1.9}
+.wl-oe-h{color:#6fcf97;margin-bottom:10px;font-size:11.5px;letter-spacing:.04em}
+.wl-found{background:#2e7d46;color:#fff;border-radius:3px;padding:0 3px}
+@media(max-width:640px){ .wl-card,.wl-oe{width:88%} }
+
 /* cursor */
 #cur{position:fixed;z-index:60;left:0;top:0;width:22px;height:22px;pointer-events:none;transition:transform .62s cubic-bezier(.5,0,.2,1);filter:drop-shadow(0 3px 5px rgba(0,0,0,.4))}
 #cur svg{width:100%;height:100%}
@@ -323,6 +337,24 @@ const scenes = [
     const ez=S('#editzone'); ez.innerHTML=`<div class="diff reveal" id="df">…prolonged exposure degrades the polymer<span class="ins"> after only a few thermal cycles</span>.</div><div style="margin-top:12px;display:flex;gap:8px"><button class="btn" style="font-size:12px">Cancel</button><button class="btn p" id="stage2" style="font-size:12px">Approve &amp; merge</button></div>`;
     await hold(60); S('#df').classList.add('show'); await hold(600); await moveTo(S('#stage2')); await click();
     S('#sl').innerHTML=`<div class="row reveal" style="padding:9px 11px"><div class="st ok" style="margin:0">merged → main</div></div>`; await hold(40); S('.row',S('#sl')).classList.add('show'); await hold(1800); } },
+
+// back to Overleaf — the return trip
+{ k:'Back to Overleaf', t:'Reviewers comment in Footnote. One click gives you a worklist — exact search text and suggested wording — that you clear in Overleaf in minutes.', dur:9500,
+  build(){ stage.innerHTML = `<div class="wl-wrap">
+    <div class="wl-card">
+      <div class="wl-h">${OVERLEAF} chapters/results.tex · 2 open</div>
+      <div class="wl-row">§3.2 · Carolyn Seepersad<br><span class="wl-chip">search: "contrast was pronounced"</span><br><span class="wl-ba">before "pronounced" → after "measurable"</span></div>
+      <div class="wl-row">§3.4 · You<br><span class="wl-chip">search: "the densification front"</span></div>
+      <button class="wl-cta" id="wlcopy">Copy all as Markdown</button>
+    </div>
+    <div class="wl-oe" id="wloe">
+      <div class="wl-oe-h">Overleaf · results.tex</div>
+      <div>…the melt-pool <span id="wlword">contrast was pronounced</span> across the layer…</div>
+    </div>
+  </div>`; },
+  async run(my){ cur.style.opacity=1; await moveTo(S('#wlcopy')); await click(); S('#wlcopy').textContent='Copied ✓'; await hold(800);
+    await moveTo(S('#wloe')); await hold(400); S('#wlword').classList.add('wl-found'); await hold(1000);
+    S('#wlword').textContent='contrast was measurable'; S('#wlword').classList.remove('wl-found'); await hold(1800); } },
 
 // 9 — outro
 { k:'', t:'', dur:5200, build(){ stage.innerHTML=`<div class="hero"><div class="mark">${MARK}</div><h1>Footnote</h1><div class="tag">Write in Overleaf. Review in Footnote.</div><div class="foot">Reviewing is the real pain in LaTeX — Footnote fixes it. Free &amp; serverless on your GitHub. No AI required.</div></div>`; },
