@@ -1568,7 +1568,11 @@ const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;',
 const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 // Invite links carry the project's data repo (&data=owner/repo) so an advisor — who has no hub access —
 // lands in the right project. Harmless in single-project mode (same data repo).
-const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '' });
+// The shared reviewer access key, cached locally when the owner seals it (in the email/settings wizard),
+// so the copy-link can embed it as &k= — a working magic link. Empty until a key is set; then links just work.
+const advKeyStoreKey = () => `footnote:advkey:${DATA_REPO}`;
+const advisorKey = () => { try { return localStorage.getItem(advKeyStoreKey()) || ''; } catch (e) { return ''; } };
+const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '', accessKey: advisorKey() });
 const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
 const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
@@ -3136,8 +3140,11 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       await putSecret(etok, pk, sealToBase64, 'SMTP_FROM', (S.from || user).trim());   // sender ≠ login for Brevo
       // Advisor access token (emailed to advisors so they can read + comment). Only overwrite when the
       // owner supplied one — a blank field keeps the existing key. This is a separate, least-privilege
-      // token, never the owner's account PAT. Not persisted in the browser (lives only in S.advkey).
-      if ((S.advkey || '').trim()) await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
+      // token, never the owner's account PAT. Also cached locally (below) so the copy-link embeds it as &k=.
+      if ((S.advkey || '').trim()) {
+        await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
+        try { localStorage.setItem(advKeyStoreKey(), S.advkey.trim()); } catch (e) {}   // copy-link magic link
+      }
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
