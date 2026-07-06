@@ -186,3 +186,91 @@ def process_apply_direct_job(job, review, files, ts):
             updated[cid] = conflict_comment(comment, str(e), ts)
     new_comments = [updated.get(c.get("id"), c) for c in (review.get("comments") or [])]
     return {**review, "comments": new_comments}, work, branch, applied
+
+
+# --------------------------------------------------------------- apply-edits (Claude-authored)
+# The apply-edits path is the one place Claude writes. Claude never mutates files directly: it reads
+# the chapter + comments (build_apply_task) and returns per-comment edit SPECS, which this tested
+# deterministic code applies via literal_replace and stages on the review branch for author approval.
+# Author-oversight invariant: Claude output only ever becomes a staged edit on review-edits/<unit>.
+
+def build_apply_task(job, review, files):
+    """Package what Claude needs to act on an apply-edits job: the unit id, the source files, and
+    each referenced comment flattened to the fields Claude reasons over (anchor quote/section, tag,
+    body/ask, any revise_note or verbatim edit, from_advisor attribution). Pure — the transport
+    (writing it for the Claude Code Action) lives in the engine script."""
+    out_comments = []
+    for c in comments_by_id(review, job.get("comment_ids") or []):
+        out_comments.append({
+            "id": c.get("id"),
+            "quote": (c.get("anchor") or {}).get("quote", ""),
+            "section": (c.get("anchor") or {}).get("section", ""),
+            "tag": c.get("tag", ""),
+            "body": c.get("body", ""),
+            "revise_note": c.get("revise_note", ""),
+            "edit": c.get("edit"),
+            "from_advisor": c.get("from_advisor"),
+        })
+    return {"chapter": job.get("chapter"), "source": dict(files), "comments": out_comments}
+
+
+def stage_claude_edit(comment, branch, ts, response, prose_before, prose_after):
+    """A comment STAGED from a Claude edit: records Claude's response text and the reader-facing
+    diff (prose before/after Claude reported), on the review branch. Input not mutated."""
+    out = dict(comment)
+    out["status"] = "staged"
+    out["claude"] = {**(comment.get("claude") or {}),
+                     "branch": branch, "response": response, "ts": ts}
+    out["staged_edit"] = {"before": prose_before or "", "after": prose_after or ""}
+    return out
+
+
+def answer_comment(comment, ts, response):
+    """A comment ANSWERED by Claude without a source edit (e.g. a question) — records the response,
+    terminal-for-display status 'answered', no staged_edit. Input not mutated."""
+    out = dict(comment)
+    out["status"] = "answered"
+    out["claude"] = {**(comment.get("claude") or {}), "response": response, "ts": ts}
+    return out
+
+
+def process_apply_edits_job(job, review, files, edits_by_id, ts):
+    """Apply Claude's edit specs for one apply-edits job. For each referenced comment:
+      * a spec with a source change → apply source_before→source_after via literal_replace on the
+        working files and stage it (response + prose diff); an absent/ambiguous target → conflict;
+      * a spec with only a response (no source change) → 'answered';
+      * no spec at all → left as-is (a later revision can retry).
+    Returns ``(new_review, new_files, branch, applied)``. Pure: ``ts`` injected, inputs untouched.
+    """
+    branch = branch_for(job.get("chapter"))
+    work = dict(files)
+    by_id = {c.get("id"): c for c in (review.get("comments") or [])}
+    updated = dict(by_id)
+    applied = False
+    for cid in job.get("comment_ids") or []:
+        comment = by_id.get(cid)
+        if comment is None:
+            continue
+        spec = edits_by_id.get(cid)
+        if not spec:
+            continue
+        before, after = spec.get("source_before"), spec.get("source_after")
+        response = spec.get("response", "")
+        if before and after is not None and before != after:
+            hits = [p for p, text in work.items() if text.count(before) >= 1]
+            if len(hits) != 1:
+                updated[cid] = conflict_comment(
+                    comment, f"Claude's target text matched {len(hits)} files", ts)
+                continue
+            try:
+                work[hits[0]] = literal_replace(work[hits[0]], before, after)
+            except EditConflict as e:
+                updated[cid] = conflict_comment(comment, str(e), ts)
+                continue
+            updated[cid] = stage_claude_edit(comment, branch, ts, response,
+                                             spec.get("prose_before"), spec.get("prose_after"))
+            applied = True
+        else:
+            updated[cid] = answer_comment(comment, ts, response)
+    new_comments = [updated.get(c.get("id"), c) for c in (review.get("comments") or [])]
+    return {**review, "comments": new_comments}, work, branch, applied

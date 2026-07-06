@@ -1,8 +1,10 @@
 name: apply
-# Drain the review job queue. Slice 2: the DETERMINISTIC apply-direct job (an owner's verbatim
-# edit) is applied on a review-edits/<unit> branch with NO Claude, so it works with the AI
-# assistant off. Claude-authored jobs (apply-edits, run-agents) and merge are added in later
-# slices. Runs entirely on the ADOPTER's own Actions. Dual-mode: legacy root or workspace <id>/.
+# Drain the review job queue on the ADOPTER's own Actions. Handles the DETERMINISTIC apply-direct
+# job (an owner's verbatim edit — no Claude, works with the AI assistant off) and the Claude
+# apply-edits job (freeform comments → Claude-authored LaTeX edit specs, applied deterministically
+# and staged for the author to approve — never auto-merged). run-agents and merge land in later
+# slices. Dual-mode: legacy root or workspace <id>/. apply-edits only runs when ANTHROPIC_API_KEY
+# is set — otherwise the job just waits (nothing runs until the adopter configures Claude).
 on:
   # The app enqueues by committing jobs.json (workspace: <id>/jobs.json). The drain commits the
   # updated queue + reviews back with [skip ci], so this never loops.
@@ -34,10 +36,20 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+      - name: Install pandoc + TeX + poppler (the preview reuses the render pipeline)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pandoc poppler-utils \
+            texlive-latex-base texlive-latex-extra texlive-pictures texlive-science
+      - name: Install Claude Code CLI (only used by apply-edits when ANTHROPIC_API_KEY is set)
+        run: npm install -g @anthropic-ai/claude-code || echo "claude CLI unavailable — apply-edits will wait"
       - name: Drain review job queue
         env:
           SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
           SOURCE_REPO: ${{ vars.SOURCE_REPO }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
           PROJECT: ${{ github.event.inputs.project }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 ci_apply.py

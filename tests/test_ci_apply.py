@@ -4,6 +4,7 @@ Slice 2 of the Claude round-trip backend: the apply-direct path + shared job/com
 plumbing. Everything here is pure (no git, no network) so it runs under pytest; the
 git/clone I/O in ci_apply.py is thin and verified live on the adopter's Actions.
 """
+import json
 import os
 import sys
 import pytest
@@ -182,3 +183,101 @@ def test_process_apply_direct_job_all_conflict_reports_nothing_applied():
         job, review, {"ch1.tex": "nothing here"}, "t")
     assert applied is False
     assert new_files == {"ch1.tex": "nothing here"}     # no file changed
+
+
+# ================================================================ apply-edits (Claude)
+def _comment(cid="c1", body="please reword this", quote="the alpha term"):
+    return {"id": cid, "kind": "text", "status": "queued", "tag": "clarity",
+            "anchor": {"quote": quote, "section": "Methods"}, "body": body,
+            "claude": {"branch": None, "commit": None, "response": None,
+                       "resolved_line": None, "ts": None}}
+
+
+def test_build_apply_task_packages_chapter_and_comments_for_claude():
+    review = {"comments": [_comment("c1", "reword", "alpha"),
+                           dict(_comment("c2", "cite here", "beta"),
+                                revise_note="be more specific")]}
+    job = {"chapter": "02-methods", "comment_ids": ["c1", "c2"]}
+    task = R.build_apply_task(job, review, {"methods.tex": "x = alpha + beta"})
+    assert task["chapter"] == "02-methods"
+    assert task["source"] == {"methods.tex": "x = alpha + beta"}
+    ids = [c["id"] for c in task["comments"]]
+    assert ids == ["c1", "c2"]
+    c2 = next(c for c in task["comments"] if c["id"] == "c2")
+    assert c2["quote"] == "beta" and c2["body"] == "cite here"
+    assert c2["revise_note"] == "be more specific"   # revision context forwarded to Claude
+
+
+def test_process_apply_edits_job_stages_claude_edits_deterministically():
+    review = {"comments": [_comment("c1", quote="the alpha term")]}
+    job = {"id": "j1", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"]}
+    edits = {"c1": {"id": "c1", "response": "Reworded for clarity.",
+                    "source_before": "\\alpha", "source_after": "\\beta",
+                    "prose_before": "the alpha term", "prose_after": "the beta term"}}
+    new_review, new_files, branch, applied = R.process_apply_edits_job(
+        job, review, {"methods.tex": "x = \\alpha + 1"}, edits, "2026-07-06T00:00:00Z")
+    assert applied is True and branch == "review-edits/02-methods"
+    assert new_files["methods.tex"] == "x = \\beta + 1"     # Claude's spec applied by literal_replace
+    c = new_review["comments"][0]
+    assert c["status"] == "staged"
+    assert c["claude"]["response"] == "Reworded for clarity."
+    assert c["claude"]["branch"] == "review-edits/02-methods"
+    assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}
+
+
+def test_process_apply_edits_job_answers_when_claude_makes_no_edit():
+    # Claude replies to a question without changing source → 'answered', response recorded, no branch edit.
+    review = {"comments": [_comment("c1", body="what does this mean?")]}
+    job = {"id": "j1", "type": "apply-edits", "chapter": "ch1", "comment_ids": ["c1"]}
+    edits = {"c1": {"id": "c1", "response": "It denotes the absorption coefficient."}}
+    new_review, new_files, _, applied = R.process_apply_edits_job(
+        job, review, {"ch1.tex": "text"}, edits, "t")
+    assert applied is False
+    assert new_files == {"ch1.tex": "text"}
+    c = new_review["comments"][0]
+    assert c["status"] == "answered"
+    assert c["claude"]["response"] == "It denotes the absorption coefficient."
+
+
+def test_process_apply_edits_job_flags_conflict_when_claude_target_absent():
+    review = {"comments": [_comment("c1")]}
+    job = {"id": "j1", "type": "apply-edits", "chapter": "ch1", "comment_ids": ["c1"]}
+    edits = {"c1": {"id": "c1", "response": "fixed",
+                    "source_before": "NOT PRESENT", "source_after": "x"}}
+    new_review, _, _, applied = R.process_apply_edits_job(
+        job, review, {"ch1.tex": "text"}, edits, "t")
+    assert applied is False
+    assert new_review["comments"][0]["status"] == "conflict"
+
+
+# --------------------------------------------------------------- Claude boundary (pure parts)
+def test_claude_prompt_includes_comments_and_demands_json_only():
+    import ci_apply as A
+    task = {"chapter": "02-methods", "source": {"m.tex": "x"},
+            "comments": [{"id": "c1", "quote": "alpha", "body": "reword"}]}
+    p = A.claude_prompt(task)
+    assert "02-methods" in p and "c1" in p and "reword" in p
+    assert "JSON" in p                       # instructs a machine-readable answer
+    # oversight: the prompt tells Claude to return specs, not to touch files / merge
+    assert "source_before" in p and "source_after" in p
+
+
+def test_parse_claude_edits_from_cli_envelope_with_fenced_json():
+    import ci_apply as A
+    # the claude CLI --output-format json wraps the assistant text in a "result" field; the model
+    # commonly fences the JSON. We must recover the per-comment edit map keyed by id.
+    inner = '```json\n[{"id":"c1","response":"ok","source_before":"a","source_after":"b"}]\n```'
+    envelope = json.dumps({"type": "result", "result": inner})
+    edits = A.parse_claude_edits(envelope)
+    assert edits["c1"]["source_after"] == "b" and edits["c1"]["response"] == "ok"
+
+
+def test_parse_claude_edits_accepts_a_bare_json_object_map():
+    import ci_apply as A
+    raw = '{"c1": {"id": "c1", "response": "done"}}'
+    assert A.parse_claude_edits(raw)["c1"]["response"] == "done"
+
+
+def test_parse_claude_edits_returns_empty_on_garbage():
+    import ci_apply as A
+    assert A.parse_claude_edits("not json at all") == {}
