@@ -1573,6 +1573,48 @@ const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '
 const advKeyStoreKey = () => `footnote:advkey:${DATA_REPO}`;
 const advisorKey = () => { try { return localStorage.getItem(advKeyStoreKey()) || ''; } catch (e) { return ''; } };
 const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '', accessKey: advisorKey() });
+// Standalone "set the reviewer access key" — no email setup required. Caches the key locally so the
+// copy-link becomes a working magic link immediately, and (best-effort) seals it as the ADVISOR_KEY
+// secret so emailed invites carry it too. If the owner's sign-in can't write secrets, the local cache
+// still makes shareable links work and we say how to enable it for email.
+function openAccessKeySheet(ownerTok){
+  const repo = dataRepoParts(_CFG).repo;
+  const scrim = document.createElement('div'); scrim.className = 'scrim';
+  scrim.innerHTML = `<div class="sheet" style="max-width:520px">
+    <div style="font-size:16px;font-weight:600;margin-bottom:4px">Reviewer access key</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">One shared token that every reviewer's link carries, so they click and they're in — no code to paste. Use a <b>least-privilege</b> token, <b>not</b> your account password. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>.</div>
+    <input id="ak-input" type="password" placeholder="paste the reviewer access token" style="width:100%;box-sizing:border-box;padding:9px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
+    <div id="ak-stat" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" id="ak-cancel">Cancel</button>
+      <button class="btn btn-primary" id="ak-save">Save key</button>
+    </div></div>`;
+  document.body.appendChild(scrim);
+  const $ = s => scrim.querySelector(s);
+  const close = () => scrim.remove();
+  scrim.onclick = e => { if (e.target === scrim) close(); };
+  $('#ak-cancel').onclick = close;
+  $('#ak-save').onclick = async () => {
+    const val = ($('#ak-input').value || '').trim();
+    const stat = $('#ak-stat');
+    if (!val){ stat.textContent = 'Paste a token first.'; return; }
+    try { localStorage.setItem(advKeyStoreKey(), val); } catch (e) {}   // 1) local cache → copy-link magic link
+    stat.textContent = 'Saving…';
+    try {                                                               // 2) best-effort seal → email invites
+      const pk = await getPublicKey(ownerTok);
+      await putSecret(ownerTok, pk, sealToBase64, 'ADVISOR_KEY', val);
+      stat.innerHTML = 'Saved. Reviewer links now sign reviewers in, and email invites carry the key.';
+    } catch (e) {
+      stat.innerHTML = isScopeError(e)
+        ? 'Saved for shareable links. To also send it in <b>email</b> invites, connect email — that step uses a token that can write secrets.'
+        : 'Saved for shareable links. (Couldn’t seal it for email: ' + escapeHtml((e && e.message) || 'error') + '.)';
+    }
+    const lbl = document.getElementById('adv-key-state'); if (lbl) lbl.textContent = 'Set — reviewer links sign reviewers in automatically.';
+    const btn = document.getElementById('adv-setkey'); if (btn) btn.textContent = 'Update key';
+    setTimeout(close, 2400);
+  };
+  setTimeout(() => { const i = $('#ak-input'); if (i) i.focus(); }, 30);
+}
 const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
 const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
@@ -2728,6 +2770,11 @@ async function openReleasePanel(){
     ${aiSettingHtml()}
     <div id="adv-email-banner"></div>
     <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Reviewer access key</label>
+      <span id="adv-key-state" style="flex:1;font-size:12px;color:var(--text-3)">${advisorKey() ? 'Set — reviewer links sign reviewers in automatically.' : 'Not set — reviewer links will prompt for a code.'}</span>
+      <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
       <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
       <input id="notify-email" type="email" placeholder="you@example.com — a digest of reviewer activity"
         style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -3265,6 +3312,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     } catch(e){ flash('Failed: ' + e.message); }
   };
   document.getElementById('adv-add').onclick = addAdvisor;
+  { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
   renderAdvList();
   // Notify-me-at: stored in notify_config.json (data repo) — written with the everyday token,
   // read by the notify workflow. No elevated scope needed (unlike Actions variables).
