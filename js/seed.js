@@ -22,6 +22,13 @@ export const SEED_FILES = [
   { src: 'export/ieee.csl',        dest: 'export/ieee.csl' },
   { src: 'ci_render.py',           dest: 'ci_render.py' },
   { src: 'workflows/render.yml',   dest: '.github/workflows/render.yml' },
+  // Claude round-trip backend — the review job-queue consumer. Deterministic apply-direct today
+  // (works with AI off); Claude-authored apply-edits/run-agents + merge land in later slices.
+  // The shared pure core (ci_review_common) is reused by every engine script. Runs on the
+  // adopter's own Actions via apply.yml.
+  { src: 'ci_review_common.py',    dest: 'ci_review_common.py' },
+  { src: 'ci_apply.py',            dest: 'ci_apply.py' },
+  { src: 'workflows/apply.yml',    dest: '.github/workflows/apply.yml' },
 ];
 
 // Initial config files created fresh (honest empty state — email_configured stays false until a real send).

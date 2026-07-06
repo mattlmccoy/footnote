@@ -1,0 +1,58 @@
+name: apply
+# Drain the review job queue. Slice 2: the DETERMINISTIC apply-direct job (an owner's verbatim
+# edit) is applied on a review-edits/<unit> branch with NO Claude, so it works with the AI
+# assistant off. Claude-authored jobs (apply-edits, run-agents) and merge are added in later
+# slices. Runs entirely on the ADOPTER's own Actions. Dual-mode: legacy root or workspace <id>/.
+on:
+  # The app enqueues by committing jobs.json (workspace: <id>/jobs.json). The drain commits the
+  # updated queue + reviews back with [skip ci], so this never loops.
+  push:
+    paths:
+      - 'jobs.json'
+      - '*/jobs.json'
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project id to process (blank = all projects in this repo)'
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [apply]
+permissions:
+  contents: write
+concurrency:
+  # Serialize queue drains so two runs never fight over the same jobs.json / review branch.
+  group: apply
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # need main history to branch review-edits/<unit> off it
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Drain review job queue
+        env:
+          SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+          SOURCE_REPO: ${{ vars.SOURCE_REPO }}
+          PROJECT: ${{ github.event.inputs.project }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 ci_apply.py
+      - name: Commit queue + review writeback
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no queue changes"
+          else
+            git commit -m "apply: drain review queue [skip ci]"
+            for attempt in 1 2 3; do
+              git push && break
+              echo "push rejected — rebasing (attempt $attempt)"
+              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || { git rebase --abort; break; }
+            done
+          fi
