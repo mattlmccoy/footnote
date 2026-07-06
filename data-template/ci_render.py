@@ -83,14 +83,19 @@ def project_entry(prefix):
     return None
 
 
-def resolve_source(project, prefix, this_repo):
+def resolve_source(project, prefix, this_repo, env_source_repo=""):
     """Decide where a project's LaTeX lives.
 
     Returns ("inrepo", path) when the source is checked into THIS data repo (a workspace
     project keeps it under ``<id>/source/``; a legacy root falls back to ``source``), or
     ("clone", "owner/repo") when it is an external source repo to clone read-only.
+
+    The external repo comes from the project's ``sourceRepo`` (workspace repos carry
+    projects.json), else from the ``SOURCE_REPO`` Actions variable (``env_source_repo``) —
+    a legacy data repo has no projects.json, so its external source is configured as a repo
+    variable alongside the SOURCE_TOKEN secret.
     """
-    src_repo = (project or {}).get("sourceRepo")
+    src_repo = (project or {}).get("sourceRepo") or env_source_repo
     external = bool(src_repo) and src_repo != this_repo
     if external:
         return ("clone", src_repo)
@@ -114,7 +119,7 @@ def render_project(prefix, this_repo, token, workdir):
         print(f"[render] {prefix or '(root)'}: no chapters.json / no units — skipping")
         return 0
     project = project_entry(prefix)
-    kind, ref = resolve_source(project, prefix, this_repo)
+    kind, ref = resolve_source(project, prefix, this_repo, os.environ.get("SOURCE_REPO", ""))
     if kind == "clone":
         source_dir = workdir / (prefix.rstrip("/") or "root")
         if not source_dir.exists():

@@ -84,6 +84,21 @@ def test_resolve_source_legacy_root_no_repo_uses_env_dir():
     assert ref == "source"
 
 
+def test_resolve_source_legacy_uses_env_source_repo():
+    # legacy data repo has no projects.json, so the external source repo is supplied via the
+    # SOURCE_REPO Actions variable (like DOC_NOUN etc.) — must clone it, not look in-repo
+    kind, ref = R.resolve_source(None, "", "alice/metro-data", env_source_repo="alice/metro-source")
+    assert kind == "clone"
+    assert ref == "alice/metro-source"
+
+
+def test_resolve_source_project_sourcerepo_beats_env():
+    proj = {"id": "metro", "sourceRepo": "alice/from-project"}
+    kind, ref = R.resolve_source(proj, "metro/", "alice/ws", env_source_repo="alice/from-env")
+    assert kind == "clone"
+    assert ref == "alice/from-project"
+
+
 # ---------------- prefix discovery keys off chapters.json (not advisors.json) ----------------
 
 def test_render_prefixes_discovers_workspace_projects(tmp_path, monkeypatch):

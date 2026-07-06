@@ -35,6 +35,7 @@ jobs:
       - name: Render reading view
         env:
           SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+          SOURCE_REPO: ${{ vars.SOURCE_REPO }}
           PROJECT: ${{ github.event.inputs.project }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 ci_render.py
