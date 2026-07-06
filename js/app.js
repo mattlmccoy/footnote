@@ -2755,7 +2755,50 @@ function renderSettingsSection(id, t) {
   if (id === 'ai')     return renderSettingsAI(pane, t);
 }
 // Temporary placeholders — replaced in Tasks 4–7.
-function renderSettingsEmail(p){ p.innerHTML = '<div class="set-card">Email — TODO Task 5</div>'; }
+// Email section: the "Notify me" digest (a personal preference) lives here, stored in notify_config.json.
+// The invite-email SMTP connection stays on the Reviewers page — it's part of inviting reviewers (writes
+// invite secrets, re-renders the reviewer list) — so this section just points there for it.
+async function renderSettingsEmail(pane, t) {
+  pane.innerHTML = '<div class="set-card">Loading…</div>';
+  let notifyEmail = '', notifyFreq = 'daily', emailConfigured = false;
+  try { const { json } = await getJson(t, 'notify_config.json'); if (json){ notifyEmail = json.author_email || ''; notifyFreq = json.frequency || 'daily'; } } catch {}
+  try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
+  pane.innerHTML = `
+    <div class="set-card">
+      <h4>Notify me</h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">A digest of reviewer activity, emailed to you.</div>
+      <div style="display:flex;gap:8px">
+        <input id="set-notify-email" type="email" value="${escapeHtml(notifyEmail)}" placeholder="you@example.com" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <select id="set-notify-freq" style="font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="daily"${notifyFreq==='daily'?' selected':''}>Daily</option>
+          <option value="weekly"${notifyFreq==='weekly'?' selected':''}>Weekly</option>
+          <option value="off"${notifyFreq==='off'?' selected':''}>Off</option>
+        </select>
+        <button class="btn" id="set-notify-save" style="padding:5px 12px">Save</button>
+        <span id="set-notify-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+    </div>
+    <div class="set-card">
+      <h4>Invite email</h4>
+      <div class="set-status">${emailConfigured?'<span class="ok">✓</span> Set up — reviewer invites send automatically.':'<span class="warn">●</span> Not set up — reviewers get portal links you copy yourself.'}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:8px">Invite email is configured with your reviewers, since it sends their invitations. <a href="#" id="set-email-toreviewers">Open Reviewers →</a></div>
+    </div>`;
+  pane.querySelector('#set-notify-save').onclick = async () => {
+    const stat = pane.querySelector('#set-notify-stat');
+    const val = pane.querySelector('#set-notify-email').value.trim();
+    const f = pane.querySelector('#set-notify-freq').value;
+    stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
+    try {
+      const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
+      const cfg = json && typeof json === 'object' ? json : {};
+      cfg.author_email = val; cfg.frequency = f;
+      await putJson(t, 'notify_config.json', cfg, sha, 'notify: set author email + frequency');
+      stat.style.color = 'var(--success)';
+      stat.textContent = !val ? 'Cleared — no digest emails.' : f === 'off' ? 'Saved — digests off.' : `Saved — ${f} digest.`;
+    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
+  };
+  pane.querySelector('#set-email-toreviewers').onclick = (e) => { e.preventDefault(); openReleasePanel(); };
+}
 // Access section: the browser PAT (read/write on the data repo) + the optional source-repo token
 // (only when the paper's LaTeX lives in a separate repo). Replaces the old ⋯ prompt() flow.
 function renderSettingsAccess(pane, t) {
