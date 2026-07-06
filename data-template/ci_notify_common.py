@@ -19,9 +19,29 @@ def save_json(path, obj):
 def iso_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-def doc_noun():
-    """The word for the whole document, from the DOC_NOUN Actions variable (default "document").
-    Keeps the invite/notify emails document-agnostic — "dissertation", "paper", "proposal", etc."""
+def project_prefixes():
+    """Which project subtrees to process. Consolidated (workspace) repos hold each project under <id>/;
+    a legacy repo has its files at the root. Returns [""] for legacy root, ["<id>/", …] for a workspace
+    (sorted), or [] if there's nothing to do. Dual-mode so one CI works for both layouts."""
+    out = []
+    if os.path.exists("advisors.json"):
+        out.append("")                                  # legacy root-level project
+    for p in sorted(glob.glob("*/advisors.json")):
+        out.append(p.split(os.sep)[0] + "/")            # <id>/ workspace subfolder
+    return out
+
+
+def doc_noun(prefix=""):
+    """The word for the whole document. In a workspace project (prefix "<id>/") it comes from that project's
+    entry in the root projects.json; otherwise (and as fallback) from the DOC_NOUN Actions variable
+    (default "document"). Keeps emails document-agnostic — "dissertation", "paper", "proposal", etc."""
+    if prefix:
+        pid = prefix.rstrip("/")
+        for p in load_json("projects.json", []) or []:
+            if isinstance(p, dict) and p.get("id") == pid:
+                noun = ((p.get("doc") or {}).get("noun") or "").strip()
+                if noun:
+                    return noun
     return (os.environ.get("DOC_NOUN") or "document").strip() or "document"
 
 def default_sender_name():

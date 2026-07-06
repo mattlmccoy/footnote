@@ -18,18 +18,22 @@ def load(p):
 def save(p, o):
     json.dump(o, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
-def portal_url(base, a):
+def portal_url(base, a, prefix=""):
     base = (base or "").rstrip("/") + "/"
     # Carry this data repo so the advisor (who has no hub access) lands in the right project.
     data = os.environ.get("GITHUB_REPOSITORY", "")
     url = f"{base}advisor.html?a={quote(a['id'])}&n={quote(a.get('name',''))}"
-    return url + (f"&data={quote(data)}" if data else "")
+    if data:
+        url += f"&data={quote(data)}"
+    if prefix:   # consolidated workspace: tell the reviewer bundle which project subfolder to read
+        url += f"&p={quote(prefix.rstrip('/'))}"
+    return url
 
-def build_message(a, frm, frm_name, key, author, base):
+def build_message(a, frm, frm_name, key, author, base, prefix=""):
     to = a["email"]
     name = a.get("name", "")
-    url = portal_url(base, a)
-    noun = C.doc_noun()
+    url = portal_url(base, a, prefix)
+    noun = C.doc_noun(prefix)
     whose = f"{author}'s" if author else "a"
     subject = f"You're invited to review {author}'s {noun}" if author else f"You're invited to review a {noun}"
     # --- plain-text fallback ---
@@ -65,8 +69,41 @@ def send(frm, to, eml):
     import ci_notify_common as C
     C.send(frm, to, eml)
 
+def _now():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+def _send_invites(prefix, frm, frm_name, key, author, base):
+    """Send pending invites for one project (prefix '' = legacy root, '<id>/' = a workspace subfolder).
+    Returns the number of invites sent."""
+    reg_path = f"{prefix}{REG}"
+    reg = load(reg_path)
+    changed = 0
+    for a in reg.get("advisors", []):
+        if a.get("invited") or not a.get("email"):
+            continue
+        to, subj, eml = build_message(a, frm, frm_name, key, author, base, prefix)
+        if DRY:
+            print(f"--- DRY-RUN to {to} ({prefix or 'root'}) ---\n{eml}\n"); continue
+        try:
+            send(frm, to, eml)
+            a["invited"] = True; a["invited_ts"] = _now(); a["invite_error"] = None
+            changed += 1; print(f"invited {to} ({prefix or 'root'})")
+        except Exception as e:
+            a["invite_error"] = str(e); print(f"::warning::invite to {to} failed: {e}")
+    if changed:
+        reg["email_configured"] = True
+    if not DRY:
+        save(reg_path, reg)
+    return changed
+
+def _stamp(prefix, patch):
+    """Merge `patch` into one project's advisors.json (used for the not-configured + test-send flags)."""
+    reg_path = f"{prefix}{REG}"
+    reg = load(reg_path); reg.update(patch)
+    if not DRY:
+        save(reg_path, reg)
+
 def main():
-    reg = load(REG)
     # The envelope/From sender can differ from the SMTP login (e.g. Brevo: login is 123@smtp-brevo.com,
     # but mail must be sent from a verified sender). Auth still uses SMTP_USER inside send().
     frm = (os.environ.get("SMTP_FROM", "").strip() or os.environ.get("SMTP_USER", "noreply@example.com"))
@@ -76,53 +113,41 @@ def main():
     base = os.environ.get("PORTAL_BASE", "")
     test_email = os.environ.get("TEST_EMAIL", "").strip()
     configured = bool(os.environ.get("SMTP_USER") and os.environ.get("SMTP_PASS"))
+    # One CI, both layouts: a legacy repo has advisors.json at the root; a consolidated workspace repo has
+    # <id>/advisors.json per project. Process every project found (fall back to root so a bare run is a no-op).
+    prefixes = C.project_prefixes() or [""]
+
     if not DRY and not configured:
         print("::warning::SMTP_USER/SMTP_PASS not set — configure the data-repo secrets to enable invites.")
-        reg["email_configured"] = False                      # the app reads this to warn the owner honestly
         note = "Email not configured — the author hasn't set up sending yet."
-        for a in reg.get("advisors", []):
-            if a.get("email") and not a.get("invited"):
-                a["invite_error"] = note
-        save(REG, reg)
+        for pfx in prefixes:
+            reg = load(f"{pfx}{REG}"); reg["email_configured"] = False
+            for a in reg.get("advisors", []):
+                if a.get("email") and not a.get("invited"):
+                    a["invite_error"] = note
+            if not DRY:
+                save(f"{pfx}{REG}", reg)
         return
 
-    # --- test send: one message to the owner; record verbatim outcome; gate the flag on it ---
+    # --- test send: ONE message to the owner proves SMTP; stamp the outcome onto every project ---
     if test_email:
         to, subj, eml = build_message({"id": "test", "name": "you", "email": test_email}, frm, frm_name, key, author, base)
         eml = eml.replace(f"Subject: {subj}", f"Subject: {C.doc_noun().capitalize()} reviewer - email test", 1)
         try:
             if not DRY:
                 send(frm, test_email, eml)
-            reg["email_test"] = {"ok": True, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "error": None}
-            reg["email_configured"] = True
+            result = {"email_test": {"ok": True, "ts": _now(), "error": None}, "email_configured": True}
             print(f"test email sent to {test_email}")
         except Exception as e:
-            reg["email_test"] = {"ok": False, "ts": datetime.datetime.now(datetime.timezone.utc).isoformat(), "error": str(e)[:300]}
-            reg["email_configured"] = False
+            result = {"email_test": {"ok": False, "ts": _now(), "error": str(e)[:300]}, "email_configured": False}
             print(f"::warning::test email to {test_email} failed: {e}")
-        if not DRY:
-            save(REG, reg)
+        for pfx in prefixes:
+            _stamp(pfx, result)
         return
 
-    # --- normal invite send: flag becomes true only after at least one real success ---
-    changed = 0
-    for a in reg.get("advisors", []):
-        if a.get("invited") or not a.get("email"):
-            continue
-        to, subj, eml = build_message(a, frm, frm_name, key, author, base)
-        if DRY:
-            print(f"--- DRY-RUN to {to} ---\n{eml}\n"); continue
-        try:
-            send(frm, to, eml)
-            a["invited"] = True; a["invited_ts"] = datetime.datetime.now(datetime.timezone.utc).isoformat(); a["invite_error"] = None
-            changed += 1; print(f"invited {to}")
-        except Exception as e:
-            a["invite_error"] = str(e); print(f"::warning::invite to {to} failed: {e}")
-    if changed:
-        reg["email_configured"] = True
-    if not DRY:
-        save(REG, reg)
-    print(f"done — {changed} invite(s) sent")
+    # --- normal invite send across every project ---
+    total = sum(_send_invites(pfx, frm, frm_name, key, author, base) for pfx in prefixes)
+    print(f"done — {total} invite(s) sent")
 
 if __name__ == "__main__":
     main()
