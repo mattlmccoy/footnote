@@ -215,12 +215,14 @@ function renderTopbar(){
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
+      <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
   document.getElementById('chsel').onclick = openChapterMenu;
+  document.getElementById('btn-help').onclick = () => window.open('tutorials/index.html', '_blank', 'noopener');
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-send').onclick = openSendMenu;
   document.getElementById('btn-history').onclick = showHistory;

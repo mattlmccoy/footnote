@@ -173,6 +173,7 @@ export async function launch() {
     const avatar = _user.avatar ? `<img class="fn-avatar" src="${esc(_user.avatar)}" alt="" referrerpolicy="no-referrer">` : '';
     const userbar = opts.signout ? `<div class="fn-userbar">
         ${avatar}<span class="fn-hi">Hi, ${esc(greetName(_user))}</span>
+        <a class="fn-link" href="tutorials/index.html">Help</a>
         <button class="fn-link" id="fn-signout">Disconnect</button>
       </div>` : '';
     root.innerHTML = `<div class="fn-shell">

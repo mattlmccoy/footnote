@@ -767,12 +767,14 @@ function renderTopbar(){ const m=chMeta(current);
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT}"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
+      <button class="icbtn" id="btn-help" title="How reviewing works"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="icbtn" id="btn-export" title="Download this ${UNIT} (Word · Markdown)"><i class="ti ti-file-export"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('chsel').onclick=openChapterMenu;
+  document.getElementById('btn-help').onclick=()=>window.open('tutorials/walkthrough.html','_blank','noopener');
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-export').onclick=()=>exportDialog(current);
   document.getElementById('btn-key').onclick=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
