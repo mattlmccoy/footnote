@@ -804,16 +804,20 @@ async function loadWholeDoc(){
   }
   const t=tok(); const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
   read.innerHTML=`<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
-  const parts=[];
-  for(const u of _wholeUnits){
-    let frag=null;
+  // Fetch every released unit's rendered HTML CONCURRENTLY (was sequential). Order preserved by mapping
+  // back over _wholeUnits, not by fetch-completion order.
+  const fetchFrag=async(u)=>{
     try{
-      if(dev){ const r=await fetch(`./chapters/${u.id}.html`); if(r.ok) frag=await r.text(); }
-      if(frag==null && t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${u.id}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) frag=await r.text(); }
+      if(dev){ const r=await fetch(`./chapters/${u.id}.html`); if(r.ok) return await r.text(); }
+      if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${u.id}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) return await r.text(); }
     }catch(e){}
-    if(frag==null) frag=`<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;
-    parts.push(wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag));
-  }
+    return null;
+  };
+  const frags=await Promise.all(_wholeUnits.map(fetchFrag));
+  const parts=_wholeUnits.map((u,i)=>{
+    const frag=frags[i]!=null?frags[i]:`<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;
+    return wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag);
+  });
   read.innerHTML=`<article id="doc">${parts.join('\n')}</article>`;
   const doc=document.getElementById('doc');
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
@@ -824,14 +828,15 @@ async function loadWholeDoc(){
 // Load this reviewer's own review for every assembled unit (local reconciled with remote) into _reviews.
 async function loadAllReviews(units){
   const t=tok(); const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
-  for(const u of units){
+  // Load every unit's review CONCURRENTLY (was N sequential round-trips). Per-item try/catch.
+  await Promise.all(units.map(async(u)=>{
     let rev=loadLocal(u.id);
     try{
       if(dev){ const r=await fetch(`./advisor/${effId()}/${u.id}.json`); if(r.ok) rev=mergeReviews(await r.json(), rev); }
       else if(t){ const g=await getJson(t, reviewPath(u.id)); if(g.json) rev=mergeReviews(g.json, rev); }
     }catch(e){}
     _reviews[u.id]=rev;
-  }
+  }));
 }
 function buildNavWhole(){
   const nav=document.getElementById('nav');
