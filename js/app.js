@@ -7,6 +7,7 @@ import { sealToBase64 } from './vendor/seal.js?v=06523c1';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=06523c1';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=06523c1';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=06523c1';
+import { orderedUnits, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=06523c1';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=06523c1';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=06523c1';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=06523c1';
@@ -145,7 +146,20 @@ const DATA_REPO = _CFG.dataRepo;
 // chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
 // "import your document" state. Re-fetched on reload after a token is added or a document imported.
 let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
-const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
+const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : id === '__whole__' ? { n:'·', title:'Whole document' } : { n:'?', title:id });
+// ---------- whole-document ("read the whole paper") view state ----------
+// WHOLE = the continuous view is active. _reviews holds EVERY chapter's review (per-chapter files stay
+// separate — comments never collapse into one blob). _wholeUnits = the assembled ordered units;
+// _wholeAdv = per-chapter advisor comments. All writes route back to the owning chapter's file.
+let WHOLE = false;
+const _reviews = {};      // chapterId -> reviewObj
+let _wholeUnits = [];     // orderedUnits(CHAPTERS) currently assembled
+const _wholeAdv = {};     // chapterId -> [advisor comments]
+const chapterIdOfNode = node => {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const seg = el && el.closest && el.closest('.wd-chapter');
+  return seg ? stripSegmentId(seg.id) : null;
+};
 const TAGS = ['claim','wording','figure','citation','question'];
 // platform-adaptive modifier label (handlers accept ⌘ or Ctrl; this is just the on-screen text)
 const IS_MAC = /Mac|iPhone|iPad/.test((navigator.platform || '') + ' ' + (navigator.userAgent || ''));
@@ -238,7 +252,8 @@ function openChapterMenu(){
   const old = document.getElementById('chmenu'); if (old){ old.remove(); return; }
   const menu = document.createElement('div'); menu.id = 'chmenu';
   menu.style.cssText = 'position:absolute;top:50px;left:16px;z-index:40;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 34px rgba(0,0,0,.16);padding:6px;min-width:330px';
-  menu.innerHTML = CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('');
+  const wholeRow = CHAPTERS.length ? `<div data-ch="__whole__" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500${current==='__whole__'?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px"><i class="ti ti-book"></i></span>Whole ${escapeHtml(DOC)}</div><div style="height:1px;background:var(--border);margin:5px 8px"></div>` : '';
+  menu.innerHTML = wholeRow + CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('');
   menu.querySelectorAll('[data-ch]').forEach(d => { d.onmouseenter = () => { if (d.dataset.ch!==current) d.style.background='var(--bg-3)'; };
     d.onmouseleave = () => { if (d.dataset.ch!==current) d.style.background='transparent'; };
     d.onclick = () => { menu.remove(); selectChapter(d.dataset.ch); }; });
@@ -246,7 +261,9 @@ function openChapterMenu(){
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
-function enterChapter(ch){ if (ch === '__outline__'){ localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+  if (ch === '__whole__'){ localStorage.setItem('lastChapter', ch); loadWholeDoc(); return; }   // the whole-document view assembles every unit; it isn't a single fetch
+  WHOLE = false;
   current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar(); renderComments(); loadChapter(ch); }
@@ -556,7 +573,7 @@ function wireFigures(doc){
       const rr = read.getBoundingClientRect(), fr = fig.getBoundingClientRect();
       const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
       pending = { quote: info.label ? `${info.label}${info.quote?': '+info.quote:''}` : (info.quote || 'Figure'),
-                  kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[] };
+                  kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[], chapterId: WHOLE ? chapterIdOfNode(fig) : null };
       showPopover(pending, rects, 'figure', fig);
     });
   });
@@ -579,7 +596,7 @@ function wireFigures(doc){
       }
       const rr = read.getBoundingClientRect(), fr = el.getBoundingClientRect();
       const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
-      pending = { quote: label ? `${label}: ${quote}` : quote, kind:'figure', figure:label, section: headingFor(el), confirmed:true, rects:[] };
+      pending = { quote: label ? `${label}: ${quote}` : quote, kind:'figure', figure:label, section: headingFor(el), confirmed:true, rects:[], chapterId: WHOLE ? chapterIdOfNode(el) : null };
       showPopover(pending, rects, isTable ? 'figure' : 'claim');   // no figEl → no Draw button
     });
   });
@@ -706,6 +723,7 @@ function selToPopover(){
   const rects = [...range.getClientRects()].map(r => ({ x:r.x-rr.x, y:r.y-rr.y+read.scrollTop, w:r.width, h:r.height }));
   pending = anchorFromSelection({ text, page:null, rects });
   pending.section = headingFor(range.startContainer);
+  pending.chapterId = WHOLE ? chapterIdOfNode(range.startContainer) : null;   // whole-doc: which chapter's review does this comment belong to
   showPopover(pending, rects);
 }
 read.addEventListener('mouseup', selToPopover);
@@ -761,7 +779,9 @@ function showPopover(anchor, rects, defaultTag='claim', figEl=null){
     else if (mode === 'insert') edit = { op:'insert', find:anchor.quote, position:'after', replacement:repl.value };
     else if (mode === 'delete') edit = { op:'delete', find:anchor.quote, replacement:'' };
     if (edit && mode !== 'delete' && !repl.value.trim()){ flash('Enter the '+(mode==='insert'?'text to insert':'replacement text')+'.'); return; }
-    review = addComment(review, { anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit });
+    const fields = { anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit };
+    if (WHOLE){ createWholeComment(pending.chapterId, fields); pop.remove(); window.getSelection().removeAllRanges(); return; }
+    review = addComment(review, fields);
     save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#ccancel').onclick = close;
   saveBtn.onclick = commit;
@@ -772,6 +792,7 @@ function showPopover(anchor, rects, defaultTag='claim', figEl=null){
 // ---------- draw-on-figure markup (capture-only: composites figure + strokes → PNG) ----------
 const markupCache = {};   // path -> dataURL, so a freshly-drawn markup shows instantly
 function openFigureMarkup(fig, anchor){
+  if (WHOLE){ flash(`Open this single ${UNIT} to draw on a figure — the whole-${DOC} view supports figure comments, not drawing yet.`); return; }   // v1: markup drawing writes via the single-chapter review
   document.getElementById('pop')?.remove();
   const img = fig.querySelector('img') || fig;
   const ir = img.getBoundingClientRect();
@@ -1156,21 +1177,22 @@ function jumpTo(c){
   if (el) scrollFlash(el); else flash(`Couldn’t find this passage in the ${UNIT}; it may have changed since the comment.`);
 }
 function activateComment(id){
-  activeCommentId = id; renderComments();
+  activeCommentId = id; if (WHOLE) renderWholeComments(); else renderComments();
   const card = document.querySelector(`#comments .ccard[data-id="${id}"]`);
   card?.scrollIntoView({ behavior:'smooth', block:'center' });
   card?.classList.add('flash'); setTimeout(() => card?.classList.remove('flash'), 1500);
 }
-// wrap each comment's quoted text in a <mark> so commented passages are visible while reading
-function paintHighlights(){
-  const doc = document.getElementById('doc'); if (!doc) return;
-  doc.querySelectorAll('mark.cmark').forEach(m => { const p = m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
-  doc.querySelectorAll('.cmark-el').forEach(e => { e.classList.remove('cmark-el'); e.onclick = null; delete e.dataset.cid; });
-  doc.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
-  const blocks = [...doc.querySelectorAll('p, li, figcaption')];
-  review.comments.forEach(c => {
+// wrap each comment's quoted text in a <mark> so commented passages are visible while reading.
+// paintCommentsIn scopes ALL matching to `root` — in whole-doc `root` is one #wd-<id> segment, so an
+// identical phrase in another chapter can never be highlighted by this chapter's comment.
+function paintCommentsIn(root, comments, advComments){
+  root.querySelectorAll('mark.cmark').forEach(m => { const p = m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
+  root.querySelectorAll('.cmark-el').forEach(e => { e.classList.remove('cmark-el'); e.onclick = null; delete e.dataset.cid; });
+  root.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
+  const blocks = [...root.querySelectorAll('p, li, figcaption')];
+  (comments||[]).forEach(c => {
     if (RESOLVED_STATES.has(c.status)) return;   // don't highlight finalized comments (merged/answered/declined/resolved)
-    if (c.kind === 'figure'){ markFigure(doc, c); return; }
+    if (c.kind === 'figure'){ markFigure(root, c); return; }
     const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);
     const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(needle.slice(0,40)));
@@ -1178,13 +1200,145 @@ function paintHighlights(){
     if (!wrapInNode(el, needle, c)){ el.classList.add('cmark-el'); el.dataset.cid = c.id; el.style.setProperty('--mk', `var(--${c.tag})`); el.onclick = () => activateComment(c.id); }
   });
   // advisor comments — distinct marker, jump to their card
-  advisorComments.forEach(c => {
+  (advComments||[]).forEach(c => {
     if (c.kind === 'figure') return;
     const q = (c.anchor?.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);
     const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(needle.slice(0,40)));
     if (el) wrapInNode(el, needle, c, true);
   });
+}
+function paintHighlights(){
+  const doc = document.getElementById('doc'); if (!doc) return;
+  if (WHOLE){ paintWholeHighlights(); return; }
+  paintCommentsIn(doc, review.comments, advisorComments);
+}
+// ================= whole-document ("read the whole paper") view =================
+// Assemble every unit into one #doc, each wrapped in a #wd-<id> segment. Comments are held per chapter
+// in _reviews and resolved WITHIN their own segment (chapter-scoped anchoring), and new comments route
+// back to the owning chapter's review file. Live sync is off in this view (v1) — a manual refresh rebuilds.
+async function loadWholeDoc(){
+  WHOLE = true; current = '__whole__'; review = loadLocalReview('__whole__'); localStorage.setItem('lastChapter', '__whole__');
+  document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
+  stopOwnerLiveSync();                       // v1: no per-chapter polling in whole-doc; single-chapter live sync is untouched
+  renderTopbar();                            // chsel shows "Whole document" via chMeta
+  _wholeUnits = orderedUnits(CHAPTERS);
+  if (!_wholeUnits.length){
+    read.innerHTML = `<div class="empty"><i class="ti ti-book" style="font-size:24px;color:var(--text-3)"></i>
+      <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing to read yet</div>
+      <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">Import your ${escapeHtml(DOC)} first — then the whole ${escapeHtml(DOC)} shows here as one continuous read.</div></div>`;
+    document.getElementById('nav').innerHTML = ''; document.getElementById('comments').innerHTML = ''; return;
+  }
+  const t = tok(); if (!t){ renderConnect(); return; }
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const parts = [];
+  for (const u of _wholeUnits){
+    let frag = null;
+    try {
+      if (dev){ const r = await fetch(`./chapters/${u.id}.html`); if (r.ok) frag = await r.text(); }
+      if (frag == null){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+u.id+'.html')}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } }); if (r.ok) frag = await r.text(); }
+    } catch(e){}
+    if (frag == null) frag = `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
+    parts.push(wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag));
+  }
+  read.innerHTML = `<article id="doc">${parts.join('\n')}</article>`;
+  const doc = document.getElementById('doc');
+  fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
+  await loadAllReviews(_wholeUnits);
+  buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+}
+// Load EVERY unit's owner review (local merged with remote) + advisor comments into the per-chapter maps.
+async function loadAllReviews(units){
+  const t = tok(); const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  let advPaths = [];
+  if (!dev && t){ try { advPaths = await ghTree(t); } catch(e){} }
+  for (const u of units){
+    let rev = loadLocalReview(u.id);
+    try {
+      if (dev){ const r = await fetch(`./reviews/${u.id}.json`); if (r.ok) rev = reconcileReview(rev, await r.json(), true); }
+      else if (t){ const { json } = await getJson(t, reviewPath(u.id)); if (json) rev = reconcileReview(rev, json, true); }
+    } catch(e){}
+    _reviews[u.id] = rev;
+    const adv = [];
+    if (!dev && t){
+      const re = new RegExp(`^advisor/([^/]+)/${u.id}\\.json$`);
+      const ids = [...new Set(advPaths.map(p => { const m = p.match(re); return m && m[1]; }).filter(Boolean))];
+      for (const a of ids){ try { const { json } = await getJson(t, `advisor/${a}/${u.id}.json`); (json?.comments||[]).forEach(c => { if (c.status !== 'open') adv.push({ ...c, _advisor:a }); }); } catch(e){} }
+    }
+    _wholeAdv[u.id] = adv;
+  }
+}
+function paintWholeHighlights(){
+  const doc = document.getElementById('doc'); if (!doc) return;
+  _wholeUnits.forEach(u => { const seg = document.getElementById('wd-' + u.id); if (!seg) return;
+    paintCommentsIn(seg, (_reviews[u.id] && _reviews[u.id].comments) || [], _wholeAdv[u.id] || []); });
+}
+// Nav spans the whole doc: a bold per-chapter entry (with its active-comment count) + its section links.
+function buildNavWhole(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = `<div class="lbl">${escapeHtml(DOC.toUpperCase())}<span style="margin-left:auto">${_wholeUnits.length}</span></div>`;
+  _wholeUnits.forEach(u => {
+    const cnt = ((_reviews[u.id] && _reviews[u.id].comments) || []).filter(c => !RESOLVED_STATES.has(c.status)).length;
+    const a = document.createElement('a'); a.dataset.seg = 'wd-' + u.id;
+    a.innerHTML = `<span class="nav-t" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(u.n + ' · ' + shortTitle(u.title))}</span>${cnt?`<span class="count">${cnt}</span>`:''}`;
+    a.querySelector('.nav-t').onclick = () => document.getElementById('wd-' + u.id)?.scrollIntoView({ behavior:'smooth', block:'start' });
+    nav.appendChild(a);
+    const seg = document.getElementById('wd-' + u.id);
+    [...(seg ? seg.querySelectorAll('h2, h3') : [])].forEach((h, i) => { if (!h.id) h.id = 'wd-' + u.id + '-sec-' + i;
+      const s = document.createElement('a'); s.className = h.tagName === 'H3' ? 'sub' : ''; s.dataset.sec = h.id;
+      s.innerHTML = `<span class="nav-t" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:14px;color:var(--text-2)">${escapeHtml(h.textContent)}</span>`;
+      s.querySelector('.nav-t').onclick = () => h.scrollIntoView({ behavior:'smooth', block:'start' }); nav.appendChild(s); });
+  });
+}
+// One aggregated sidebar; each card tagged with its chapter and clicking scrolls to the passage. Reply /
+// resolve / approve stay in the single-chapter view (v1) — creation + view + routing are the contract here.
+function renderWholeComments(){
+  const pane = document.getElementById('comments');
+  const flat = mergeReviews(_reviews, _wholeUnits).filter(x => !RESOLVED_STATES.has(x.comment.status));
+  const open = flat.filter(x => x.comment.status === 'open').length;
+  pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${flat.length} · ${open} open</span></div>`;
+  if (!flat.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text in any ${escapeHtml(UNIT)} to leave a comment. Open a single ${escapeHtml(UNIT)} to reply or resolve.</div>`; return; }
+  flat.forEach(({ chapterId, comment }) => pane.appendChild(buildWholeCard(chapterId, comment)));
+}
+function buildWholeCard(chapterId, c){
+  const m = chMeta(chapterId);
+  const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
+  card.innerHTML = `<div class="row">
+      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(UNITC)} ${m.n}</span>
+      <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>
+      ${c.status && c.status !== 'open' ? `<span class="status" style="margin-left:auto">${escapeHtml(c.status)}</span>` : ''}</div>
+    <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
+    ${c.body?`<div class="body">${escapeHtml(c.body)}</div>`:''}`;
+  card.style.cursor = 'pointer';
+  card.onclick = () => { const seg = document.getElementById('wd-' + chapterId);
+    const mark = seg && seg.querySelector(`.cmark[data-id="${c.id}"], .cmark-el[data-cid="${c.id}"], figure[data-cid="${c.id}"]`);
+    (mark || seg)?.scrollIntoView({ behavior:'smooth', block:'center' });
+    if (mark){ mark.classList.add('flash'); setTimeout(() => mark.classList.remove('flash'), 1500); } };
+  return card;
+}
+// Create a comment in the whole-doc view: mutate ONLY the owning chapter's review + persist to its file.
+function createWholeComment(chapterId, fields){
+  if (!chapterId){ flash(`Couldn't tell which ${UNIT} that selection is in — try again.`); return; }
+  const rev = routeWrite(_reviews, chapterId, id => loadLocalReview(id));
+  _reviews[chapterId] = addComment(rev, fields);
+  localStorage.setItem('review:' + chapterId, JSON.stringify(_reviews[chapterId]));
+  paintWholeHighlights(); buildNavWhole(); renderWholeComments();
+  pushChapterReview(chapterId);
+}
+// Persist one chapter's review to reviews/<id>.json in isolation (mirrors syncUp but never touches the
+// global current/review/reviewSha — so a whole-doc write can't disturb single-chapter sync state).
+async function pushChapterReview(chapterId){
+  const t = tok(); if (!t) return;
+  for (let attempt = 0; attempt < 5; attempt++){
+    try {
+      const { json, sha } = await getJson(t, reviewPath(chapterId));
+      _reviews[chapterId] = reconcileReview(_reviews[chapterId], json, false);
+      localStorage.setItem('review:' + chapterId, JSON.stringify(_reviews[chapterId]));
+      await putJson(t, reviewPath(chapterId), _reviews[chapterId], sha, 'review: ' + chapterId, false);
+      return;
+    } catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; } return; }
+  }
 }
 function wrapInNode(el, needle, c, advisor){
   const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -2057,7 +2211,7 @@ function homeHtml(){
       <i class="ti ti-player-play" style="font-size:22px;color:var(--accent)"></i>
       <div style="min-width:0">
         <div style="font-size:11.5px;color:var(--text-2)">Continue where you left off</div>
-        <div style="font-size:14px;font-weight:500">${UNITC} ${lm.n} · ${shortTitle(lm.title)}</div>
+        <div style="font-size:14px;font-weight:500">${last==='__whole__' ? `Whole ${escapeHtml(DOC)}` : `${UNITC} ${lm.n} · ${shortTitle(lm.title)}`}</div>
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
@@ -2080,8 +2234,15 @@ function homeHtml(){
       <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Import your ${DOC}</div>
       <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Point Footnote at your LaTeX source (<code>main.tex</code>) or a Word <code>.docx</code>. Footnote parses it to find your ${UNIT}s — nothing is hardcoded.${hasTok ? '' : ' Add your access token first.'}</div>
       <button class="btn btn-primary" id="import-doc" style="padding:8px 16px">${hasTok ? `Import ${DOC}` : 'Add token'}</button></div>`;
+  const wholeBtn = CHAPTERS.length
+    ? `<button class="btn" data-ch="__whole__" style="display:flex;align-items:center;gap:9px;width:100%;justify-content:flex-start;padding:12px 15px;margin-bottom:16px;border:.5px solid var(--border);border-radius:var(--r-lg);cursor:pointer">
+         <i class="ti ti-book" style="font-size:19px;color:var(--accent)"></i>
+         <span style="text-align:left"><span style="display:block;font-size:14px;font-weight:600">Read the whole ${escapeHtml(DOC)}</span>
+         <span style="display:block;font-size:11.5px;color:var(--text-3)">Every ${escapeHtml(UNIT)} as one continuous read — comment anywhere</span></span></button>`
+    : '';
   const allCh = CHAPTERS.length
     ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+       ${wholeBtn}
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
