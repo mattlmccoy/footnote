@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { agentCatalogView, agentCatalogHtml, loadAgentCatalog } from '../js/agentcatalog.js';
+import { agentCatalogView, agentCatalogHtml, loadAgentCatalog,
+  partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored,
+  writeAgentsJson } from '../js/agentcatalog.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CAT = [
@@ -66,4 +68,63 @@ test('loadAgentCatalog falls back to the shipped mirror without a token or on 40
     return { ok: false, status: 404 };
   }, 'http://x/');
   assert.deepEqual(got.map(a => a.id), ['clarity']);
+});
+
+// --------------------------------------------------------------- B4: user-authored agents
+test('partitionCatalog splits drafts from active (missing status = active)', () => {
+  const cat = [
+    { id: 'rigor', builtin: true },
+    { id: 'mine', builtin: false, status: 'active' },
+    { id: 'draft1', builtin: false, status: 'draft' },
+  ];
+  const { active, drafts } = partitionCatalog(cat);
+  assert.deepEqual(active.map(a => a.id), ['rigor', 'mine']);
+  assert.deepEqual(drafts.map(a => a.id), ['draft1']);
+});
+
+test('buildAuthorJob makes an author-agent payload, trimmed, with optional hints', () => {
+  assert.deepEqual(buildAuthorJob('  Jargon Buster ', '  flag jargon  '),
+    { type: 'author-agent', name: 'Jargon Buster', brief: 'flag jargon' });
+  const withHints = buildAuthorJob('Sim', 'run it', { cwd: '/work', wantsTools: true });
+  assert.equal(withHints.cwd, '/work');
+  assert.equal(withHints.wantsTools, true);
+});
+
+test('approveAuthored flips a draft to active, leaves others untouched', () => {
+  const list = [{ id: 'rigor', builtin: true }, { id: 'd', builtin: false, status: 'draft' }];
+  const out = approveAuthored(list, 'd');
+  assert.equal(out.find(a => a.id === 'd').status, 'active');
+  assert.equal(out.find(a => a.id === 'rigor').builtin, true);
+  assert.notEqual(out, list);                                   // new array (pure)
+});
+
+test('deleteAuthored removes an authored entry but never a builtin', () => {
+  const list = [{ id: 'rigor', builtin: true }, { id: 'd', builtin: false, status: 'draft' }];
+  assert.deepEqual(deleteAuthored(list, 'd').map(a => a.id), ['rigor']);
+  assert.deepEqual(deleteAuthored(list, 'rigor').map(a => a.id), ['rigor', 'd']); // builtin protected
+});
+
+test('editAuthored merges a patch into an authored entry, preserving id + builtin:false', () => {
+  const list = [{ id: 'd', builtin: false, status: 'draft', systemPrompt: 'old', source: 'authored' }];
+  const out = editAuthored(list, 'd', { systemPrompt: 'new', id: 'hack', builtin: true });
+  const e = out.find(a => a.id === 'd');
+  assert.equal(e.systemPrompt, 'new');
+  assert.equal(e.id, 'd');            // id can't be changed via edit
+  assert.equal(e.builtin, false);     // can't be promoted to builtin
+});
+
+test('writeAgentsJson reads, transforms, and PUTs agents.json back with its sha', async () => {
+  const CFGW = normalizeConfig({ owner: 'alice', dataRepo: 'alice/data' });
+  const current = [{ id: 'rigor', builtin: true }];
+  const b64 = Buffer.from(JSON.stringify(current)).toString('base64');
+  let putBody = null;
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { putBody = JSON.parse(opts.body); return { ok: true, status: 200 }; }
+    return { ok: true, status: 200, json: async () => ({ content: b64, sha: 'sha1' }) };
+  };
+  const out = await writeAgentsJson(CFGW, 'tok', (list) => [...list, { id: 'new', builtin: false }], fake);
+  assert.deepEqual(out.map(a => a.id), ['rigor', 'new']);
+  assert.equal(putBody.sha, 'sha1');
+  const written = JSON.parse(Buffer.from(putBody.content, 'base64').toString());
+  assert.deepEqual(written.map(a => a.id), ['rigor', 'new']);
 });
