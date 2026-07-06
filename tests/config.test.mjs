@@ -6,7 +6,7 @@ import {
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
   writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl,
-  sendMenuActions,
+  sendMenuActions, workspaceInviteBroken,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -313,4 +313,34 @@ test('sourceLabel: legacy connected (parsed, no repo name) → empty detail', ()
 });
 test('sourceLabel: nothing connected yet → the prompt', () => {
   assert.deepEqual(sourceLabel({ sourceRepo: '', srcPrefix: '' }, false), { text: 'point Footnote at your LaTeX, or upload it' });
+});
+
+// --- F7: a workspace invite missing &p= reads the repo ROOT and shows an empty "nothing shared"
+// state instead of "your invite link is broken". workspaceInviteBroken detects that case from the
+// repo tree: no project id, no root chapters, but the tree HAS <id>/chapters.json project folders.
+test('workspaceInviteBroken: no &p=, empty root, but tree has project subfolders → broken', () => {
+  const tree = ['render.yml', 'metro/chapters.json', 'metro/content/intro.html', 'thesis/chapters.json'];
+  assert.equal(workspaceInviteBroken('', [], tree), true);
+});
+test('workspaceInviteBroken: a valid &p= is present → NOT broken (reviewer resolves the subfolder)', () => {
+  const tree = ['metro/chapters.json', 'thesis/chapters.json'];
+  assert.equal(workspaceInviteBroken('metro', [], tree), false);
+});
+test('workspaceInviteBroken: legacy repo — chapters.json at root, no subfolders → NOT broken', () => {
+  const tree = ['chapters.json', 'content/intro.html', 'reviews/intro.json'];
+  assert.equal(workspaceInviteBroken('', [{ id: 'intro', n: 1, title: 'Intro' }], tree), false);
+});
+test('workspaceInviteBroken: root chapters present even in a workspace-shaped tree → NOT broken', () => {
+  // defensive: if the root actually has chapters, the reviewer has content — never cry "broken"
+  const tree = ['chapters.json', 'metro/chapters.json'];
+  assert.equal(workspaceInviteBroken('', [{ id: 'x', n: 1, title: 'X' }], tree), false);
+});
+test('workspaceInviteBroken: fresh/empty data repo (no chapters, no subfolders) → NOT broken', () => {
+  // a genuinely fresh instance shows "import your document" / "nothing shared", not a broken-link error
+  assert.equal(workspaceInviteBroken('', [], []), false);
+  assert.equal(workspaceInviteBroken('', [], ['render.yml', 'footnote.config.json']), false);
+});
+test('workspaceInviteBroken: subfolders without chapters.json (figures/etc) don\'t count as projects', () => {
+  const tree = ['content/intro.html', 'figures/f1.png', 'markups/m.png'];
+  assert.equal(workspaceInviteBroken('', [], tree), false);
 });

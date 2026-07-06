@@ -269,6 +269,23 @@ export async function loadChapters(token, fetchImpl) {
   return Array.isArray(data) ? data : (data.chapters || []);
 }
 
+// F7 — a workspace invite that lost its project. A consolidated workspace data repo holds every project
+// under <id>/…; the reviewer link must carry &p=<id> so _PREFIX='<id>/'. If &p= is missing, the reviewer
+// reads the repo ROOT, where a workspace repo has NO chapters.json — so it degrades to the misleading
+// "nothing shared with you yet" empty state instead of "your invite link is broken."
+// This detects that exact case from the repo tree so the portal can tell the reviewer the truth:
+//   broken  ⟺  no project id  AND  no chapters at the root  AND  the tree has ≥1 <id>/chapters.json subfolder.
+// A genuinely fresh/legacy repo (root chapters, or no project subfolders at all) is NOT broken.
+// `pid` is the raw &p= value (''), `rootChapters` is loadChapters()'s result at the root, `treePaths`
+// is the repo-relative path list from the git tree.
+export function workspaceInviteBroken(pid, rootChapters, treePaths) {
+  if (pid) return false;                                   // link carries a project — resolved normally
+  if ((rootChapters || []).length) return false;           // root actually has content — not a workspace-without-project
+  const hasProjectFolder = (treePaths || []).some(p =>
+    /^[^/]+\/chapters\.json$/.test(String(p)));            // a <id>/chapters.json = a workspace project subfolder
+  return hasProjectFolder;
+}
+
 // Whether the optional AI assistant (Send to Claude / run review agents) is on. OFF by default — the
 // deterministic review→stage→approve→merge path is the core product. Enabled either by a per-user local
 // flag (Settings toggle → localStorage 'footnote:assistant' === '1') or by an instance that ships a
