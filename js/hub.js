@@ -2,10 +2,10 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject } from './config.js?v=ef73fa1';
-import { seedDataRepo } from './seed.js?v=ef73fa1';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile } from './importdoc.js?v=ef73fa1';
-import { parseLatexChapters } from './docparse.js?v=ef73fa1';
+import { loadConfig, loadProjects, normalizeProject } from './config.js?v=9a0e2bd';
+import { seedDataRepo } from './seed.js?v=9a0e2bd';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile } from './importdoc.js?v=9a0e2bd';
+import { parseLatexChapters } from './docparse.js?v=9a0e2bd';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -344,7 +344,8 @@ export async function launch() {
   // Advanced. mode='local' uploads a .tex (Footnote creates the repo + commits it); 'github'/'overleaf'
   // point at an existing repo.
   function newProjectSheet(list) {
-    let mode = 'local', pendingTex = null, srcDirty = false, dataDirty = false;
+    let mode = 'local', pendingTex = null;
+    const wsRepo = hub();   // ONE workspace repo holds every project as a subfolder — no per-paper repos
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
       <div class="fn-sheet-h">New project</div>
@@ -357,25 +358,17 @@ export async function launch() {
       </div>
       <div id="np-panel"></div>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="thesis" spellcheck="false"></label>
-      <details class="fn-adv"><summary>Advanced — repo names</summary>
-        <label class="fn-field">Source repo <span class="fn-sub">where your LaTeX lives / will be created</span><input id="np-src" spellcheck="false"></label>
-        <label class="fn-field">Comments repo <span class="fn-sub">a private repo Footnote creates for comments + the reading view — not your document</span><input id="np-data" spellcheck="false"></label>
-      </details>
+      <div class="fn-hint">Lives in your one workspace repo <span class="fn-mono">${esc(wsRepo)}</span> under a per-project subfolder — no new repo per paper.</div>
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
-    // Keep the auto-named repo fields in sync with the project name until the user edits them by hand.
-    const syncNames = () => {
-      const name = q('#np-name').value.trim();
-      if (!srcDirty && mode === 'local') q('#np-src').value = sourceRepoSuggestion(name || 'project', cfg.owner);
-      if (!dataDirty) q('#np-data').value = dataRepoSuggestion(name || 'project', cfg.owner);
-    };
+    const slugPreview = () => projectIdFromName((q('#np-name') && q('#np-name').value.trim()) || 'project');
     const renderPanel = () => {
       const p = q('#np-panel');
       if (mode === 'local') {
         p.innerHTML = `<label class="fn-drop"><i class="ti ti-upload"></i> <span id="np-tex-name">Choose your .tex file</span><input id="np-tex" type="file" accept=".tex" style="display:none"></label>
-          <div class="fn-hint">Footnote creates a private repo for it and commits it as <code>main.tex</code>. <code>.docx</code> support is coming.</div>`;
+          <div class="fn-hint">Committed as <code>${esc(slugPreview())}/source/main.tex</code>. For figures + <code>.bib</code>, open the project and use “Upload your whole project folder”. <code>.docx</code> support is coming.</div>`;
         q('#np-tex').onchange = async e => {
           const f = e.target.files[0]; if (!f) return;
           if (importFormat(f.name) !== 'tex') { q('#np-err').textContent = 'Please choose a .tex file (.docx is coming soon).'; return; }
@@ -386,50 +379,44 @@ export async function launch() {
         const overleaf = mode === 'overleaf';
         p.innerHTML = `${overleaf ? `<div class="fn-hint">In Overleaf: <b>Menu → GitHub → Sync</b> to a new repo, then pick it here.</div>` : ''}
           <label class="fn-field">${overleaf ? 'Your synced GitHub repo' : 'Pick the repo with your LaTeX'}<input id="np-pick" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false"></label>
-          <div class="fn-hint">Already on GitHub? Point Footnote at it — read-only, never edited.</div>`;
-        const pick = q('#np-pick'); attachRepoPicker(pick, tok());
-        pick.addEventListener('input', () => { srcDirty = true; q('#np-src').value = pick.value.trim(); });
+          <div class="fn-hint">Footnote reads it (never edits it); your comments still live in the workspace.</div>`;
+        attachRepoPicker(q('#np-pick'), tok());
       }
-      syncNames();
     };
     q('#np-modes').querySelectorAll('.fn-seg-b').forEach(b => b.onclick = () => {
       if (mode === b.dataset.mode) return;
       mode = b.dataset.mode;
-      if (mode !== 'local') srcDirty = false;   // a picked repo re-marks dirty; auto-name resumes for local
       q('#np-modes').querySelectorAll('.fn-seg-b').forEach(x => x.classList.toggle('on', x === b));
       renderPanel();
     });
-    q('#np-name').addEventListener('input', syncNames);
-    q('#np-src').addEventListener('input', () => { srcDirty = true; });
-    q('#np-data').addEventListener('input', () => { dataDirty = true; });
-    attachRepoPicker(q('#np-src'), tok());
-    syncNames(); renderPanel();
+    q('#np-name').addEventListener('input', () => { if (mode === 'local' && !pendingTex) renderPanel(); });
+    renderPanel();
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
       const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document';
       if (!name) return q('#np-err').textContent = 'Give your project a name.';
-      const { sourceRepo, dataRepo } = planNewProjectRepos({ mode, name, owner: cfg.owner, sourceOverride: q('#np-src').value, dataOverride: q('#np-data').value });
+      if (!wsRepo) return q('#np-err').textContent = 'Set up your workspace repo first.';
+      const id = projectIdFromName(name);
+      const externalSrc = (mode !== 'local') ? q('#np-pick').value.trim() : '';
       if (mode === 'local' && !pendingTex) return q('#np-err').textContent = 'Choose your .tex file to upload.';
-      if (mode !== 'local' && !sourceRepo) return q('#np-err').textContent = 'Pick the repo where your LaTeX lives.';
+      if (mode !== 'local' && !externalSrc) return q('#np-err').textContent = 'Pick the repo where your LaTeX lives.';
       try {
-        const next = addProject(list, { id: projectIdFromName(name), name, dataRepo, sourceRepo, doc: { noun, unitNoun: 'chapter' } });
+        // Workspace project: DATA (and, for uploads, source) live under <wsRepo>/<id>/…; external repos
+        // (github/overleaf) stay the source, comments still go in the workspace.
+        const next = addProject(list, { id, name, dataRepo: wsRepo, sourceRepo: externalSrc, workspace: true, doc: { noun, unitNoun: 'chapter' } });
         q('#np-save').disabled = true;
+        q('#np-err').textContent = `Preparing ${wsRepo}…`;
+        await createRepo(tok(), wsRepo);   // create the ONE workspace repo if needed (422 = already there)
         let chapters = null;
-        if (pendingTex) {   // local upload: create the source repo, commit the LaTeX, parse its chapters
-          q('#np-err').textContent = `Creating ${sourceRepo}…`;
-          await ensureRepo(tok(), sourceRepo);
-          q('#np-err').textContent = 'Committing main.tex…';
-          await commitSourceFile(sourceRepo, 'main.tex', pendingTex.text, tok(), 'Footnote import: main.tex');
+        if (pendingTex) {
+          q('#np-err').textContent = `Committing ${id}/source/main.tex…`;
+          await commitSourceFile(wsRepo, `${id}/source/main.tex`, pendingTex.text, tok(), `Footnote import: ${id}/source/main.tex`);
           chapters = parseLatexChapters(pendingTex.text, () => null);
         }
-        q('#np-err').textContent = 'Creating the comments repo…';
-        await createRepo(tok(), dataRepo);   // create the private data repo if it doesn't exist (422 = already there)
-        q('#np-err').textContent = 'Setting up background email/notify…';
-        try { await seedDataRepo(dataRepo, tok()); } catch (e) { console.warn('seed:', e.message); }   // non-fatal; can re-run later
-        if (chapters && chapters.length) {   // seed chapters.json so the project opens ready, not empty
-          q('#np-err').textContent = `Saving ${chapters.length} chapter${chapters.length !== 1 ? 's' : ''}…`;
-          try { await commitSourceFile(dataRepo, 'chapters.json', JSON.stringify(chapters, null, 2), tok(), `import: ${chapters.length} chapters from main.tex`); }
+        if (chapters && chapters.length) {   // seed <id>/chapters.json so the project opens ready, not empty
+          q('#np-err').textContent = `Saving ${chapters.length} unit${chapters.length !== 1 ? 's' : ''}…`;
+          try { await commitSourceFile(wsRepo, `${id}/chapters.json`, JSON.stringify(chapters, null, 2), tok(), `import: ${chapters.length} units into ${id}/`); }
           catch (e) { console.warn('chapters:', e.message); }
         }
         q('#np-err').textContent = 'Saving…';
