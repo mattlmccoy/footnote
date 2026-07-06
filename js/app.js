@@ -947,15 +947,15 @@ function buildCommentCard(c){
       ${c.status === 'staged' ? `<div class="cdec" data-id="${c.id}">
         <button class="btn cdec-b ${c.decision==='approve'?'on-approve':''}" data-d="approve"><i class="ti ti-check"></i>Approve</button>
         <button class="btn cdec-b ${c.decision==='reject'?'on-reject':''}" data-d="reject"><i class="ti ti-x"></i>Reject</button>
-        <button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>
+        ${assistantOn() ? `<button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>` : ''}
       </div>
-      <div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for Claude."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Claude</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}
+      ${assistantOn() ? `<div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for Claude."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Claude</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}` : ''}
       ${c.status === 'approved' ? `<div class="cdec" data-id="${c.id}"><span class="cqd"><i class="ti ti-clock-check"></i>queued for merge</span><button class="btn cunq" data-id="${c.id}"><i class="ti ti-arrow-back-up"></i>Unqueue</button></div>` : ''}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
       ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
-      ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(c.claude?.response||c.claude?.branch?'Reply / push back':'Add a note')}</button>
-        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${c.claude?.response||c.claude?.branch?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
+      ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply / push back':'Add a note')}</button>
+        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
     if (c.id === activeCommentId) card.classList.add('active');
     card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
@@ -994,7 +994,8 @@ function buildCommentCard(c){
 async function replyToComment(id, text){
   const c = review.comments.find(x => x.id === id); if (!c) return;
   const thread = [...(c.thread||[]), { author:'you', text, ts:new Date().toISOString() }];
-  const handled = !!(c.claude?.response || c.claude?.branch) || ['staged','approved','answered','merged'].includes(c.status);
+  // Only re-queue for Claude when the assistant is ON; with AI off a reply is just a private note.
+  const handled = assistantOn() && (!!(c.claude?.response || c.claude?.branch) || ['staged','approved','answered','merged'].includes(c.status));
   review = updateComment(review, id, { thread, status: handled ? 'queued' : c.status });
   save(); renderComments(); buildNav(); paintHighlights();
   const t = tok(); if (!t){ flash('Reply saved locally.'); return; }
@@ -1045,7 +1046,7 @@ function buildAdvCard(c){
       <button class="btn a-note"><i class="ti ti-note"></i>Private note</button>
       <button class="btn a-suggest"><i class="ti ti-pencil"></i>Suggest edit</button>
       <button class="btn a-rec"><i class="ti ti-message-check"></i>${c.resolution?'Update':'Resolution'}</button>
-      <button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button></div>
+      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button>` : ''}</div>
     <div class="rel-pop a-replybox" style="display:none"><textarea rows="2" placeholder="Reply to ${escapeHtml(whoLabel(c))} — they'll see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-reply-save">Send reply</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-notebox" style="display:none"><textarea rows="2" placeholder="Private note — only you see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-note-save">Save note</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-suggestbox" style="display:none"><div class="sug-passage">Editing this passage:<blockquote>"${escapeHtml(c.anchor?.quote||'')}"</blockquote><button class="btn a-jump2" style="padding:2px 8px;font-size:11px"><i class="ti ti-arrow-right"></i>Read it in context</button></div>
@@ -1077,9 +1078,10 @@ function buildAdvCard(c){
   card.querySelector('.a-sug-save').onclick = async () => { const op = card.querySelector('.a-sug-op').value, find = card.querySelector('.a-sug-find').value.trim(), replacement = card.querySelector('.a-sug-repl').value.trim();
     if (!find && op !== 'insert'){ alert('Enter the text to find.'); return; }
     try { const edit = { op, find, replacement }; await suggestAdvisorEdit(c._advisor, current, c.id, edit); c.edit = edit; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } };
-  card.querySelector('.a-send').onclick = async () => { if (!confirm('Send this comment to Claude to address?')) return;
-    const b = card.querySelector('.a-send'); b.disabled = true; b.textContent = 'Sending…';
-    try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ b.textContent = 'Failed: ' + e.message; } };
+  const aSendBtn = card.querySelector('.a-send');   // present only when the assistant is on
+  if (aSendBtn) aSendBtn.onclick = async () => { if (!confirm('Send this comment to Claude to address?')) return;
+    aSendBtn.disabled = true; aSendBtn.textContent = 'Sending…';
+    try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ aSendBtn.textContent = 'Failed: ' + e.message; } };
   card.querySelector('.r-save').onclick = async () => { const stat = card.querySelector('.r-stat'); stat.textContent = 'Saving…';
     const resolution = { state:card.querySelector('.r-state').value, note:card.querySelector('.r-note').value.trim(), ts:new Date().toISOString() };
     try { await recordResolution(c._advisor, current, c.id, resolution); c.resolution = resolution; c.read = true; stat.textContent = 'Saved — visible to the reviewer.'; setTimeout(swap, 600); }
@@ -2405,7 +2407,7 @@ function toggleHelp(){
   ov.innerHTML = `<div class="help-card">
     <div class="help-h">Reference</div>
     <div class="help-sub">Toolbar</div>
-    ${BUTTONS.map(([ic,d]) => `<div class="help-row"><span class="help-ic"><i class="ti ${ic}"></i></span><span>${d}</span></div>`).join('')}
+    ${BUTTONS.map(([ic,d]) => `<div class="help-row"><span class="help-ic"><i class="ti ${ic}"></i></span><span>${ic==='ti-send' && !assistantOn() ? 'Review actions — stage, approve &amp; merge, plus Export' : d}</span></div>`).join('')}
     <div class="help-sub" style="margin-top:14px">Keyboard</div>
     ${SHORTCUTS.map(([k,d]) => `<div class="help-row"><kbd>${k}</kbd><span>${d}</span></div>`).join('')}
     <div style="text-align:right;margin-top:14px"><button class="btn" id="help-x">Close</button></div></div>`;
@@ -2603,9 +2605,9 @@ async function openReleasePanel(){
     const items = inbox[a]||[]; const unread = unreadOf(a);
     return `<div class="rel-inbox" data-adv="${a}"><div class="rel-inbox-h"><b>${escapeHtml(idLabel(a))}</b>${/^general-/.test(a)?'<span class="chip" style="margin-left:5px">lab</span>':''}<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span>
         <span class="rel-unread" style="margin-left:auto">${advHeadHtml(a)}</span>
-        <button class="btn rel-sendall" data-a="${a}" style="padding:2px 9px;font-size:11.5px;margin-left:6px" ${unread?'disabled title="Read every comment from this reviewer first"':''}><i class="ti ti-send"></i>Send unsent</button>
+        ${assistantOn() ? `<button class="btn rel-sendall" data-a="${a}" style="padding:2px 9px;font-size:11.5px;margin-left:6px" ${unread?'disabled title="Read every comment from this reviewer first"':''}><i class="ti ti-send"></i>Send unsent</button>` : ''}
         <button class="rel-del" data-a="${a}" data-count="${items.length}" title="Remove this reviewer's comments from your inbox" style="width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:none;background:none;color:var(--text-3);cursor:pointer;font-size:13px;margin-left:2px;opacity:0;transition:opacity .12s"><i class="ti ti-trash"></i></button></div>
-        <div style="font-size:11.5px;color:var(--text-3);margin:-1px 0 8px">Reply, suggest edits, and send to Claude from the comment itself — click <b>Open in context</b>.</div>${
+        <div style="font-size:11.5px;color:var(--text-3);margin:-1px 0 8px">${assistantOn() ? 'Reply, suggest edits, and send to Claude from the comment itself' : 'Reply, suggest edits, and record resolutions from the comment itself'} — click <b>Open in context</b>.</div>${
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
@@ -2659,7 +2661,7 @@ async function openReleasePanel(){
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;
     const unread = unreadOf(a);
     box.querySelector('.rel-unread').innerHTML = advHeadHtml(a);
-    const send = box.querySelector('.rel-sendall'); send.disabled = unread > 0; send.title = unread > 0 ? 'Read every comment from this reviewer first' : '';
+    const send = box.querySelector('.rel-sendall'); if (send){ send.disabled = unread > 0; send.title = unread > 0 ? 'Read every comment from this reviewer first' : ''; }
     wireHeader(box, a);
   };
   function wireHeader(box, a){
@@ -2669,7 +2671,7 @@ async function openReleasePanel(){
         box.querySelectorAll('.rel-row').forEach(r => { r.classList.add('is-read'); const cb = r.querySelector('.rel-readbox'); if (cb) cb.checked = true; }); syncAdvHeader(a); }
       catch(e){ ra.textContent = 'Failed'; }
     };
-    const sa = box.querySelector('.rel-sendall'); sa.onclick = async () => {
+    const sa = box.querySelector('.rel-sendall'); if (sa) sa.onclick = async () => {   // absent when AI off
       const todo = (inbox[a]||[]).filter(({c}) => c.read && !c.sent && c.status==='submitted');
       if (!todo.length){ sa.textContent = 'Nothing to send'; return; }
       if (!confirm(`Send ${todo.length} comment${todo.length!==1?'s':''} from ${idLabel(a)} to Claude?`)) return;
