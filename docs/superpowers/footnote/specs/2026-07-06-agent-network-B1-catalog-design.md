@@ -254,7 +254,18 @@ Matt's decisions on the six questions below, as built:
 | paper-miner | `patterns` | doer |
 | heatr-simulation-engineer | `reproduce` | doer |
 
-Plus the native generic critics `clarity`, `structure`, `domain`. **Doers are catalogued but NOT executed by B1's read-only run-agents** — `ci_agents.is_runnable()` returns False for `category:"doer"` and `process_project` filters them out; they act through the editing/authoring lanes in B2–B5. Unknown/legacy names stay runnable (legacy fallback). Default-on unchanged (5 critics). Weak generalizations to revisit: `reproduce` (fleet heatr-simulation-engineer) and `methods`/`evidence` are thinner as generic document agents — recategorize/rename freely.
+Plus the native generic critics `clarity`, `structure`, `domain`.
+
+## 6c. B5 local runner + personal overlay (commits `ea86b93`, live)
+
+Matt asked for the FULL feature set of his tool-using agents (heatr-simulation-engineer et al.) for his own instance. Those can't run in the data repo's CI (they need his machine, tools, and code paths), so:
+
+- **Data model**: added `execution` ("ci" default | "local"). `ci_agents.runnable_in_ci` (read-only, non-doer, non-local) vs `runnable_local` (execution:"local", critic or doer). No shipped builtin is local.
+- **`data-template/ci_local.py`** (generic, document-agnostic, shipped): the local runner. `build_local_command` (tool-enabled argv + per-agent cwd/model), `run_local_job` (pure fold), `process_prefix` (working-tree drain: run local agents → write comments → remove job), `run_local_agent_cli` (live boundary), CLI. CI's run-agents lane skips any job carrying a local agent and leaves it for the local runner.
+- **Personal overlay (NOT in the public repo)**: Matt's 12 active `~/.claude/agents/*.md` generalized to `builtin:false`, `execution:"local"` entries carrying their FULL prompts + tools/model, delivered to **`mattlmccoy/footnote-projects/agents.json`** (repo-root, merged with the builtin mirror → 28-agent effective catalog). Adopter-owned; the shipped product never sees them.
+- **Author-oversight intact**: a local agent acts through its own tools on Matt's OWN research code and reports back a comment; it never writes the Footnote-reviewed source.
+
+Activation for live end-to-end use still needs the B1/B5 engine + updated client deployed to footnote-projects (via merging `feat/agent-network`), then wiring `reviewAgents`. The overlay data is in place and validated now. **Doers are catalogued but NOT executed by B1's read-only run-agents** — `ci_agents.is_runnable()` returns False for `category:"doer"` and `process_project` filters them out; they act through the editing/authoring lanes in B2–B5. Unknown/legacy names stay runnable (legacy fallback). Default-on unchanged (5 critics). Weak generalizations to revisit: `reproduce` (fleet heatr-simulation-engineer) and `methods`/`evidence` are thinner as generic document agents — recategorize/rename freely.
 
 Engine boundary: `resolve_agent_directive` (pure) resolves catalog prompt + shared output contract, legacy fallback for unknown names. `run_agent_cli(agent_id, task, catalog=, field=)`. `process_project` loads the catalog once and threads it. Seams B2–B5 left inert (`triggers`/`docTypes` fields present, `builtin:false` path works, `agent_fn` still the single injectable local-runner boundary).
 
