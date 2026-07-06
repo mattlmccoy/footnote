@@ -3352,6 +3352,10 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       const _outcome = emailTestOutcome({ conclusion: run.conclusion, emailTest: et, beforeTs: _beforeTestTs });
       if (!_outcome.failed){
         advReg.email_configured = true;
+        // Persist it ourselves — a green run means the send worked, and we can't rely on the CI's own
+        // advisors.json write (a stale seeded CI / workspace-prefix quirk can leave email_configured blank
+        // on the project file, so the health check kept saying "not set up" even after a successful test).
+        try { await mutateAdvisors(reg => { reg.email_configured = true; reg.email_test = et || { ok:true, ts:new Date().toISOString(), error:null }; }, 'email: mark configured (test passed)'); } catch (e) {}
         flash('✅ Email connected — test sent.');
         // The mail server ACCEPTED it; the recipient's spam filter may still hold it. Say so plainly
         // (a persistent panel, not a toast) so the owner knows to check spam, not assume failure.
