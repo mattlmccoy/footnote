@@ -13,6 +13,8 @@ import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSh
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus } from './owneradmin.js?v=3044a21';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=3044a21';
 import { startWatch as startNetWatch } from './netstatus.js?v=3044a21';
+import { settingsSections, resolveSection } from './settings.js?v=3044a21';
+import { modalReducer, topModal } from './modal.js?v=3044a21';
 startNetWatch();
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
@@ -236,6 +238,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+      <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
@@ -246,6 +249,7 @@ function renderTopbar(){
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-more').onclick = openMoreMenu;
+  document.getElementById('btn-settings').onclick = () => openSettingsPage();
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -1856,11 +1860,13 @@ function enterHome(){
      <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to reviewer comments"><i class="ti ti-file-text"></i>Response</button>
      <button class="btn" id="btn-overleaf" style="padding:6px 12px" title="Take reviewer feedback back to Overleaf"><i class="ti ti-file-symlink"></i>To Overleaf</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
+     <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
+  document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
   document.getElementById('btn-export').onclick = exportAdvisorResponse;
   document.getElementById('btn-overleaf').onclick = () => openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message));
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
@@ -2695,6 +2701,64 @@ function manageToken(){
   if (v.trim() === ''){ if (cur && confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); } return; }
   localStorage.setItem('ghpat', v.trim()); flash('Token saved.'); if (document.getElementById('doc') || current) loadChapter(current);
 }
+// Shared modal used by Settings dialogs (and, later, agent authoring). Stacks; ESC / backdrop-click
+// closes the topmost. `body` is an HTMLElement; `actions` is [{label, primary?, onClick(close)}].
+let _modalStack = [];
+let _onModalEsc = null;
+function openModal(title, body, actions = []) {
+  const id = 'm_' + (_modalStack.length + 1);
+  _modalStack = modalReducer(_modalStack, { type:'open', id });
+  const back = document.createElement('div'); back.className = 'modal-backdrop'; back.dataset.mid = id;
+  const foot = actions.map((a, i) => `<button class="btn${a.primary?' btn-primary':''}" data-i="${i}">${a.label}</button>`).join('');
+  back.innerHTML = `<div class="modal-box"><div class="modal-head">${title}<button class="modal-x" aria-label="Close">×</button></div>
+    <div class="modal-body"></div>${actions.length?`<div class="modal-foot">${foot}</div>`:''}</div>`;
+  back.querySelector('.modal-body').appendChild(body);
+  const close = () => { back.remove(); _modalStack = modalReducer(_modalStack, { type:'close' });
+    if (_onModalEsc && !_modalStack.length){ document.removeEventListener('keydown', _onModalEsc); _onModalEsc = null; } };
+  back.querySelector('.modal-x').onclick = close;
+  back.onclick = e => { if (e.target === back) close(); };
+  actions.forEach((a, i) => { const b = back.querySelector(`.modal-foot [data-i="${i}"]`); if (b) b.onclick = () => a.onClick(close); });
+  document.body.appendChild(back);
+  if (!_onModalEsc){ _onModalEsc = e => { if (e.key === 'Escape'){ const top = document.querySelector(`.modal-backdrop[data-mid="${topModal(_modalStack)}"]`); top?.querySelector('.modal-x')?.click(); } };
+    document.addEventListener('keydown', _onModalEsc); }
+  return close;
+}
+// Dedicated Settings page (Project A). In-place view like openReleasePanel: swaps topbar + main area,
+// renders a left-nav (settingsSections model) + a detail pane. `section` deep-links a starting section.
+let _setSection = null;
+async function openSettingsPage(section) {
+  const t = tok(); if (!t){ flash('Add your access token first.'); return; }
+  stopOwnerLiveSync();
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML =
+    `<strong style="font-size:16px;font-weight:600"><i class="ti ti-settings" style="margin-right:7px"></i>Settings</strong>
+     <button class="btn" id="set-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to ${UNIT}s</button>`;
+  document.getElementById('set-close').onclick = enterHome;
+  let claudeConnected = false, emailConfigured = false;
+  try { claudeConnected = claudeConnectionStatus(await listSecretNames(t)).claude; } catch {}
+  try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
+  const state = { aiOn: assistantOn(), claudeConnected, emailConfigured, hasToken: !!t };
+  const secs = settingsSections(_CFG, state);
+  _setSection = resolveSection(secs, section || _setSection);
+  const nav = secs.map(s => `<div class="set-item${s.id===_setSection?' active':''}${s.muted?' muted':''}" data-s="${s.id}">
+      <span>${escapeHtml(s.label)}</span>${s.glyph?`<span class="set-g ${s.glyph}">${s.glyph==='ok'?'✓':'●'}</span>`:''}</div>`).join('');
+  read.innerHTML = `<div class="set-wrap"><div class="set-nav">${nav}</div><div class="set-pane" id="set-pane"></div></div>`;
+  read.querySelectorAll('.set-item').forEach(el => el.onclick = () => { _setSection = el.dataset.s; openSettingsPage(_setSection); });
+  renderSettingsSection(_setSection, t);
+}
+function renderSettingsSection(id, t) {
+  const pane = document.getElementById('set-pane'); if (!pane) return;
+  if (id === 'email')  return renderSettingsEmail(pane, t);
+  if (id === 'access') return renderSettingsAccess(pane, t);
+  if (id === 'agents') return renderSettingsAgents(pane, t);
+  if (id === 'ai')     return renderSettingsAI(pane, t);
+}
+// Temporary placeholders — replaced in Tasks 4–7.
+function renderSettingsEmail(p){ p.innerHTML = '<div class="set-card">Email — TODO Task 5</div>'; }
+function renderSettingsAccess(p){ p.innerHTML = '<div class="set-card">Access — TODO Task 4</div>'; }
+function renderSettingsAgents(p){ p.innerHTML = '<div class="set-card">Agents — TODO Task 7</div>'; }
+function renderSettingsAI(p){ p.innerHTML = '<div class="set-card">AI — TODO Task 6</div>'; }
 // ---------- release gate: control which chapters each advisor's portal shows ----------
 async function openReleasePanel(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
