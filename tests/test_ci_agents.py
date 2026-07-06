@@ -17,17 +17,18 @@ import ci_apply as A  # noqa: E402
 
 # --------------------------------------------------------------- bundled builtin catalog
 DEFAULT_ON = {"rigor", "clarity", "citations", "structure", "copyedit"}
-DEFAULT_OFF = {"figure", "domain", "technical"}
-ALL_IDS = DEFAULT_ON | DEFAULT_OFF
+CRITIC_IDS = DEFAULT_ON | {"figure", "domain", "technical", "methods", "reasoning", "evidence"}
+DOER_IDS = {"writer", "figure-drafter", "responder", "patterns", "reproduce"}
+ALL_IDS = CRITIC_IDS | DOER_IDS
 
 
-def test_builtin_catalog_ships_the_eight_document_agnostic_critics():
+def test_builtin_catalog_ships_every_active_fleet_role():
+    # the whole tuned fleet is represented (retired kaggle-miner / tdd-guide excluded), generalized
     cat = C.builtin_catalog()
     assert set(cat.keys()) == ALL_IDS
     for a in cat.values():
-        assert a["category"] == "critic"
+        assert a["category"] in ("critic", "doer")
         assert a["builtin"] is True
-        assert a["outputContract"] == "findings"
         assert a["systemPrompt"].strip()          # a real prompt, not a bare name
         assert a["displayName"].strip()
         assert a["description"].strip()
@@ -36,17 +37,38 @@ def test_builtin_catalog_ships_the_eight_document_agnostic_critics():
         assert isinstance(a["version"], int)
 
 
-def test_exactly_five_critics_default_on():
+def test_critics_produce_findings_and_doers_do_not():
+    cat = C.builtin_catalog()
+    assert {i for i, a in cat.items() if a["category"] == "critic"} == CRITIC_IDS
+    assert {i for i, a in cat.items() if a["category"] == "doer"} == DOER_IDS
+    for i in CRITIC_IDS:
+        assert cat[i]["outputContract"] == "findings"
+    for i in DOER_IDS:
+        assert cat[i]["outputContract"] != "findings"   # doers act via a later lane, not run-agents
+
+
+def test_exactly_five_critics_default_on_and_no_doer_is_on():
     cat = C.builtin_catalog()
     on = {i for i, a in cat.items() if a.get("defaultOn")}
     assert on == DEFAULT_ON
     assert set(C.default_on_ids()) == DEFAULT_ON
+    assert not (on & DOER_IDS)                          # a doer is never selected by default
 
 
 def test_technical_critic_is_code_scoped_and_off_by_default():
     tech = C.builtin_catalog()["technical"]
     assert tech["defaultOn"] is False
     assert tech["docTypes"] == ["code"]
+
+
+def test_doers_are_registered_but_not_run_by_run_agents():
+    # B1 catalogs the fleet's doers (writer/responder/…) but run-agents is read-only — it must NOT
+    # execute a doer as if it were a critic. Unknown/legacy names stay runnable (back-compat).
+    cat = C.builtin_catalog()
+    assert C.is_runnable("rigor", cat) is True
+    assert C.is_runnable("writer", cat) is False
+    assert C.is_runnable("responder", cat) is False
+    assert C.is_runnable("some-legacy-agent", cat) is True
 
 
 def test_no_builtin_prompt_leaks_domain_specific_terms():

@@ -389,7 +389,10 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             # unknown names). doc.field for the domain critic arrives on the job (client-supplied).
             field = job.get("field") or os.environ.get("DOC_FIELD") or ""
             resolver = agent_fn or (lambda aid, t: run_agent_cli(aid, t, catalog=catalog, field=field))
-            outputs = {a: (resolver(a, task) or []) for a in (job.get("agents") or [])}
+            # run-agents is READ-ONLY: skip any catalogued doer (writer/responder/…) so it can't run as
+            # a critic. Unknown/legacy names stay runnable (legacy fallback prompt).
+            selected = [a for a in (job.get("agents") or []) if ci_agents.is_runnable(a, catalog)]
+            outputs = {a: (resolver(a, task) or []) for a in selected}
             jid = job.get("id")
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
                                                   idgen=lambda i, j=jid: f"a_{j}_{i}")

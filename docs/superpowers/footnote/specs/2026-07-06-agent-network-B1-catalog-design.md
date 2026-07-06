@@ -237,6 +237,25 @@ Matt's decisions on the six questions below, as built:
 
 **Extra decision:** shipped an **8th critic `technical`** (generic code/technical reviewer, `docTypes:["code"]`, default-OFF) — the one read-only-critic mechanic (fleet `code-reviewer`) otherwise unrepresented.
 
+**Follow-up decision (Matt): represent the WHOLE active fleet in B1.** The catalog now carries all 12 active fleet agents, generalized document-agnostically (retired kaggle-miner / tdd-guide excluded). 16 entries total = 11 critics + 5 doers:
+
+| Fleet agent | Catalog id | Category |
+|---|---|---|
+| dissertation-adversary | `rigor` (+ inspired `copyedit`) | critic |
+| code-reviewer | `technical` | critic |
+| concept-figure-reviewer | `figure` | critic |
+| critical-thinking-assistant | `reasoning` | critic |
+| computational-solver-engineer | `methods` | critic |
+| rfam-experimentalist | `evidence` | critic |
+| literature-reviewer | `citations` | critic |
+| dissertation-writer | `writer` | doer |
+| concept-figure-creator | `figure-drafter` | doer |
+| rebuttal-writer | `responder` | doer |
+| paper-miner | `patterns` | doer |
+| heatr-simulation-engineer | `reproduce` | doer |
+
+Plus the native generic critics `clarity`, `structure`, `domain`. **Doers are catalogued but NOT executed by B1's read-only run-agents** — `ci_agents.is_runnable()` returns False for `category:"doer"` and `process_project` filters them out; they act through the editing/authoring lanes in B2–B5. Unknown/legacy names stay runnable (legacy fallback). Default-on unchanged (5 critics). Weak generalizations to revisit: `reproduce` (fleet heatr-simulation-engineer) and `methods`/`evidence` are thinner as generic document agents — recategorize/rename freely.
+
 Engine boundary: `resolve_agent_directive` (pure) resolves catalog prompt + shared output contract, legacy fallback for unknown names. `run_agent_cli(agent_id, task, catalog=, field=)`. `process_project` loads the catalog once and threads it. Seams B2–B5 left inert (`triggers`/`docTypes` fields present, `builtin:false` path works, `agent_fn` still the single injectable local-runner boundary).
 
 ---

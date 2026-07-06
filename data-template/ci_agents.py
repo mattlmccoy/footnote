@@ -225,6 +225,157 @@ BUILTIN_AGENTS = [
         "builtin": True,
         "version": 1,
     },
+    {
+        "id": "methods",
+        "displayName": "Methods & Analysis Critic",
+        "description": "Checks calculations, methods, statistics, and reproducibility of quantitative claims.",
+        "category": "critic",
+        "systemPrompt": (
+            "You scrutinize the quantitative and methodological backbone of the document. Flag: "
+            "calculations, conversions, or derivations that do not check out; a method or model applied "
+            "outside the assumptions it requires; statistics misused (wrong test, no uncertainty, "
+            "cherry-picked comparisons, over-fitting); results stated without error bars, sensitivity, or "
+            "a baseline; and analyses that could not be reproduced from what is written. For each, name "
+            "the exact step and say what would make it correct or reproducible. Verify the arithmetic "
+            "where you can — do not wave numbers through."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["numbers", "methods"],
+        "outputContract": "findings",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "reasoning",
+        "displayName": "Reasoning & Assumptions Critic",
+        "description": "Surfaces hidden assumptions and gaps in the argument chain.",
+        "category": "critic",
+        "systemPrompt": (
+            "You make the argument's logic and hidden assumptions visible. Flag: unstated assumptions the "
+            "conclusion depends on; steps where the reasoning jumps and a reader cannot follow; claims "
+            "presented as established that are actually contested or unsupported; alternative "
+            "explanations the text ignores; and conclusions stated with more certainty than the argument "
+            "earns. For each, name the load-bearing step and say what must be justified or made explicit. "
+            "You clarify the chain of reasoning, not merely attack it."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["claim", "argument"],
+        "outputContract": "findings",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "evidence",
+        "displayName": "Evidence & Methodology Critic",
+        "description": "Judges whether the data and study design actually support the empirical claims.",
+        "category": "critic",
+        "systemPrompt": (
+            "You judge whether the evidence actually supports the empirical claims. Flag: a claim whose "
+            "stated data, sample, or experiment cannot support it; missing controls, baselines, or "
+            "comparisons; sample sizes too small or conditions too narrow to generalize; confounds and "
+            "alternative causes left unaddressed; measurements whose precision or validity is unstated; "
+            "and results presented as conclusive that a single study cannot settle. For each, say what "
+            "evidence or design change would make the claim falsifiable and sound."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["numbers", "claim"],
+        "outputContract": "findings",
+        "builtin": True,
+        "version": 1,
+    },
+    # ---- Doers: registered so the whole fleet is represented, but READ-ONLY run-agents does NOT execute
+    # them (is_runnable → False). They act through the editing / authoring lanes in later slices (B2-B5).
+    {
+        "id": "writer",
+        "displayName": "Writer / Editor",
+        "description": "Drafts and refines prose, captions, and summaries in the document's own voice.",
+        "category": "doer",
+        "systemPrompt": (
+            "You draft and refine the document's prose: turning notes or results into clear sections, "
+            "sharpening captions and summaries, and stating contributions honestly without overclaiming. "
+            "You match the document's established voice and structure, and never inflate what the "
+            "evidence shows."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["wording", "structure"],
+        "outputContract": "edits",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "figure-drafter",
+        "displayName": "Figure Drafter",
+        "description": "Proposes figures and captions that convey an idea, keeping schematics honest.",
+        "category": "doer",
+        "systemPrompt": (
+            "You propose figures and captions that convey an idea clearly. You draft schematic or "
+            "conceptual visuals and their captions, label axes, units, and legends, and keep a schematic "
+            "honest — never presenting a sketch as if it were measured data."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["figure"],
+        "outputContract": "edits",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "responder",
+        "displayName": "Review-Response Writer",
+        "description": "Drafts point-by-point, evidence-grounded responses to reviewer comments.",
+        "category": "doer",
+        "systemPrompt": (
+            "You draft point-by-point responses to reviewer comments: reading each comment, deciding how "
+            "it is addressed, and writing a concise, evidence-grounded, professional reply tied to the "
+            "actual change made. You never dismiss a reviewer and never overclaim a fix."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["response"],
+        "outputContract": "edits",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "patterns",
+        "displayName": "Writing-Pattern Miner",
+        "description": "Extracts reusable structure and phrasing patterns from strong exemplar documents.",
+        "category": "doer",
+        "systemPrompt": (
+            "You analyze strong exemplar documents and extract reusable writing patterns — how sections "
+            "are structured, how claims are framed and hedged, how transitions and contributions are "
+            "phrased — into concrete, reusable guidance the author can apply. You describe patterns; you "
+            "do not copy text."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["structure"],
+        "outputContract": "notes",
+        "builtin": True,
+        "version": 1,
+    },
+    {
+        "id": "reproduce",
+        "displayName": "Reproduction Runner",
+        "description": "Re-runs the described computations to check the reported numbers follow from the inputs.",
+        "category": "doer",
+        "systemPrompt": (
+            "You reproduce the computations and analyses a document describes — re-running the described "
+            "procedure to check that the reported numbers and figures actually follow from the stated "
+            "inputs and method. You report what reproduced, what did not, and where the description was "
+            "too incomplete to run."
+        ),
+        "defaultOn": False,
+        "docTypes": ["*"],
+        "triggers": ["numbers", "methods"],
+        "outputContract": "notes",
+        "builtin": True,
+        "version": 1,
+    },
 ]
 
 
@@ -268,6 +419,16 @@ def default_on_ids(catalog=None):
     """The ids selected on a fresh instance (defaultOn), in catalog order."""
     cat = catalog if catalog is not None else builtin_catalog()
     return [i for i, a in cat.items() if a.get("defaultOn")]
+
+
+def is_runnable(agent_ref, catalog=None):
+    """Whether run-agents may execute this agent. B1's run-agents lane is READ-ONLY (agents only add
+    comments), so a catalogued ``doer`` (writer, responder, …) must NOT run as if it were a critic —
+    it acts through the editing lanes in later slices. An unknown/legacy name stays runnable (it falls
+    back to the legacy critic prompt), preserving back-compat."""
+    cat = catalog if catalog is not None else builtin_catalog()
+    entry = cat.get(agent_ref)
+    return not (entry and entry.get("category") == "doer")
 
 
 def cap_findings(findings, limit=DEFAULT_MAX_FINDINGS):
