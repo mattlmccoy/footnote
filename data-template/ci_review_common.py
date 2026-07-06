@@ -196,6 +196,33 @@ def process_apply_direct_job(job, review, files, ts):
 # never land. A comment's source edit is its verbatim ``edit`` (apply-direct) or ``source_edit``
 # (Claude) — the same shape, so both merge uniformly.
 
+def process_run_agents_job(job, review, outputs_by_agent, ts, idgen):
+    """Append read-only critique comments produced by the review agents. ``outputs_by_agent`` maps
+    each agent id to a list of finding specs ({quote, body, tag, section?}); each becomes a comment
+    authored by that agent (author=<agentId>), status 'open' so it surfaces like a reviewer comment
+    for the owner to act on. Agents NEVER edit source — they only add comments. ``idgen(i)`` supplies
+    unique ids (injected for tests). Pure: inputs not mutated."""
+    added = []
+    i = 0
+    for agent in (job.get("agents") or []):
+        for spec in (outputs_by_agent.get(agent) or []):
+            added.append({
+                "id": idgen(i),
+                "author": agent,
+                "kind": "text",
+                "status": "open",
+                "anchor": {"quote": spec.get("quote", ""), "section": spec.get("section", ""),
+                           "synctex": None, "rects": [], "figure": None, "confirmed": False},
+                "tag": spec.get("tag", "other"),
+                "body": spec.get("body", ""),
+                "claude": {"branch": None, "commit": None, "response": None,
+                           "resolved_line": None, "ts": None},
+                "created_ts": ts,
+            })
+            i += 1
+    return {**review, "comments": [*(review.get("comments") or []), *added]}
+
+
 def comment_source_edit(comment):
     """The {find, replacement} source edit for a comment, from ``edit`` (apply-direct) or
     ``source_edit`` (Claude apply-edits), or None if it carries neither."""

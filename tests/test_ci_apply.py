@@ -305,6 +305,57 @@ def test_process_merge_flags_conflict_when_approved_target_missing():
     assert new_review["comments"][0]["status"] == "conflict"
 
 
+# ================================================================ run-agents (read-only critique)
+def test_agent_prompt_names_the_agent_and_demands_comment_json():
+    import ci_apply as A
+    p = A.agent_prompt("adversary", {"chapter": "ch1", "source": {"m.tex": "claim without evidence"}})
+    assert "adversary" in p and "ch1" in p
+    assert "JSON" in p and "quote" in p and "body" in p
+    # read-only: the prompt tells the agent to critique, never to edit
+    assert "do not edit" in p.lower() or "read-only" in p.lower()
+
+
+def test_process_run_agents_appends_authored_critique_comments():
+    review = {"comments": [{"id": "existing", "author": None, "status": "open"}]}
+    job = {"id": "g1", "type": "run-agents", "chapter": "ch1", "agents": ["adversary", "clarity"]}
+    outputs = {
+        "adversary": [{"quote": "claim", "body": "no evidence given", "tag": "rigor"}],
+        "clarity": [{"quote": "jargon", "body": "define this term", "tag": "clarity"}],
+    }
+    new_review = R.process_run_agents_job(job, review, outputs, "2026-07-06T00:00:00Z",
+                                          idgen=lambda i: f"ag{i}")
+    assert len(new_review["comments"]) == 3        # existing + 2 agent comments
+    added = new_review["comments"][1:]
+    assert added[0]["author"] == "adversary" and added[0]["anchor"]["quote"] == "claim"
+    assert added[0]["body"] == "no evidence given" and added[0]["tag"] == "rigor"
+    assert added[0]["status"] == "open" and added[0]["created_ts"] == "2026-07-06T00:00:00Z"
+    assert added[1]["author"] == "clarity"
+    assert added[0]["id"] != added[1]["id"]        # unique ids
+
+
+def test_parse_agent_findings_returns_a_list_not_an_id_map():
+    import ci_apply as A
+    # findings have NO id — must stay a list (parse_claude_edits would have collapsed them on id)
+    inner = '```json\n[{"quote":"a","body":"x"},{"quote":"b","body":"y"}]\n```'
+    envelope = json.dumps({"type": "result", "result": inner})
+    findings = A.parse_agent_findings(envelope)
+    assert isinstance(findings, list) and len(findings) == 2
+    assert findings[0]["quote"] == "a" and findings[1]["quote"] == "b"
+
+
+def test_parse_agent_findings_empty_on_garbage():
+    import ci_apply as A
+    assert A.parse_agent_findings("not json") == []
+
+
+def test_process_run_agents_tolerates_an_agent_with_no_findings():
+    review = {"comments": []}
+    job = {"type": "run-agents", "chapter": "ch1", "agents": ["a", "b"]}
+    new_review = R.process_run_agents_job(job, review, {"a": [], "b": None}, "t",
+                                          idgen=lambda i: f"ag{i}")
+    assert new_review["comments"] == []
+
+
 # --------------------------------------------------------------- Claude boundary (pure parts)
 def test_claude_prompt_includes_comments_and_demands_json_only():
     import ci_apply as A

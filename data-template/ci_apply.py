@@ -66,36 +66,81 @@ def claude_prompt(task):
     return CLAUDE_INSTRUCTIONS + "TASK:\n" + json.dumps(task, ensure_ascii=False, indent=2)
 
 
-def parse_claude_edits(raw):
-    """Recover the ``{comment_id: edit_spec}`` map from Claude's output. Accepts the claude CLI
-    ``--output-format json`` envelope (assistant text under ``result``), a fenced ```json block, a
-    bare JSON array, or a bare object map. Returns {} on anything unparseable (caller leaves the job
-    for a retry rather than crashing the whole queue)."""
+def _parse_claude_json(raw):
+    """Pull the JSON payload out of Claude's CLI output: unwrap the ``--output-format json`` envelope
+    (assistant text under ``result``), strip a fenced ```json block, and parse. Returns the decoded
+    value (list/dict/…) or None if unparseable. Shared by the edit-map and findings-list parsers."""
     import json
     import re
     text = raw
     try:
         env = json.loads(raw)
         if isinstance(env, dict) and "result" in env:
-            text = env["result"]
-        elif isinstance(env, dict) and all(isinstance(v, dict) for v in env.values()):
-            return env                                  # already an id->spec map
-        elif isinstance(env, list):
-            return {e.get("id"): e for e in env if isinstance(e, dict) and e.get("id")}
+            text = env["result"]                        # CLI envelope → assistant text
+        else:
+            return env                                  # already the payload (dict/list)
     except (ValueError, TypeError):
         pass
     m = re.search(r"```(?:json)?\s*(.*?)```", text or "", re.DOTALL)
     if m:
         text = m.group(1)
     try:
-        data = json.loads(text)
+        return json.loads(text)
     except (ValueError, TypeError):
-        return {}
+        return None
+
+
+def parse_claude_edits(raw):
+    """Recover the ``{comment_id: edit_spec}`` map from Claude's apply-edits output (envelope, fenced
+    block, array, or object map). Returns {} on anything unparseable (the caller leaves the job for a
+    retry rather than crashing the whole queue)."""
+    data = _parse_claude_json(raw)
     if isinstance(data, list):
         return {e.get("id"): e for e in data if isinstance(e, dict) and e.get("id")}
     if isinstance(data, dict):
         return data
     return {}
+
+
+def parse_agent_findings(raw):
+    """Recover the LIST of finding specs from a review agent's output (findings have no id, so this
+    keeps them as a list rather than id-mapping them). Returns [] on anything unparseable."""
+    data = _parse_claude_json(raw)
+    if isinstance(data, list):
+        return [e for e in data if isinstance(e, dict)]
+    if isinstance(data, dict):
+        return list(data.values())                      # tolerate an object map of findings
+    return []
+
+
+AGENT_INSTRUCTIONS = (
+    "You are the '{agent}' review agent. Critique the document unit below from your perspective. "
+    "This is READ-ONLY: do NOT edit any files — only report findings.\n\n"
+    "Return ONLY a JSON array, one object per finding, with keys:\n"
+    "  quote   a short EXACT substring of the source your finding is about (for anchoring)\n"
+    "  body    your critique / suggestion in plain language\n"
+    "  tag     a short category (e.g. rigor, clarity, evidence, style)\n"
+    "Return [] if you have no findings.\n\n"
+)
+
+
+def agent_prompt(agent_id, task):
+    """Prompt for one read-only review agent over an apply-task-shaped payload. Pure (asserted in tests)."""
+    import json
+    return AGENT_INSTRUCTIONS.format(agent=agent_id) + "UNIT:\n" + json.dumps(task, ensure_ascii=False, indent=2)
+
+
+def run_agent_cli(agent_id, task, model=None):
+    """Invoke Claude Code (headless) as one review agent; returns a list of finding specs. Thin,
+    live-CI-gated boundary around the pure agent_prompt + parse_claude_edits list handling."""
+    model = model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+    proc = subprocess.run(
+        ["claude", "-p", agent_prompt(agent_id, task), "--output-format", "json", "--model", model],
+        capture_output=True, text=True)
+    if proc.returncode != 0:
+        print(f"[apply] agent {agent_id} failed ({proc.returncode}): {proc.stderr[:200]}", file=sys.stderr)
+        return []
+    return parse_agent_findings(proc.stdout)
 
 
 def run_claude_cli(task, model=None):
@@ -246,19 +291,22 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "merge")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge")
 
 
-def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None):
-    """Drain the deterministic apply-direct and Claude apply-edits jobs for one project prefix.
+def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None, agent_fn=None):
+    """Drain the review jobs for one project prefix: apply-direct (deterministic), apply-edits and
+    run-agents (Claude), and merge (author-triggered publish).
 
-    ``claude_fn(task) -> {comment_id: edit_spec}`` is the Claude boundary (default: the Claude Code
-    CLI). It is injected so the finalize logic is testable without a live model. apply-edits jobs
+    ``claude_fn(task)`` and ``agent_fn(agent_id, task)`` are the Claude boundaries (defaults: the
+    Claude Code CLI), injected so the finalize logic is testable without a live model. Claude jobs
     are skipped (left queued) when Claude is not configured — honest "nothing runs until set up".
     Returns the number of jobs processed.
     """
     if claude_fn is None:
         claude_fn = run_claude_cli
+    if agent_fn is None:
+        agent_fn = run_agent_cli
     jobs = R.load_json(R.jobs_path(prefix), [])
     if not isinstance(jobs, list):
         return 0
@@ -290,6 +338,21 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
         if job.get("type") == "merge":
             new_review = publish_merge(prefix, ch, job, review, files,
                                        source_dir, repo_dir, remote_repo, token, base_branch, build_root)
+            _write_json(R.review_path(prefix, ch), new_review)
+            jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
+
+        if job.get("type") == "run-agents":
+            if not have_claude:
+                print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
+                      f"(set ANTHROPIC_API_KEY) — leaving job", file=sys.stderr)
+                continue
+            task = R.build_apply_task(job, review, files)
+            outputs = {a: (agent_fn(a, task) or []) for a in (job.get("agents") or [])}
+            jid = job.get("id")
+            new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
+                                                  idgen=lambda i, j=jid: f"a_{j}_{i}")
             _write_json(R.review_path(prefix, ch), new_review)
             jobs = R.remove_job(jobs, job.get("id"))
             done += 1

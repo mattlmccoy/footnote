@@ -244,3 +244,35 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     byid = {c["id"]: c for c in json.loads(
         (data / "proj" / "reviews" / "02-methods.json").read_text())["comments"]}
     assert byid["c1"]["status"] == "merged" and byid["c2"]["status"] == "declined"
+
+
+def test_run_agents_appends_critique_comments(workspace_repo, monkeypatch):
+    """A run-agents job: each configured agent's read-only critique is appended to the review as
+    author-tagged comments; the queue drains. Mocked agents — no live model, no source change."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": []}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "g1", "type": "run-agents", "chapter": "02-methods",
+         "agents": ["adversary"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue agents"], data)
+    _git(["push", "origin", "main"], data)
+
+    def fake_agent(agent_id, task):
+        assert agent_id == "adversary" and task["chapter"] == "02-methods"
+        return [{"quote": "\\alpha", "body": "state the assumption behind alpha", "tag": "rigor"}]
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    n = ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
+    assert n == 1
+
+    comments = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"]
+    assert len(comments) == 1
+    assert comments[0]["author"] == "adversary"
+    assert comments[0]["body"] == "state the assumption behind alpha"
+    assert comments[0]["anchor"]["quote"] == "\\alpha" and comments[0]["status"] == "open"
+    assert json.loads((data / "proj" / "jobs.json").read_text()) == []
+    # agents never touch source
+    assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
