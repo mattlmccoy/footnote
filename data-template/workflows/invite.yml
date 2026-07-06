@@ -4,7 +4,8 @@ name: invite
 on:
   push:
     branches: [main]
-    paths: ['advisors.json', 'email_test_request.json']
+    # legacy repo: root advisors.json; consolidated workspace repo: <project-id>/advisors.json
+    paths: ['advisors.json', 'email_test_request.json', '*/advisors.json', '*/email_test_request.json']
   workflow_dispatch:
     inputs:
       test_email:
@@ -31,17 +32,25 @@ jobs:
           TEST=""
           if [ -n "${{ github.event.inputs.test_email }}" ]; then
             TEST="${{ github.event.inputs.test_email }}"
-          elif [ -f email_test_request.json ]; then
-            TEST="$(jq -r '.to // ""' email_test_request.json 2>/dev/null)"
+          else
+            # a test request may sit at the root (legacy) or in any project subfolder (workspace)
+            for req in email_test_request.json */email_test_request.json; do
+              [ -f "$req" ] || continue
+              TEST="$(jq -r '.to // ""' "$req" 2>/dev/null)"; [ -n "$TEST" ] && break
+            done
           fi
           if [ -n "$TEST" ]; then
             echo "go=true" >> "$GITHUB_OUTPUT"
             echo "test_email=$TEST" >> "$GITHUB_OUTPUT"
             echo "test send to $TEST"
-          elif jq -e '[.advisors[]? | select(.email != null and .email != "" and (.invited != true))] | length > 0' advisors.json >/dev/null 2>&1; then
-            echo "go=true" >> "$GITHUB_OUTPUT"
           else
-            echo "go=false" >> "$GITHUB_OUTPUT"; echo "No pending invites."
+            GO=false
+            # any pending invite in the root or any project subfolder?
+            for reg in advisors.json */advisors.json; do
+              [ -f "$reg" ] || continue
+              if jq -e '[.advisors[]? | select(.email != null and .email != "" and (.invited != true))] | length > 0' "$reg" >/dev/null 2>&1; then GO=true; break; fi
+            done
+            if [ "$GO" = true ]; then echo "go=true" >> "$GITHUB_OUTPUT"; else echo "go=false" >> "$GITHUB_OUTPUT"; echo "No pending invites."; fi
           fi
 
       - name: Send invites
@@ -67,8 +76,8 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm -f --ignore-unmatch email_test_request.json >/dev/null 2>&1 || true
-          git add advisors.json
+          git rm -f --ignore-unmatch email_test_request.json */email_test_request.json >/dev/null 2>&1 || true
+          git add advisors.json */advisors.json 2>/dev/null || true
           if git diff --cached --quiet; then echo "no status change"; else
             git commit -m "invite: update advisor invite status [skip ci]"
             # the browser may have written advisors.json since checkout — rebase onto the remote and retry

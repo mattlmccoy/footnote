@@ -40,3 +40,16 @@ test('seedDataRepo tolerates an already-existing file (422) without throwing', a
     : { ok: true, status: 200, text: async () => 'x' };
   await assert.doesNotReject(() => seedDataRepo('alice/data', 'tok', fake, 'http://x/'));
 });
+
+test('seedDataRepo with a project prefix puts config JSON under <id>/ but CI code at the repo root', async () => {
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 201 }; }
+    return { ok: true, status: 200, text: async () => 'x' };   // GET template
+  };
+  await seedDataRepo('alice/ws', 'tok', fake, 'http://x/', 'metro/');
+  assert.ok(puts.includes('.github/workflows/invite.yml'));   // workflows stay repo-level (root/.github)
+  assert.ok(puts.includes('ci_invite.py'));                   // CI scripts stay at the repo root
+  assert.ok(puts.includes('metro/advisors.json'));            // per-project config under <id>/
+  assert.ok(!puts.includes('advisors.json'));                 // NOT at the root (would be a phantom project)
+});

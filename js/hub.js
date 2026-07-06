@@ -408,6 +408,9 @@ export async function launch() {
         q('#np-save').disabled = true;
         q('#np-err').textContent = `Preparing ${wsRepo}…`;
         await createRepo(tok(), wsRepo);   // create the ONE workspace repo if needed (422 = already there)
+        // Seed the background CI: workflows/ci_*.py once at the repo root, this project's config under <id>/.
+        q('#np-err').textContent = 'Setting up background email/notify…';
+        try { await seedDataRepo(wsRepo, tok(), undefined, undefined, `${id}/`); } catch (e) { console.warn('seed:', e.message); }
         let chapters = null;
         if (pendingTex) {
           q('#np-err').textContent = `Committing ${id}/source/main.tex…`;

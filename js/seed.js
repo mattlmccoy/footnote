@@ -27,9 +27,12 @@ export function seedJsonFiles() {
 
 const b64 = s => btoa(unescape(encodeURIComponent(s)));
 
-// Seed a data repo. base is where data-template/ is served from (default the current page). Idempotent:
-// a file that already exists (422) is left as-is. Requires a token with write access to the data repo.
-export async function seedDataRepo(dataRepo, token, fetchImpl, base) {
+// Seed a data repo. base is where data-template/ is served from (default the current page). `prefix` (e.g.
+// "<id>/") namespaces the per-project CONFIG (advisors.json etc.) for a consolidated workspace repo, while
+// the CI CODE (workflows + ci_*.py) stays repo-level so one workspace repo runs one set of workflows for
+// every project. Idempotent: a file that already exists (422) is left as-is (so seeding on every new
+// workspace project only writes the workflows once). Requires a token with write access to the data repo.
+export async function seedDataRepo(dataRepo, token, fetchImpl, base, prefix = '') {
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) throw new Error('no fetch available to seed the data repo');
   const root = (base || (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : './'));
@@ -41,12 +44,12 @@ export async function seedDataRepo(dataRepo, token, fetchImpl, base) {
     });
     if (!r.ok && r.status !== 422) throw new Error(`seed ${path}: ${r.status}`);
   };
-  for (const { src, dest } of SEED_FILES) {
+  for (const { src, dest } of SEED_FILES) {   // CI code + workflows: repo-level, never prefixed
     const res = await f(`${root}data-template/${src}`);
     if (!res || !res.ok) throw new Error(`couldn’t read template ${src}`);
     await put(dest, b64(await res.text()), `seed: ${dest}`);
   }
-  for (const { path, json } of seedJsonFiles()) {
-    await put(path, b64(JSON.stringify(json, null, 2)), `seed: ${path}`);
+  for (const { path, json } of seedJsonFiles()) {   // per-project config: under <prefix> in workspace mode
+    await put(`${prefix}${path}`, b64(JSON.stringify(json, null, 2)), `seed: ${prefix}${path}`);
   }
 }
