@@ -24,6 +24,13 @@ test('SEED_FILES includes the Phase 3 render pipeline (export scripts + driver +
   assert.equal(byDest['.github/workflows/render.yml'], 'workflows/render.yml');
 });
 
+test('SEED_FILES includes the Claude round-trip apply engine (shared core + driver + workflow)', () => {
+  const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
+  assert.equal(byDest['ci_review_common.py'], 'ci_review_common.py');
+  assert.equal(byDest['ci_apply.py'], 'ci_apply.py');
+  assert.equal(byDest['.github/workflows/apply.yml'], 'workflows/apply.yml');
+});
+
 test('seedJsonFiles returns the initial config files (empty/honest)', () => {
   const byPath = Object.fromEntries(seedJsonFiles().map(f => [f.path, f.json]));
   assert.deepEqual(byPath['advisors.json'], { advisors: [], email_configured: false });

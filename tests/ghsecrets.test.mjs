@@ -1,6 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan } from '../js/ghsecrets.js';
+
+// Slice 7: the AI setup panel seals the adopter's OWN Claude credentials. aiSecretsPlan decides which
+// Actions secrets to write from the form — only non-empty fields, trimmed, mapped to their secret names.
+test('aiSecretsPlan seals only the non-empty fields, trimmed, under the right names', () => {
+  assert.deepStrictEqual(
+    aiSecretsPlan({ anthropicKey: 'sk-ant-123', sourceToken: 'ghp_abc' }),
+    [{ name: 'ANTHROPIC_API_KEY', value: 'sk-ant-123' }, { name: 'SOURCE_TOKEN', value: 'ghp_abc' }]);
+  // blank / whitespace-only fields are skipped (don't overwrite an existing secret with empty)
+  assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: 'sk-ant-123', sourceToken: '   ' }),
+    [{ name: 'ANTHROPIC_API_KEY', value: 'sk-ant-123' }]);
+  assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: '  sk-x  ', sourceToken: '' }),
+    [{ name: 'ANTHROPIC_API_KEY', value: 'sk-x' }]);          // trimmed
+  assert.deepStrictEqual(aiSecretsPlan({}), []);              // nothing to do
+});
 
 // A missing-permission error (NOSCOPE, or any 403/404 like latestRun's 'runs 403') must be treated
 // as "token lacks scope" so the flow prompts for a fuller token — while transient errors are NOT.

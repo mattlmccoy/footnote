@@ -1,15 +1,16 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=b1dc822';
-import { anchorFromSelection } from './anchor.js?v=b1dc822';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=b1dc822';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=b1dc822';
-import { ensureRenderPipeline } from './seed.js?v=b1dc822';
-import { sealToBase64 } from './vendor/seal.js?v=b1dc822';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=b1dc822';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=b1dc822';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=b1dc822';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=b1dc822';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=b1dc822';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=b1dc822';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=8f1c6ee';
+import { anchorFromSelection } from './anchor.js?v=8f1c6ee';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=8f1c6ee';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=8f1c6ee';
+import { ensureRenderPipeline } from './seed.js?v=8f1c6ee';
+import { sealToBase64 } from './vendor/seal.js?v=8f1c6ee';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=8f1c6ee';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=8f1c6ee';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=8f1c6ee';
+import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=8f1c6ee';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=8f1c6ee';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f1c6ee';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=8f1c6ee';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -145,7 +146,20 @@ const DATA_REPO = _CFG.dataRepo;
 // chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
 // "import your document" state. Re-fetched on reload after a token is added or a document imported.
 let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
-const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : { n:'?', title:id });
+const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : id === '__whole__' ? { n:'·', title:'Whole document' } : { n:'?', title:id });
+// ---------- whole-document ("read the whole paper") view state ----------
+// WHOLE = the continuous view is active. _reviews holds EVERY chapter's review (per-chapter files stay
+// separate — comments never collapse into one blob). _wholeUnits = the assembled ordered units;
+// _wholeAdv = per-chapter advisor comments. All writes route back to the owning chapter's file.
+let WHOLE = false;
+const _reviews = {};      // chapterId -> reviewObj
+let _wholeUnits = [];     // orderedUnits(CHAPTERS) currently assembled
+const _wholeAdv = {};     // chapterId -> [advisor comments]
+const chapterIdOfNode = node => {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const seg = el && el.closest && el.closest('.wd-chapter');
+  return seg ? stripSegmentId(seg.id) : null;
+};
 const TAGS = ['claim','wording','figure','citation','question'];
 // platform-adaptive modifier label (handlers accept ⌘ or Ctrl; this is just the on-screen text)
 const IS_MAC = /Mac|iPhone|iPad/.test((navigator.platform || '') + ' ' + (navigator.userAgent || ''));
@@ -210,7 +224,7 @@ function renderTopbar(){
   const m = chMeta(current);
   document.getElementById('topbar').innerHTML = `
     <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
-    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${UNITC} ${m.n} · ${shortTitle(m.title)}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
+    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${UNITC} ${m.n} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT} · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -238,7 +252,8 @@ function openChapterMenu(){
   const old = document.getElementById('chmenu'); if (old){ old.remove(); return; }
   const menu = document.createElement('div'); menu.id = 'chmenu';
   menu.style.cssText = 'position:absolute;top:50px;left:16px;z-index:40;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 34px rgba(0,0,0,.16);padding:6px;min-width:330px';
-  menu.innerHTML = CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('');
+  const wholeRow = CHAPTERS.length ? `<div data-ch="__whole__" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500${current==='__whole__'?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px"><i class="ti ti-book"></i></span>Whole ${escapeHtml(DOC)}</div><div style="height:1px;background:var(--border);margin:5px 8px"></div>` : '';
+  menu.innerHTML = wholeRow + CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('');
   menu.querySelectorAll('[data-ch]').forEach(d => { d.onmouseenter = () => { if (d.dataset.ch!==current) d.style.background='var(--bg-3)'; };
     d.onmouseleave = () => { if (d.dataset.ch!==current) d.style.background='transparent'; };
     d.onclick = () => { menu.remove(); selectChapter(d.dataset.ch); }; });
@@ -246,7 +261,9 @@ function openChapterMenu(){
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
-function enterChapter(ch){ if (ch === '__outline__'){ localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+  if (ch === '__whole__'){ localStorage.setItem('lastChapter', ch); loadWholeDoc(); return; }   // the whole-document view assembles every unit; it isn't a single fetch
+  WHOLE = false;
   current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar(); renderComments(); loadChapter(ch); }
@@ -274,14 +291,8 @@ async function loadChapter(ch){
       <button class="btn btn-primary" id="connect">Enter a new token</button></div>`;
       document.getElementById('connect').onclick = () => { const v = prompt('New fine-grained PAT:'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
       return; }
-    if (/\b404\b/.test(e.message)){   // source is imported but this unit's reading HTML hasn't been built yet
-      read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
-        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:440px;margin:0 auto 14px">Your LaTeX source is in place. Build it to a clean reading view — this runs on your own GitHub Actions and takes a couple of minutes.</div>
-        <button class="btn btn-primary" id="buildrv">Build reading view</button>
-        <div id="buildrv-status" style="font-size:12.5px;color:var(--text-3);margin-top:12px;line-height:1.6;max-width:440px;margin-left:auto;margin-right:auto"></div></div>`;
-      const build = document.getElementById('buildrv');
-      if (build) build.onclick = () => buildReadingView(build, ch);
+    if (/\b404\b/.test(e.message)){   // source imported but this unit's reading HTML isn't built — build it automatically
+      autoBuildReadingView(ch);
       return; }
     read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(UNIT)} ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
 }
@@ -293,41 +304,48 @@ function renderConnect(){
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
 
-// Self-heal + build: ensure the render pipeline exists in the data repo (idempotent — recovers a project
-// whose first seed failed), fire the render workflow for this project, poll it, and load the result. On a
-// missing workflow scope it tells the user exactly how to fix their token instead of failing silently.
-async function buildReadingView(btn, ch){
+// Seamless render: when a unit's reading HTML isn't there yet, build it AUTOMATICALLY — no button. If a
+// build is already running (the render workflow auto-fires on import), just poll it; otherwise self-heal
+// (ensure the pipeline exists — recovers a project whose first seed failed — and start a build), then poll
+// until this section's content appears and load it. A missing `workflow` scope is the one unrecoverable
+// case: tell the user exactly how to fix their token instead of spinning forever.
+const _buildKicked = new Set();   // project ids we've already started a build for this session (no double-dispatch)
+async function autoBuildReadingView(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
-  const st = document.getElementById('buildrv-status');
-  const say = m => { if (st) st.textContent = m; };
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  btn.disabled = true;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i>
+    <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Building your reading view…</div>
+    <div id="buildrv-status" style="font-size:12.5px;color:var(--text-3);max-width:460px;margin:0 auto;line-height:1.7"></div></div>`;
+  const say = m => { const s = document.getElementById('buildrv-status'); if (s) s.innerHTML = m; };
+  const fetchContent = () => fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/' + ch + '.html')}`,
+    { headers: { Authorization: `Bearer ${t}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' }).catch(() => null);
   try {
-    say('Setting up the build pipeline on your repo…');
-    const res = await ensureRenderPipeline(DATA_REPO, t);
-    if (res.seeded.includes('.github/workflows/render.yml')) await wait(4000);   // let GitHub register the new workflow
-    say('Starting the build…');
-    let dispatched = false;
-    for (let a = 0; a < 3 && !dispatched; a++){
-      try { await dispatchRender(t, _projectId); dispatched = true; }
-      catch (err){ if (a === 2) throw err; await wait(3000); }                    // workflow may still be registering
+    let run = await renderRun(t).catch(() => null);
+    const active = run && (run.status === 'queued' || run.status === 'in_progress');
+    if (!active && !_buildKicked.has(_projectId)){          // nothing building → make sure it can, and start it
+      say('Setting up the build on your repo…');
+      const res = await ensureRenderPipeline(DATA_REPO, t);
+      if (res.seeded.includes('.github/workflows/render.yml')) await wait(4000);   // let GitHub register the new workflow
+      for (let a = 0; a < 3; a++){ try { await dispatchRender(t, _projectId); break; } catch (err){ if (a === 2) throw err; await wait(3000); } }
+      _buildKicked.add(_projectId);
     }
-    say('Building your reading view — this takes a couple of minutes…');
-    let ok = false;
-    for (let i = 0; i < 48; i++){                                                 // up to ~4 min
+    say(`Rendering your ${escapeHtml(UNIT)}s on your GitHub — this takes a couple of minutes…`);
+    for (let i = 0; i < 60; i++){                            // poll up to ~5 min; load the instant this section lands
       await wait(5000);
-      const run = await renderRun(t).catch(() => null);
-      if (run && run.status === 'completed'){ ok = run.conclusion === 'success'; break; }
-      if (run && run.status) say(`Building… (${run.status})`);
+      const c = await fetchContent();
+      if (c && c.ok){ renderDoc(await c.text()); return; }
+      run = await renderRun(t).catch(() => null);
+      if (run && run.status === 'completed' && run.conclusion !== 'success'){
+        say('The build didn’t succeed. Open the <b>Actions</b> tab on your data repo to see why, then reload.'); return;
+      }
+      if (run && run.status) say(`Building… (${escapeHtml(run.status)})`);
     }
-    if (ok){ say('Done — loading your reading view…'); loadChapter(ch); }
-    else say('The build finished but didn’t succeed. Open the Actions tab on your data repo to see why, then try again.');
+    say('This is taking longer than expected. Check the <b>Actions</b> tab on your data repo, then reload.');
   } catch (e){
-    btn.disabled = false;
     if (/workflow-scope/.test(e.message)){
-      st.innerHTML = `Your token is missing the <b>workflow</b> permission, so Footnote can’t set up the build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then try again.`;
+      say(`Your token is missing the <b>workflow</b> permission, so Footnote can’t build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then reload.`);
     } else {
-      say('Couldn’t build the reading view: ' + e.message);
+      say('Couldn’t build the reading view: ' + escapeHtml(e.message) + '. Check <b>⋯ → Settings</b>.');
     }
   }
 }
@@ -556,7 +574,7 @@ function wireFigures(doc){
       const rr = read.getBoundingClientRect(), fr = fig.getBoundingClientRect();
       const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
       pending = { quote: info.label ? `${info.label}${info.quote?': '+info.quote:''}` : (info.quote || 'Figure'),
-                  kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[] };
+                  kind:'figure', figure:info.id, section: headingFor(fig), confirmed:true, rects:[], chapterId: WHOLE ? chapterIdOfNode(fig) : null };
       showPopover(pending, rects, 'figure', fig);
     });
   });
@@ -579,7 +597,7 @@ function wireFigures(doc){
       }
       const rr = read.getBoundingClientRect(), fr = el.getBoundingClientRect();
       const rects = [{ x:fr.x-rr.x, y:fr.y-rr.y+read.scrollTop, w:fr.width, h:fr.height }];
-      pending = { quote: label ? `${label}: ${quote}` : quote, kind:'figure', figure:label, section: headingFor(el), confirmed:true, rects:[] };
+      pending = { quote: label ? `${label}: ${quote}` : quote, kind:'figure', figure:label, section: headingFor(el), confirmed:true, rects:[], chapterId: WHOLE ? chapterIdOfNode(el) : null };
       showPopover(pending, rects, isTable ? 'figure' : 'claim');   // no figEl → no Draw button
     });
   });
@@ -706,6 +724,7 @@ function selToPopover(){
   const rects = [...range.getClientRects()].map(r => ({ x:r.x-rr.x, y:r.y-rr.y+read.scrollTop, w:r.width, h:r.height }));
   pending = anchorFromSelection({ text, page:null, rects });
   pending.section = headingFor(range.startContainer);
+  pending.chapterId = WHOLE ? chapterIdOfNode(range.startContainer) : null;   // whole-doc: which chapter's review does this comment belong to
   showPopover(pending, rects);
 }
 read.addEventListener('mouseup', selToPopover);
@@ -761,7 +780,9 @@ function showPopover(anchor, rects, defaultTag='claim', figEl=null){
     else if (mode === 'insert') edit = { op:'insert', find:anchor.quote, position:'after', replacement:repl.value };
     else if (mode === 'delete') edit = { op:'delete', find:anchor.quote, replacement:'' };
     if (edit && mode !== 'delete' && !repl.value.trim()){ flash('Enter the '+(mode==='insert'?'text to insert':'replacement text')+'.'); return; }
-    review = addComment(review, { anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit });
+    const fields = { anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit };
+    if (WHOLE){ createWholeComment(pending.chapterId, fields); pop.remove(); window.getSelection().removeAllRanges(); return; }
+    review = addComment(review, fields);
     save(); syncUpSoon(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#ccancel').onclick = close;
   saveBtn.onclick = commit;
@@ -772,6 +793,7 @@ function showPopover(anchor, rects, defaultTag='claim', figEl=null){
 // ---------- draw-on-figure markup (capture-only: composites figure + strokes → PNG) ----------
 const markupCache = {};   // path -> dataURL, so a freshly-drawn markup shows instantly
 function openFigureMarkup(fig, anchor){
+  if (WHOLE && !anchor.chapterId){ flash(`Couldn't tell which ${UNIT} this figure is in — reopen it and try again.`); return; }   // whole-doc: the markup routes to anchor.chapterId's review
   document.getElementById('pop')?.remove();
   const img = fig.querySelector('img') || fig;
   const ir = img.getBoundingClientRect();
@@ -817,14 +839,23 @@ function openFigureMarkup(fig, anchor){
     try { const ex = document.createElement('canvas'); ex.width=W; ex.height=H; const ec = ex.getContext('2d');
       ec.drawImage(ov.querySelector('.figmk-img'), 0,0, W,H); ec.drawImage(canvas, 0,0);
       const dataUrl = ex.toDataURL('image/png'); b64 = dataUrl.split(',')[1];
-      review = addComment(review, { anchor, kind:'figure', tag:'figure', body:note });
-      const c = review.comments[review.comments.length-1];
+      // whole-doc: route the markup comment to the figure's OWN chapter review; else the current chapter.
+      const chId = WHOLE ? anchor.chapterId : null;
+      let rev = addComment(chId ? routeWrite(_reviews, chId, id => loadLocalReview(id)) : review, { anchor, kind:'figure', tag:'figure', body:note });
+      const c = rev.comments[rev.comments.length-1];
       const path = `markups/${c.id}.png`; markupCache[path] = dataUrl;
-      review = updateComment(review, c.id, { markup:{ path, ts:new Date().toISOString() } });
-      save(); renderComments(); buildNav(); paintHighlights(); ov.remove();
+      rev = updateComment(rev, c.id, { markup:{ path, ts:new Date().toISOString() } });
       const t = tok();
-      if (t){ await putFile(t, path, b64, `markup: figure comment ${c.id}`); await syncUp(); flash('Markup saved.'); }
-      else flash('Markup saved locally — connect to upload it.');
+      if (chId){
+        _reviews[chId] = rev; localStorage.setItem('review:'+chId, JSON.stringify(rev));
+        paintWholeHighlights(); buildNavWhole(); renderWholeComments(); ov.remove();
+        if (t){ await putFile(t, path, b64, `markup: figure comment ${c.id}`); await pushChapterReview(chId); flash('Markup saved.'); }
+        else flash('Markup saved locally — connect to upload it.');
+      } else {
+        review = rev; save(); renderComments(); buildNav(); paintHighlights(); ov.remove();
+        if (t){ await putFile(t, path, b64, `markup: figure comment ${c.id}`); await syncUp(); flash('Markup saved.'); }
+        else flash('Markup saved locally — connect to upload it.');
+      }
     } catch(e){ flash('Markup upload failed: '+e.message); }
   };
 }
@@ -916,15 +947,15 @@ function buildCommentCard(c){
       ${c.status === 'staged' ? `<div class="cdec" data-id="${c.id}">
         <button class="btn cdec-b ${c.decision==='approve'?'on-approve':''}" data-d="approve"><i class="ti ti-check"></i>Approve</button>
         <button class="btn cdec-b ${c.decision==='reject'?'on-reject':''}" data-d="reject"><i class="ti ti-x"></i>Reject</button>
-        <button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>
+        ${assistantOn() ? `<button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>` : ''}
       </div>
-      <div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for Claude."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Claude</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}
+      ${assistantOn() ? `<div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for Claude."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Claude</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}` : ''}
       ${c.status === 'approved' ? `<div class="cdec" data-id="${c.id}"><span class="cqd"><i class="ti ti-clock-check"></i>queued for merge</span><button class="btn cunq" data-id="${c.id}"><i class="ti ti-arrow-back-up"></i>Unqueue</button></div>` : ''}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
       ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
-      ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(c.claude?.response||c.claude?.branch?'Reply / push back':'Add a note')}</button>
-        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${c.claude?.response||c.claude?.branch?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
+      ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply / push back':'Add a note')}</button>
+        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
     if (c.id === activeCommentId) card.classList.add('active');
     card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
@@ -963,7 +994,8 @@ function buildCommentCard(c){
 async function replyToComment(id, text){
   const c = review.comments.find(x => x.id === id); if (!c) return;
   const thread = [...(c.thread||[]), { author:'you', text, ts:new Date().toISOString() }];
-  const handled = !!(c.claude?.response || c.claude?.branch) || ['staged','approved','answered','merged'].includes(c.status);
+  // Only re-queue for Claude when the assistant is ON; with AI off a reply is just a private note.
+  const handled = assistantOn() && (!!(c.claude?.response || c.claude?.branch) || ['staged','approved','answered','merged'].includes(c.status));
   review = updateComment(review, id, { thread, status: handled ? 'queued' : c.status });
   save(); renderComments(); buildNav(); paintHighlights();
   const t = tok(); if (!t){ flash('Reply saved locally.'); return; }
@@ -1014,7 +1046,7 @@ function buildAdvCard(c){
       <button class="btn a-note"><i class="ti ti-note"></i>Private note</button>
       <button class="btn a-suggest"><i class="ti ti-pencil"></i>Suggest edit</button>
       <button class="btn a-rec"><i class="ti ti-message-check"></i>${c.resolution?'Update':'Resolution'}</button>
-      <button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button></div>
+      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button>` : ''}</div>
     <div class="rel-pop a-replybox" style="display:none"><textarea rows="2" placeholder="Reply to ${escapeHtml(whoLabel(c))} — they'll see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-reply-save">Send reply</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-notebox" style="display:none"><textarea rows="2" placeholder="Private note — only you see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-note-save">Save note</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-suggestbox" style="display:none"><div class="sug-passage">Editing this passage:<blockquote>"${escapeHtml(c.anchor?.quote||'')}"</blockquote><button class="btn a-jump2" style="padding:2px 8px;font-size:11px"><i class="ti ti-arrow-right"></i>Read it in context</button></div>
@@ -1046,9 +1078,10 @@ function buildAdvCard(c){
   card.querySelector('.a-sug-save').onclick = async () => { const op = card.querySelector('.a-sug-op').value, find = card.querySelector('.a-sug-find').value.trim(), replacement = card.querySelector('.a-sug-repl').value.trim();
     if (!find && op !== 'insert'){ alert('Enter the text to find.'); return; }
     try { const edit = { op, find, replacement }; await suggestAdvisorEdit(c._advisor, current, c.id, edit); c.edit = edit; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } };
-  card.querySelector('.a-send').onclick = async () => { if (!confirm('Send this comment to Claude to address?')) return;
-    const b = card.querySelector('.a-send'); b.disabled = true; b.textContent = 'Sending…';
-    try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ b.textContent = 'Failed: ' + e.message; } };
+  const aSendBtn = card.querySelector('.a-send');   // present only when the assistant is on
+  if (aSendBtn) aSendBtn.onclick = async () => { if (!confirm('Send this comment to Claude to address?')) return;
+    aSendBtn.disabled = true; aSendBtn.textContent = 'Sending…';
+    try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ aSendBtn.textContent = 'Failed: ' + e.message; } };
   card.querySelector('.r-save').onclick = async () => { const stat = card.querySelector('.r-stat'); stat.textContent = 'Saving…';
     const resolution = { state:card.querySelector('.r-state').value, note:card.querySelector('.r-note').value.trim(), ts:new Date().toISOString() };
     try { await recordResolution(c._advisor, current, c.id, resolution); c.resolution = resolution; c.read = true; stat.textContent = 'Saved — visible to the reviewer.'; setTimeout(swap, 600); }
@@ -1156,21 +1189,22 @@ function jumpTo(c){
   if (el) scrollFlash(el); else flash(`Couldn’t find this passage in the ${UNIT}; it may have changed since the comment.`);
 }
 function activateComment(id){
-  activeCommentId = id; renderComments();
+  activeCommentId = id; if (WHOLE) renderWholeComments(); else renderComments();
   const card = document.querySelector(`#comments .ccard[data-id="${id}"]`);
   card?.scrollIntoView({ behavior:'smooth', block:'center' });
   card?.classList.add('flash'); setTimeout(() => card?.classList.remove('flash'), 1500);
 }
-// wrap each comment's quoted text in a <mark> so commented passages are visible while reading
-function paintHighlights(){
-  const doc = document.getElementById('doc'); if (!doc) return;
-  doc.querySelectorAll('mark.cmark').forEach(m => { const p = m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
-  doc.querySelectorAll('.cmark-el').forEach(e => { e.classList.remove('cmark-el'); e.onclick = null; delete e.dataset.cid; });
-  doc.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
-  const blocks = [...doc.querySelectorAll('p, li, figcaption')];
-  review.comments.forEach(c => {
+// wrap each comment's quoted text in a <mark> so commented passages are visible while reading.
+// paintCommentsIn scopes ALL matching to `root` — in whole-doc `root` is one #wd-<id> segment, so an
+// identical phrase in another chapter can never be highlighted by this chapter's comment.
+function paintCommentsIn(root, comments, advComments){
+  root.querySelectorAll('mark.cmark').forEach(m => { const p = m.parentNode; m.replaceWith(...m.childNodes); p.normalize(); });
+  root.querySelectorAll('.cmark-el').forEach(e => { e.classList.remove('cmark-el'); e.onclick = null; delete e.dataset.cid; });
+  root.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
+  const blocks = [...root.querySelectorAll('p, li, figcaption')];
+  (comments||[]).forEach(c => {
     if (RESOLVED_STATES.has(c.status)) return;   // don't highlight finalized comments (merged/answered/declined/resolved)
-    if (c.kind === 'figure'){ markFigure(doc, c); return; }
+    if (c.kind === 'figure'){ markFigure(root, c); return; }
     const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);
     const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(needle.slice(0,40)));
@@ -1178,13 +1212,145 @@ function paintHighlights(){
     if (!wrapInNode(el, needle, c)){ el.classList.add('cmark-el'); el.dataset.cid = c.id; el.style.setProperty('--mk', `var(--${c.tag})`); el.onclick = () => activateComment(c.id); }
   });
   // advisor comments — distinct marker, jump to their card
-  advisorComments.forEach(c => {
+  (advComments||[]).forEach(c => {
     if (c.kind === 'figure') return;
     const q = (c.anchor?.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);
     const el = blocks.find(e => e.textContent.replace(/\s+/g,' ').includes(needle.slice(0,40)));
     if (el) wrapInNode(el, needle, c, true);
   });
+}
+function paintHighlights(){
+  const doc = document.getElementById('doc'); if (!doc) return;
+  if (WHOLE){ paintWholeHighlights(); return; }
+  paintCommentsIn(doc, review.comments, advisorComments);
+}
+// ================= whole-document ("read the whole paper") view =================
+// Assemble every unit into one #doc, each wrapped in a #wd-<id> segment. Comments are held per chapter
+// in _reviews and resolved WITHIN their own segment (chapter-scoped anchoring), and new comments route
+// back to the owning chapter's review file. Live sync is off in this view (v1) — a manual refresh rebuilds.
+async function loadWholeDoc(){
+  WHOLE = true; current = '__whole__'; review = loadLocalReview('__whole__'); localStorage.setItem('lastChapter', '__whole__');
+  document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
+  stopOwnerLiveSync();                       // v1: no per-chapter polling in whole-doc; single-chapter live sync is untouched
+  renderTopbar();                            // chsel shows "Whole document" via chMeta
+  _wholeUnits = orderedUnits(CHAPTERS);
+  if (!_wholeUnits.length){
+    read.innerHTML = `<div class="empty"><i class="ti ti-book" style="font-size:24px;color:var(--text-3)"></i>
+      <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing to read yet</div>
+      <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">Import your ${escapeHtml(DOC)} first — then the whole ${escapeHtml(DOC)} shows here as one continuous read.</div></div>`;
+    document.getElementById('nav').innerHTML = ''; document.getElementById('comments').innerHTML = ''; return;
+  }
+  const t = tok(); if (!t){ renderConnect(); return; }
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const parts = [];
+  for (const u of _wholeUnits){
+    let frag = null;
+    try {
+      if (dev){ const r = await fetch(`./chapters/${u.id}.html`); if (r.ok) frag = await r.text(); }
+      if (frag == null){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+u.id+'.html')}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } }); if (r.ok) frag = await r.text(); }
+    } catch(e){}
+    if (frag == null) frag = `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
+    parts.push(wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag));
+  }
+  read.innerHTML = `<article id="doc">${parts.join('\n')}</article>`;
+  const doc = document.getElementById('doc');
+  fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
+  await loadAllReviews(_wholeUnits);
+  buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+}
+// Load EVERY unit's owner review (local merged with remote) + advisor comments into the per-chapter maps.
+async function loadAllReviews(units){
+  const t = tok(); const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  let advPaths = [];
+  if (!dev && t){ try { advPaths = await ghTree(t); } catch(e){} }
+  for (const u of units){
+    let rev = loadLocalReview(u.id);
+    try {
+      if (dev){ const r = await fetch(`./reviews/${u.id}.json`); if (r.ok) rev = reconcileReview(rev, await r.json(), true); }
+      else if (t){ const { json } = await getJson(t, reviewPath(u.id)); if (json) rev = reconcileReview(rev, json, true); }
+    } catch(e){}
+    _reviews[u.id] = rev;
+    const adv = [];
+    if (!dev && t){
+      const re = new RegExp(`^advisor/([^/]+)/${u.id}\\.json$`);
+      const ids = [...new Set(advPaths.map(p => { const m = p.match(re); return m && m[1]; }).filter(Boolean))];
+      for (const a of ids){ try { const { json } = await getJson(t, `advisor/${a}/${u.id}.json`); (json?.comments||[]).forEach(c => { if (c.status !== 'open') adv.push({ ...c, _advisor:a }); }); } catch(e){} }
+    }
+    _wholeAdv[u.id] = adv;
+  }
+}
+function paintWholeHighlights(){
+  const doc = document.getElementById('doc'); if (!doc) return;
+  _wholeUnits.forEach(u => { const seg = document.getElementById('wd-' + u.id); if (!seg) return;
+    paintCommentsIn(seg, (_reviews[u.id] && _reviews[u.id].comments) || [], _wholeAdv[u.id] || []); });
+}
+// Nav spans the whole doc: a bold per-chapter entry (with its active-comment count) + its section links.
+function buildNavWhole(){
+  const nav = document.getElementById('nav');
+  nav.innerHTML = `<div class="lbl">${escapeHtml(DOC.toUpperCase())}<span style="margin-left:auto">${_wholeUnits.length}</span></div>`;
+  _wholeUnits.forEach(u => {
+    const cnt = ((_reviews[u.id] && _reviews[u.id].comments) || []).filter(c => !RESOLVED_STATES.has(c.status)).length;
+    const a = document.createElement('a'); a.dataset.seg = 'wd-' + u.id;
+    a.innerHTML = `<span class="nav-t" style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(u.n + ' · ' + shortTitle(u.title))}</span>${cnt?`<span class="count">${cnt}</span>`:''}`;
+    a.querySelector('.nav-t').onclick = () => document.getElementById('wd-' + u.id)?.scrollIntoView({ behavior:'smooth', block:'start' });
+    nav.appendChild(a);
+    const seg = document.getElementById('wd-' + u.id);
+    [...(seg ? seg.querySelectorAll('h2, h3') : [])].forEach((h, i) => { if (!h.id) h.id = 'wd-' + u.id + '-sec-' + i;
+      const s = document.createElement('a'); s.className = h.tagName === 'H3' ? 'sub' : ''; s.dataset.sec = h.id;
+      s.innerHTML = `<span class="nav-t" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-left:14px;color:var(--text-2)">${escapeHtml(h.textContent)}</span>`;
+      s.querySelector('.nav-t').onclick = () => h.scrollIntoView({ behavior:'smooth', block:'start' }); nav.appendChild(s); });
+  });
+}
+// One aggregated sidebar; each card tagged with its chapter and clicking scrolls to the passage. Reply /
+// resolve / approve stay in the single-chapter view (v1) — creation + view + routing are the contract here.
+function renderWholeComments(){
+  const pane = document.getElementById('comments');
+  const flat = mergeReviews(_reviews, _wholeUnits).filter(x => !RESOLVED_STATES.has(x.comment.status));
+  const open = flat.filter(x => x.comment.status === 'open').length;
+  pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${flat.length} · ${open} open</span></div>`;
+  if (!flat.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text in any ${escapeHtml(UNIT)} to leave a comment. Open a single ${escapeHtml(UNIT)} to reply or resolve.</div>`; return; }
+  flat.forEach(({ chapterId, comment }) => pane.appendChild(buildWholeCard(chapterId, comment)));
+}
+function buildWholeCard(chapterId, c){
+  const m = chMeta(chapterId);
+  const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
+  card.innerHTML = `<div class="row">
+      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(UNITC)} ${m.n}</span>
+      <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>
+      ${c.status && c.status !== 'open' ? `<span class="status" style="margin-left:auto">${escapeHtml(c.status)}</span>` : ''}</div>
+    <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
+    ${c.body?`<div class="body">${escapeHtml(c.body)}</div>`:''}`;
+  card.style.cursor = 'pointer';
+  card.onclick = () => { const seg = document.getElementById('wd-' + chapterId);
+    const mark = seg && seg.querySelector(`.cmark[data-id="${c.id}"], .cmark-el[data-cid="${c.id}"], figure[data-cid="${c.id}"]`);
+    (mark || seg)?.scrollIntoView({ behavior:'smooth', block:'center' });
+    if (mark){ mark.classList.add('flash'); setTimeout(() => mark.classList.remove('flash'), 1500); } };
+  return card;
+}
+// Create a comment in the whole-doc view: mutate ONLY the owning chapter's review + persist to its file.
+function createWholeComment(chapterId, fields){
+  if (!chapterId){ flash(`Couldn't tell which ${UNIT} that selection is in — try again.`); return; }
+  const rev = routeWrite(_reviews, chapterId, id => loadLocalReview(id));
+  _reviews[chapterId] = addComment(rev, fields);
+  localStorage.setItem('review:' + chapterId, JSON.stringify(_reviews[chapterId]));
+  paintWholeHighlights(); buildNavWhole(); renderWholeComments();
+  pushChapterReview(chapterId);
+}
+// Persist one chapter's review to reviews/<id>.json in isolation (mirrors syncUp but never touches the
+// global current/review/reviewSha — so a whole-doc write can't disturb single-chapter sync state).
+async function pushChapterReview(chapterId){
+  const t = tok(); if (!t) return;
+  for (let attempt = 0; attempt < 5; attempt++){
+    try {
+      const { json, sha } = await getJson(t, reviewPath(chapterId));
+      _reviews[chapterId] = reconcileReview(_reviews[chapterId], json, false);
+      localStorage.setItem('review:' + chapterId, JSON.stringify(_reviews[chapterId]));
+      await putJson(t, reviewPath(chapterId), _reviews[chapterId], sha, 'review: ' + chapterId, false);
+      return;
+    } catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; } return; }
+  }
 }
 function wrapInNode(el, needle, c, advisor){
   const tw = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
@@ -2057,7 +2223,7 @@ function homeHtml(){
       <i class="ti ti-player-play" style="font-size:22px;color:var(--accent)"></i>
       <div style="min-width:0">
         <div style="font-size:11.5px;color:var(--text-2)">Continue where you left off</div>
-        <div style="font-size:14px;font-weight:500">${UNITC} ${lm.n} · ${shortTitle(lm.title)}</div>
+        <div style="font-size:14px;font-weight:500">${last==='__whole__' ? `Whole ${escapeHtml(DOC)}` : `${UNITC} ${lm.n} · ${shortTitle(lm.title)}`}</div>
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
@@ -2080,8 +2246,15 @@ function homeHtml(){
       <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Import your ${DOC}</div>
       <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Point Footnote at your LaTeX source (<code>main.tex</code>) or a Word <code>.docx</code>. Footnote parses it to find your ${UNIT}s — nothing is hardcoded.${hasTok ? '' : ' Add your access token first.'}</div>
       <button class="btn btn-primary" id="import-doc" style="padding:8px 16px">${hasTok ? `Import ${DOC}` : 'Add token'}</button></div>`;
+  const wholeBtn = CHAPTERS.length
+    ? `<button class="btn" data-ch="__whole__" style="display:flex;align-items:center;gap:9px;width:100%;justify-content:flex-start;padding:12px 15px;margin-bottom:16px;border:.5px solid var(--border);border-radius:var(--r-lg);cursor:pointer">
+         <i class="ti ti-book" style="font-size:19px;color:var(--accent)"></i>
+         <span style="text-align:left"><span style="display:block;font-size:14px;font-weight:600">Read the whole ${escapeHtml(DOC)}</span>
+         <span style="display:block;font-size:11.5px;color:var(--text-3)">Every ${escapeHtml(UNIT)} as one continuous read — comment anywhere</span></span></button>`
+    : '';
   const allCh = CHAPTERS.length
     ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+       ${wholeBtn}
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
@@ -2234,7 +2407,7 @@ function toggleHelp(){
   ov.innerHTML = `<div class="help-card">
     <div class="help-h">Reference</div>
     <div class="help-sub">Toolbar</div>
-    ${BUTTONS.map(([ic,d]) => `<div class="help-row"><span class="help-ic"><i class="ti ${ic}"></i></span><span>${d}</span></div>`).join('')}
+    ${BUTTONS.map(([ic,d]) => `<div class="help-row"><span class="help-ic"><i class="ti ${ic}"></i></span><span>${ic==='ti-send' && !assistantOn() ? 'Review actions — stage, approve &amp; merge, plus Export' : d}</span></div>`).join('')}
     <div class="help-sub" style="margin-top:14px">Keyboard</div>
     ${SHORTCUTS.map(([k,d]) => `<div class="help-row"><kbd>${k}</kbd><span>${d}</span></div>`).join('')}
     <div style="text-align:right;margin-top:14px"><button class="btn" id="help-x">Close</button></div></div>`;
@@ -2277,16 +2450,33 @@ function aiSettingHtml(){
   const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
   const agents = shipped ? escapeHtml(_CFG.reviewAgents.join(', '))
     : '<span style="color:var(--text-3)">none configured — “Run review agents” stays hidden</span>';
+  const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
   const setup = on ? `
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
-      <div style="margin-bottom:8px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> Claude credentials. A queued edit just waits until these are set — nothing runs, and nothing is sent anywhere else.</div>
-      <div style="display:grid;gap:6px">
-        <div>1. Install the <b>Claude Code GitHub App</b> on your source and data repositories.</div>
-        <div>2. Add <code>ANTHROPIC_API_KEY</code> and <code>SOURCE_TOKEN</code> as Actions secrets in <a href="https://github.com/${escapeHtml(DATA_REPO)}/settings/secrets/actions" target="_blank" rel="noopener">Settings → Secrets → Actions</a>.</div>
-        <div>3. Review agents: ${agents}.</div>
+      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. A queued edit just waits until these are set.</div>
+      <div style="margin-bottom:4px"><b>1. Install the Claude Code GitHub App</b> on your source and data repositories — <a href="https://github.com/apps/claude" target="_blank" rel="noopener">github.com/apps/claude</a>.</div>
+      <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
+      <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
+        <label for="ai-key">Anthropic API key</label>
+        <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
+        <label for="ai-srctok">Source repo token</label>
+        <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
+        <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+      </div>
+      <div style="margin:10px 0 4px"><b>3. Review agents</b> (comma-separated ids; blank = no agents):</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="ai-agents" placeholder="e.g. adversary, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" style="flex:1;${inp}" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>
+        <button class="btn" id="ai-save-agents" style="padding:5px 12px">Save</button>
+        <span id="ai-agents-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <button class="btn" id="ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
+        <span id="ai-run-stat" style="font-size:11.5px;color:var(--text-3)">Drains any queued jobs — or the queue drains automatically when you send.</span>
       </div>
       <div style="margin-top:8px;color:var(--text-3)"><i class="ti ti-git-branch" style="margin-right:4px"></i>Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to preview and approve — nothing reaches your document without your say-so.</div>
-      <div style="margin-top:6px;color:var(--warn)"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Status: not verified from here (GitHub keeps secrets write-only). The backend that runs Claude lands next.</div>
     </div>` : '';
   return `<div id="ai-setting" style="margin:0 0 16px;padding:12px 14px;border:.5px solid var(--border);border-radius:9px;background:var(--bg-2)">
       <div style="display:flex;align-items:center;gap:10px">
@@ -2297,6 +2487,49 @@ function aiSettingHtml(){
         </div>
         <button class="btn${on?' btn-primary':''}" id="ai-toggle" ${shipped?'disabled title="This project ships an agent list in its config — edit the config to change this."':''} style="padding:6px 16px">${on?'On':'Off'}</button>
       </div>${setup}</div>`;
+}
+// Wire the AI setup panel: seal credentials, save the agent list, and manually run the queue. All I/O
+// runs on the owner's OWN data repo via their token; secrets are sealed client-side and never stored
+// by the app. No-ops when the panel isn't shown (assistant off).
+function wireAiSetup(t){
+  const saveSec = document.getElementById('ai-save-secrets');
+  if (saveSec) saveSec.onclick = async () => {
+    const stat = document.getElementById('ai-secrets-stat');
+    const values = { anthropicKey: document.getElementById('ai-key').value,
+                     sourceToken: document.getElementById('ai-srctok').value };
+    saveSec.disabled = true; stat.textContent = 'Sealing…'; stat.style.color = 'var(--text-3)';
+    try {
+      const names = await setAiSecrets(t, sealToBase64, values);
+      if (!names.length){ stat.textContent = 'Nothing to save — enter at least one credential.'; }
+      else { stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.';
+             document.getElementById('ai-key').value = ''; document.getElementById('ai-srctok').value = ''; }
+    } catch(e){ stat.style.color = 'var(--warn)';
+      stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
+    finally { saveSec.disabled = false; }
+  };
+  const saveAg = document.getElementById('ai-save-agents');
+  if (saveAg && !document.getElementById('ai-agents').disabled) saveAg.onclick = async () => {
+    const stat = document.getElementById('ai-agents-stat');
+    const list = document.getElementById('ai-agents').value.split(',').map(s => s.trim()).filter(Boolean);
+    saveAg.disabled = true; stat.textContent = 'Saving…'; stat.style.color = 'var(--text-3)';
+    try {
+      await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t);
+      _CFG = { ..._CFG, reviewAgents: list };                 // reflect immediately for the gate + menu
+      stat.style.color = 'var(--success)'; stat.textContent = list.length ? 'Saved ' + list.length + ' agent(s).' : 'Cleared agents.';
+      if (document.getElementById('btn-send')) renderTopbar();
+    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
+    finally { saveAg.disabled = false; }
+  };
+  const run = document.getElementById('ai-run');
+  if (run) run.onclick = async () => {
+    const stat = document.getElementById('ai-run-stat');
+    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Dispatching…';
+    try { await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
+      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.'; }
+    catch(e){ stat.style.color = 'var(--warn)';
+      stat.textContent = isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
+    finally { run.disabled = false; }
+  };
 }
 // Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
@@ -2372,9 +2605,9 @@ async function openReleasePanel(){
     const items = inbox[a]||[]; const unread = unreadOf(a);
     return `<div class="rel-inbox" data-adv="${a}"><div class="rel-inbox-h"><b>${escapeHtml(idLabel(a))}</b>${/^general-/.test(a)?'<span class="chip" style="margin-left:5px">lab</span>':''}<span class="chip" style="background:var(--accent-bg);color:var(--accent)">${items.length} comment${items.length!==1?'s':''}</span>
         <span class="rel-unread" style="margin-left:auto">${advHeadHtml(a)}</span>
-        <button class="btn rel-sendall" data-a="${a}" style="padding:2px 9px;font-size:11.5px;margin-left:6px" ${unread?'disabled title="Read every comment from this reviewer first"':''}><i class="ti ti-send"></i>Send unsent</button>
+        ${assistantOn() ? `<button class="btn rel-sendall" data-a="${a}" style="padding:2px 9px;font-size:11.5px;margin-left:6px" ${unread?'disabled title="Read every comment from this reviewer first"':''}><i class="ti ti-send"></i>Send unsent</button>` : ''}
         <button class="rel-del" data-a="${a}" data-count="${items.length}" title="Remove this reviewer's comments from your inbox" style="width:24px;height:24px;display:inline-flex;align-items:center;justify-content:center;border-radius:6px;border:none;background:none;color:var(--text-3);cursor:pointer;font-size:13px;margin-left:2px;opacity:0;transition:opacity .12s"><i class="ti ti-trash"></i></button></div>
-        <div style="font-size:11.5px;color:var(--text-3);margin:-1px 0 8px">Reply, suggest edits, and send to Claude from the comment itself — click <b>Open in context</b>.</div>${
+        <div style="font-size:11.5px;color:var(--text-3);margin:-1px 0 8px">${assistantOn() ? 'Reply, suggest edits, and send to Claude from the comment itself' : 'Reply, suggest edits, and record resolutions from the comment itself'} — click <b>Open in context</b>.</div>${
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
@@ -2422,12 +2655,13 @@ async function openReleasePanel(){
   // re-open the panel so the setup checklist appears/disappears. Disabled when the instance ships agents.
   const aiToggle = document.getElementById('ai-toggle');
   if (aiToggle && !aiToggle.disabled) aiToggle.onclick = () => { toggleAssistant(); openReleasePanel(); };
+  wireAiSetup(t);
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;
     const unread = unreadOf(a);
     box.querySelector('.rel-unread').innerHTML = advHeadHtml(a);
-    const send = box.querySelector('.rel-sendall'); send.disabled = unread > 0; send.title = unread > 0 ? 'Read every comment from this reviewer first' : '';
+    const send = box.querySelector('.rel-sendall'); if (send){ send.disabled = unread > 0; send.title = unread > 0 ? 'Read every comment from this reviewer first' : ''; }
     wireHeader(box, a);
   };
   function wireHeader(box, a){
@@ -2437,7 +2671,7 @@ async function openReleasePanel(){
         box.querySelectorAll('.rel-row').forEach(r => { r.classList.add('is-read'); const cb = r.querySelector('.rel-readbox'); if (cb) cb.checked = true; }); syncAdvHeader(a); }
       catch(e){ ra.textContent = 'Failed'; }
     };
-    const sa = box.querySelector('.rel-sendall'); sa.onclick = async () => {
+    const sa = box.querySelector('.rel-sendall'); if (sa) sa.onclick = async () => {   // absent when AI off
       const todo = (inbox[a]||[]).filter(({c}) => c.read && !c.sent && c.status==='submitted');
       if (!todo.length){ sa.textContent = 'Nothing to send'; return; }
       if (!confirm(`Send ${todo.length} comment${todo.length!==1?'s':''} from ${idLabel(a)} to Claude?`)) return;
