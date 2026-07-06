@@ -291,14 +291,8 @@ async function loadChapter(ch){
       <button class="btn btn-primary" id="connect">Enter a new token</button></div>`;
       document.getElementById('connect').onclick = () => { const v = prompt('New fine-grained PAT:'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
       return; }
-    if (/\b404\b/.test(e.message)){   // source is imported but this unit's reading HTML hasn't been built yet
-      read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
-        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:440px;margin:0 auto 14px">Your LaTeX source is in place. Build it to a clean reading view — this runs on your own GitHub Actions and takes a couple of minutes.</div>
-        <button class="btn btn-primary" id="buildrv">Build reading view</button>
-        <div id="buildrv-status" style="font-size:12.5px;color:var(--text-3);margin-top:12px;line-height:1.6;max-width:440px;margin-left:auto;margin-right:auto"></div></div>`;
-      const build = document.getElementById('buildrv');
-      if (build) build.onclick = () => buildReadingView(build, ch);
+    if (/\b404\b/.test(e.message)){   // source imported but this unit's reading HTML isn't built — build it automatically
+      autoBuildReadingView(ch);
       return; }
     read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(UNIT)} ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
 }
@@ -310,41 +304,48 @@ function renderConnect(){
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
 
-// Self-heal + build: ensure the render pipeline exists in the data repo (idempotent — recovers a project
-// whose first seed failed), fire the render workflow for this project, poll it, and load the result. On a
-// missing workflow scope it tells the user exactly how to fix their token instead of failing silently.
-async function buildReadingView(btn, ch){
+// Seamless render: when a unit's reading HTML isn't there yet, build it AUTOMATICALLY — no button. If a
+// build is already running (the render workflow auto-fires on import), just poll it; otherwise self-heal
+// (ensure the pipeline exists — recovers a project whose first seed failed — and start a build), then poll
+// until this section's content appears and load it. A missing `workflow` scope is the one unrecoverable
+// case: tell the user exactly how to fix their token instead of spinning forever.
+const _buildKicked = new Set();   // project ids we've already started a build for this session (no double-dispatch)
+async function autoBuildReadingView(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
-  const st = document.getElementById('buildrv-status');
-  const say = m => { if (st) st.textContent = m; };
   const wait = ms => new Promise(r => setTimeout(r, ms));
-  btn.disabled = true;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i>
+    <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Building your reading view…</div>
+    <div id="buildrv-status" style="font-size:12.5px;color:var(--text-3);max-width:460px;margin:0 auto;line-height:1.7"></div></div>`;
+  const say = m => { const s = document.getElementById('buildrv-status'); if (s) s.innerHTML = m; };
+  const fetchContent = () => fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/' + ch + '.html')}`,
+    { headers: { Authorization: `Bearer ${t}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' }).catch(() => null);
   try {
-    say('Setting up the build pipeline on your repo…');
-    const res = await ensureRenderPipeline(DATA_REPO, t);
-    if (res.seeded.includes('.github/workflows/render.yml')) await wait(4000);   // let GitHub register the new workflow
-    say('Starting the build…');
-    let dispatched = false;
-    for (let a = 0; a < 3 && !dispatched; a++){
-      try { await dispatchRender(t, _projectId); dispatched = true; }
-      catch (err){ if (a === 2) throw err; await wait(3000); }                    // workflow may still be registering
+    let run = await renderRun(t).catch(() => null);
+    const active = run && (run.status === 'queued' || run.status === 'in_progress');
+    if (!active && !_buildKicked.has(_projectId)){          // nothing building → make sure it can, and start it
+      say('Setting up the build on your repo…');
+      const res = await ensureRenderPipeline(DATA_REPO, t);
+      if (res.seeded.includes('.github/workflows/render.yml')) await wait(4000);   // let GitHub register the new workflow
+      for (let a = 0; a < 3; a++){ try { await dispatchRender(t, _projectId); break; } catch (err){ if (a === 2) throw err; await wait(3000); } }
+      _buildKicked.add(_projectId);
     }
-    say('Building your reading view — this takes a couple of minutes…');
-    let ok = false;
-    for (let i = 0; i < 48; i++){                                                 // up to ~4 min
+    say(`Rendering your ${escapeHtml(UNIT)}s on your GitHub — this takes a couple of minutes…`);
+    for (let i = 0; i < 60; i++){                            // poll up to ~5 min; load the instant this section lands
       await wait(5000);
-      const run = await renderRun(t).catch(() => null);
-      if (run && run.status === 'completed'){ ok = run.conclusion === 'success'; break; }
-      if (run && run.status) say(`Building… (${run.status})`);
+      const c = await fetchContent();
+      if (c && c.ok){ renderDoc(await c.text()); return; }
+      run = await renderRun(t).catch(() => null);
+      if (run && run.status === 'completed' && run.conclusion !== 'success'){
+        say('The build didn’t succeed. Open the <b>Actions</b> tab on your data repo to see why, then reload.'); return;
+      }
+      if (run && run.status) say(`Building… (${escapeHtml(run.status)})`);
     }
-    if (ok){ say('Done — loading your reading view…'); loadChapter(ch); }
-    else say('The build finished but didn’t succeed. Open the Actions tab on your data repo to see why, then try again.');
+    say('This is taking longer than expected. Check the <b>Actions</b> tab on your data repo, then reload.');
   } catch (e){
-    btn.disabled = false;
     if (/workflow-scope/.test(e.message)){
-      st.innerHTML = `Your token is missing the <b>workflow</b> permission, so Footnote can’t set up the build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then try again.`;
+      say(`Your token is missing the <b>workflow</b> permission, so Footnote can’t build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then reload.`);
     } else {
-      say('Couldn’t build the reading view: ' + e.message);
+      say('Couldn’t build the reading view: ' + escapeHtml(e.message) + '. Check <b>⋯ → Settings</b>.');
     }
   }
 }

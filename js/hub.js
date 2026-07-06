@@ -3,7 +3,7 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=495746b';
-import { seedDataRepo } from './seed.js?v=495746b';
+import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=495746b';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=495746b';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=495746b';
 
@@ -477,6 +477,13 @@ export async function launch() {
         // Seed the background CI: workflows/ci_*.py once at the repo root, this project's config under <id>/.
         q('#np-err').textContent = 'Setting up background email/notify…';
         try { await seedDataRepo(wsRepo, tok(), undefined, undefined, `${id}/`); } catch (e) { console.warn('seed:', e.message); }
+        // GUARANTEE the render pipeline is in the repo (idempotent) so the reading view auto-builds on the
+        // source push below — this is what makes rendering reliable without a manual "build" button. A first
+        // seed can silently drop it; ensureRenderPipeline re-adds only what's missing. The one unrecoverable
+        // case is a token without the `workflow` scope — surface that clearly instead of a silent dead-end.
+        let renderBlocked = false;
+        try { await ensureRenderPipeline(wsRepo, tok()); }
+        catch (e) { if (/workflow-scope/.test(e.message)) renderBlocked = true; else console.warn('render pipeline:', e.message); }
         let chapters = null;
         if (pendingFiles) {   // whole folder: commit every file under <id>/source/ preserving structure
           const { files, entry, entryText, map } = pendingFiles;
@@ -499,7 +506,14 @@ export async function launch() {
           catch (e) { console.warn('chapters:', e.message); }
         }
         q('#np-err').textContent = 'Saving…';
-        await writeProjects(hub(), tok(), next); close(); render();
+        await writeProjects(hub(), tok(), next);
+        if (renderBlocked) {   // project is created, but the reading view can't build until the token is fixed
+          render();            // still show the new project on the shelf
+          q('#np-save').disabled = false;
+          q('#np-err').innerHTML = `Imported — but your token is missing the <b>workflow</b> permission, so the reading view can’t build on your repo. <a href="${TOKEN_URL}" target="_blank" rel="noopener">Regenerate your token</a> (with <code>repo</code> + <code>workflow</code>), update it, then open the project.`;
+          return;
+        }
+        close(); render();
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };
     setTimeout(() => q('#np-name').focus(), 30);
