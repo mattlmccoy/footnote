@@ -85,16 +85,26 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
   if (!f) throw new Error('no fetch available to seed the data repo');
   const root = (base || (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : './'));
   const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+  const norm = s => (s || '').replace(/\s/g, '');   // GitHub returns 76-col-wrapped base64; b64() emits none
   const out = { seeded: [], already: [] };
   for (const { src, dest } of files) {
-    const head = await f(`${API}/repos/${dataRepo}/contents/${dest}`, { headers: h });
-    if (head && head.ok) { out.already.push(dest); continue; }        // already present — leave it
     const res = await f(`${root}data-template/${src}`);
     if (!res || !res.ok) throw new Error(`couldn’t read template ${src}`);
+    const content = b64(await res.text());
+    // Refresh, not just seed: if the file exists but its content differs from the current template (a stale
+    // seeded copy — e.g. an old ci_invite.py without the magic-link key), update it IN PLACE with its sha.
+    // Identical content is left untouched (idempotent, no churn).
+    const head = await f(`${API}/repos/${dataRepo}/contents/${dest}`, { headers: h });
+    let sha;
+    if (head && head.ok) {
+      let meta = null; try { meta = await head.json(); } catch (e) {}
+      if (meta && norm(meta.content) === norm(content)) { out.already.push(dest); continue; }   // up to date
+      sha = meta && meta.sha;                                                                    // stale → update with sha
+    }
     const put = await f(`${API}/repos/${dataRepo}/contents/${dest}`, {
       method: 'PUT',
       headers: { ...h, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `seed: ${label} — ${dest}`, content: b64(await res.text()) }),
+      body: JSON.stringify({ message: `${sha ? 'refresh' : 'seed'}: ${label} — ${dest}`, content, ...(sha ? { sha } : {}) }),
     });
     if (put && put.ok) { out.seeded.push(dest); continue; }
     if (put && put.status === 403 && dest.startsWith('.github/workflows/')) throw new Error('workflow-scope');

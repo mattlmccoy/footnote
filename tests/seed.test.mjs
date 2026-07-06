@@ -97,13 +97,27 @@ test('ensureRenderPipeline skips files that already exist (idempotent)', async (
   const puts = [];
   const fake = async (url, opts) => {
     if (opts && opts.method === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 201 }; }
-    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200 };  // GET: exists
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200, json: async () => ({ content: Buffer.from('x').toString('base64'), sha: 's' }) };  // GET: exists, content matches template
     return { ok: true, status: 200, text: async () => 'x' };
   };
   const res = await ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/');
   assert.equal(res.seeded.length, 0);
   assert.equal(res.already.length, RENDER_FILES.length);
   assert.equal(puts.length, 0);
+});
+
+test('ensureRenderPipeline REFRESHES a file whose content differs from the template (self-heal stale CI)', async () => {
+  const bb = s => Buffer.from(s, 'utf8').toString('base64');
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { const body = JSON.parse(opts.body); puts.push({ dest: url.split('/contents/')[1], sha: body.sha }); return { ok: true, status: 200 }; }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200, json: async () => ({ content: bb('STALE OLD SEEDED CONTENT'), sha: 'oldsha' }) };  // present but stale
+    return { ok: true, status: 200, text: async () => 'FRESH TEMPLATE' };   // template differs from what's deployed
+  };
+  const res = await ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/');
+  assert.equal(res.seeded.length, RENDER_FILES.length);   // every stale file refreshed
+  assert.equal(res.already.length, 0);
+  assert.ok(puts.length === RENDER_FILES.length && puts.every(p => p.sha === 'oldsha'));   // updated in place with the existing sha
 });
 
 test('ensureRenderPipeline throws a clear workflow-scope error when GitHub blocks the workflow write (403)', async () => {
@@ -150,7 +164,7 @@ test('ensureApplyEngine skips files that already exist (idempotent — safe to c
   const puts = [];
   const fake = async (url, opts) => {
     if (opts && opts.method === 'PUT') { puts.push(url); return { ok: true, status: 201 }; }
-    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200 };  // exists
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200, json: async () => ({ content: Buffer.from('x').toString('base64'), sha: 's' }) };  // exists, content matches template
     return { ok: true, status: 200, text: async () => 'x' };
   };
   const res = await ensureApplyEngine('alice/ws', 'tok', fake, 'http://x/');
@@ -216,7 +230,7 @@ test('ensureInvitePipeline PUTs every missing invite file and reports them', asy
 test('ensureInvitePipeline skips files that already exist (idempotent)', async () => {
   const fake = async (url, opts) => {
     if (opts && opts.method === 'PUT') return { ok: true, status: 201 };
-    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200 };  // exists
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200, json: async () => ({ content: Buffer.from('x').toString('base64'), sha: 's' }) };  // exists, content matches template
     return { ok: true, status: 200, text: async () => 'x' };
   };
   const res = await ensureInvitePipeline('alice/ws', 'tok', fake, 'http://x/');
