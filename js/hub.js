@@ -2,9 +2,9 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject } from './config.js?v=b48c728';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=b48c728';
 import { seedDataRepo } from './seed.js?v=b48c728';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile } from './importdoc.js?v=b48c728';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, migrateProjectToWorkspace } from './importdoc.js?v=b48c728';
 import { parseLatexChapters } from './docparse.js?v=b48c728';
 
 // ---- pure helpers (unit-tested) ----
@@ -293,7 +293,10 @@ export async function launch() {
   function openManageMenu(anchor, project, list) {
     closeManageMenu();
     const menu = document.createElement('div'); menu.className = 'fn-menu'; menu.id = 'fn-menu';
+    // Legacy projects (own repos) can be folded into the one workspace repo; workspace projects can't re-migrate.
+    const canMigrate = !project.workspace && hub() && project.dataRepo && project.dataRepo !== hub();
     menu.innerHTML = `<button class="fn-menu-item" data-act="edit">Edit details</button>
+      ${canMigrate ? `<button class="fn-menu-item" data-act="migrate">Move into workspace repo</button>` : ''}
       <button class="fn-menu-item fn-menu-danger" data-act="remove">Remove from library</button>`;
     document.body.appendChild(menu);
     const r = anchor.getBoundingClientRect();
@@ -301,6 +304,35 @@ export async function launch() {
     menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
     menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
     menu.querySelector('[data-act="remove"]').onclick = () => { closeManageMenu(); confirmRemove(list, project); };
+    if (canMigrate) menu.querySelector('[data-act="migrate"]').onclick = () => { closeManageMenu(); confirmMigrate(list, project); };
+  }
+
+  // Copy a legacy project's own source + data repos INTO the one workspace repo under <id>/, then flip it
+  // to workspace mode. Non-destructive: the old repos stay on GitHub (nothing is deleted).
+  function confirmMigrate(list, project) {
+    const wsRepo = hub();
+    const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
+    scrim.innerHTML = `<div class="fn-sheet fn-reveal">
+      <div class="fn-sheet-h">Move “${esc(project.name)}” into your workspace</div>
+      <p class="fn-remove-note">This copies this project's files into <span class="fn-mono">${esc(wsRepo)}</span> under <span class="fn-mono">${esc(project.id)}/</span> and switches it to the consolidated layout — no more separate repos for it. Your existing repos <span class="fn-mono">${esc(project.dataRepo)}</span>${project.sourceRepo ? ` and <span class="fn-mono">${esc(project.sourceRepo)}</span>` : ''} are left untouched on GitHub (nothing is deleted); you can remove them yourself later.</p>
+      <div class="fn-err" id="mg-err"></div>
+      <div class="fn-actions fn-right"><button class="fn-btn" id="mg-x">Cancel</button><button class="fn-btn fn-btn-primary" id="mg-go">Move into workspace</button></div></div>`;
+    root.appendChild(scrim);
+    const q = s => scrim.querySelector(s), close = () => scrim.remove();
+    scrim.onclick = e => { if (e.target === scrim) close(); };
+    q('#mg-x').onclick = close;
+    q('#mg-go').onclick = async () => {
+      const err = q('#mg-err'); q('#mg-go').disabled = true;
+      try {
+        err.textContent = `Preparing ${wsRepo}…`;
+        await createRepo(tok(), wsRepo);   // ensure the workspace repo exists
+        try { await seedDataRepo(wsRepo, tok(), undefined, undefined, `${project.id}/`); } catch (e) { console.warn('seed:', e.message); }
+        await migrateProjectToWorkspace(project, wsRepo, tok(), msg => { err.textContent = msg; });
+        err.textContent = 'Switching to the workspace layout…';
+        await writeProjectPatch({ ...cfg, hubRepo: wsRepo, workspaceRepo: wsRepo }, project.id, { workspace: true, dataRepo: wsRepo, sourceRepo: '' }, tok());
+        close(); render();
+      } catch (e) { err.textContent = e.message; q('#mg-go').disabled = false; }
+    };
   }
 
   // One sheet for both New (existing=null) and Edit. On edit the comments repo is read-only (it's the

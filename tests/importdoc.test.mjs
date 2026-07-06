@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -174,4 +174,52 @@ test('commitSourceBinary PUTs already-base64 content unchanged', async () => {
   const sha = await commitSourceBinary('a/src', 'figures/x.png', 'QUJD', 'tok', 'add fig', fake);
   assert.equal(sha, 'b1');
   assert.equal(body.content, 'QUJD');
+});
+
+// ---- migrator: fold a legacy per-project repo into the workspace under <id>/ ----
+test('planMigration maps paths under <id>/ (or <id>/source/) and skips .git/.github', () => {
+  assert.deepEqual(planMigration(['reviews/a.json', 'chapters.json', '.github/workflows/x.yml'], 'metro'),
+    [{ from: 'reviews/a.json', to: 'metro/reviews/a.json' }, { from: 'chapters.json', to: 'metro/chapters.json' }]);
+  assert.deepEqual(planMigration(['main.tex', 'figures/a.pdf', '.git/config'], 'metro', 'source/'),
+    [{ from: 'main.tex', to: 'metro/source/main.tex' }, { from: 'figures/a.pdf', to: 'metro/source/figures/a.pdf' }]);
+});
+
+test('listRepoTree returns only blob paths', async () => {
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ tree: [
+    { type: 'blob', path: 'a.json' }, { type: 'tree', path: 'd' }, { type: 'blob', path: 'd/b.json' }] }) });
+  assert.deepEqual(await listRepoTree('alice/data', 'tok', fake), ['a.json', 'd/b.json']);
+});
+
+test('getRepoBlob returns whitespace-stripped base64 content', async () => {
+  const fake = async () => ({ ok: true, status: 200, json: async () => ({ content: 'QUJD\nREVG\n' }) });
+  assert.equal(await getRepoBlob('alice/data', 'x.png', 'tok', fake), 'QUJDREVG');
+});
+
+test('migrateProjectToWorkspace copies data + source blobs under <id>/ (and <id>/source/)', async () => {
+  const puts = [];
+  const fake = async (url, opts) => {
+    const m = (opts && opts.method) || 'GET';
+    if (url.includes('/git/trees/')) {
+      const repo = url.split('/repos/')[1].split('/git/')[0];
+      const tree = repo.endsWith('-data') ? [{ type: 'blob', path: 'reviews/a.json' }] : [{ type: 'blob', path: 'main.tex' }];
+      return { ok: true, status: 200, json: async () => ({ tree }) };
+    }
+    if (m === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 201, json: async () => ({ content: { sha: 'x' } }) }; }
+    return { ok: true, status: 200, json: async () => ({ content: 'QUJD', sha: null }) };   // GET contents
+  };
+  const proj = { id: 'metro', dataRepo: 'alice/metro-data', sourceRepo: 'alice/metro-source' };
+  const res = await migrateProjectToWorkspace(proj, 'alice/ws', 'tok', null, fake);
+  assert.deepEqual(res, { data: 1, src: 1 });
+  assert.ok(puts.includes('metro/reviews/a.json'));
+  assert.ok(puts.includes('metro/source/main.tex'));
+});
+
+test('migrateProjectToWorkspace skips source copy when it equals the data repo (in-workspace already)', async () => {
+  const fake = async (url, opts) => {
+    if (url.includes('/git/trees/')) return { ok: true, status: 200, json: async () => ({ tree: [{ type: 'blob', path: 'chapters.json' }] }) };
+    if (opts && opts.method === 'PUT') return { ok: true, status: 201, json: async () => ({ content: { sha: 'x' } }) };
+    return { ok: true, status: 200, json: async () => ({ content: 'QUJD', sha: null }) };
+  };
+  const res = await migrateProjectToWorkspace({ id: 'm', dataRepo: 'a/d', sourceRepo: 'a/d' }, 'a/ws', 'tok', null, fake);
+  assert.equal(res.src, 0);
 });

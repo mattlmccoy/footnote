@@ -130,3 +130,54 @@ export async function commitSourceBinary(repo, path, base64, token, msg, fetchIm
   const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
   return putBase64(repo, path, base64, token, msg, f);
 }
+
+// ---- migrator: fold a legacy per-project repo into the workspace under <id>/ ----
+
+// Map a legacy repo's paths to their workspace destinations (<id>/ for data, <id>/source/ for source),
+// skipping the repo's own git/CI plumbing (the workspace has its own). Returns [{from, to}].
+export function planMigration(paths, id, sub = '') {
+  return (paths || [])
+    .filter(p => !p.startsWith('.git/') && !p.startsWith('.github/') && p !== '.gitignore')
+    .map(p => ({ from: p, to: `${id}/${sub}${p}` }));
+}
+
+// List every blob path in a repo's default branch (for copying a legacy repo wholesale).
+export async function listRepoTree(repo, token, fetchImpl) {
+  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+  const r = await f(`${API}/repos/${repo}/git/trees/main?recursive=1&t=${Date.now()}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store',
+  });
+  if (!r.ok) throw new Error(`tree ${repo} failed (${r.status})`);
+  return ((await r.json()).tree || []).filter(x => x.type === 'blob').map(x => x.path);
+}
+
+// Fetch a file's raw base64 content from a repo (whitespace-stripped so it re-PUTs cleanly, binary-safe).
+export async function getRepoBlob(repo, path, token, fetchImpl) {
+  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+  const r = await f(`${API}/repos/${repo}/contents/${path}?t=${Date.now()}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store',
+  });
+  if (!r.ok) throw new Error(`read ${repo}/${path} failed (${r.status})`);
+  return String((await r.json()).content || '').replace(/\s/g, '');
+}
+
+// Copy a legacy project's own repos INTO the workspace repo under <id>/ (data) and <id>/source/ (source).
+// Binary-safe (base64 passthrough). onProgress(msg) is optional. Returns { data, src } file counts. The
+// caller flips the project to workspace mode (writeProjectPatch) after this resolves.
+export async function migrateProjectToWorkspace(project, workspaceRepo, token, onProgress, fetchImpl) {
+  const f = _fetch(fetchImpl); if (!f) throw new Error('no fetch available');
+  const id = project.id;
+  const copy = async (fromRepo, sub) => {
+    if (!fromRepo || fromRepo === workspaceRepo) return 0;
+    const plan = planMigration(await listRepoTree(fromRepo, token, f), id, sub);
+    let i = 0;
+    for (const { from, to } of plan) {
+      if (onProgress) onProgress(`Copying ${++i}/${plan.length} · ${to}`);
+      await commitSourceBinary(workspaceRepo, to, await getRepoBlob(fromRepo, from, token, f), token, `migrate: ${to}`, f);
+    }
+    return plan.length;
+  };
+  const data = await copy(project.dataRepo, '');
+  const src = (project.sourceRepo && project.sourceRepo !== project.dataRepo) ? await copy(project.sourceRepo, 'source/') : 0;
+  return { data, src };
+}
