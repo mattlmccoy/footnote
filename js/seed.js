@@ -58,6 +58,14 @@ export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
 export const APPLY_FILES = SEED_FILES.filter(({ dest }) =>
   dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === '.github/workflows/apply.yml');
 
+// The email/invite pipeline subset: the invite + notify CI and their workflows. A workspace data repo
+// seeded render-only has render.yml but not invite.yml, so the email wizard 404s on the invite workflow
+// and misreports it as a token-scope problem — ensureInvitePipeline self-heals that, idempotently.
+export const INVITE_FILES = SEED_FILES.filter(({ dest }) =>
+  dest === 'ci_invite.py' || dest === 'ci_notify_common.py' || dest === 'ci_notify_author.py' ||
+  dest === 'ci_notify_advisors.py' || dest === '.github/workflows/invite.yml' ||
+  dest === '.github/workflows/notify.yml' || dest === '.github/workflows/release-notify.yml');
+
 // Shared idempotent seeder: PUT ONLY the missing files from `files` into the data repo. Returns
 // { seeded:[], already:[] }. Throws Error('workflow-scope') when GitHub blocks a .github/workflows/ write
 // with 403 (token lacks the `workflow` scope) so the caller can tell the user exactly how to fix it.
@@ -87,6 +95,12 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
 // Self-heal the render pipeline (see RENDER_FILES). Safe to call on every "Build reading view".
 export function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
   return ensureFiles(RENDER_FILES, dataRepo, token, fetchImpl, base, 'render pipeline');
+}
+
+// Self-heal the email/invite pipeline (see INVITE_FILES). Safe to call whenever the email wizard runs —
+// idempotent, repo-level, so one call fixes every paper in the workspace without per-project setup.
+export function ensureInvitePipeline(dataRepo, token, fetchImpl, base) {
+  return ensureFiles(INVITE_FILES, dataRepo, token, fetchImpl, base, 'invite pipeline');
 }
 
 // Self-heal the Claude apply engine (see APPLY_FILES). Safe to call whenever AI setup runs — idempotent,

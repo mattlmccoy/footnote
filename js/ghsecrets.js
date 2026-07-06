@@ -56,6 +56,15 @@ export function isScopeError(e){
   return !!e && (e.code === 'NOSCOPE' || /\b40[34]\b/.test(e.message || ''));
 }
 
+// Probe Actions access at the REPO level. Unlike latestRun (which targets a specific workflow file and
+// 404s when that file isn't seeded yet), this endpoint answers whether the token can read Actions at all —
+// so a not-yet-seeded invite.yml can't masquerade as "token missing Actions". 403/404 → NOSCOPE.
+export async function checkActionsAccess(tok){
+  const r = await fetch(`${API}/repos/${slug()}/actions/runs?per_page=1`, { headers:hdr(tok), cache:'no-store' });
+  if (r.status === 403 || r.status === 404) { const e = new Error('no-actions-scope'); e.code = 'NOSCOPE'; throw e; }
+  if (!r.ok) throw new Error('actions ' + r.status);
+}
+
 // GET the repo Actions public key. Throwing on 403 is the signal the token lacks Secrets:write.
 export async function getPublicKey(tok){
   const r = await fetch(`${API}/repos/${slug()}/actions/secrets/public-key`, { headers:hdr(tok), cache:'no-store' });

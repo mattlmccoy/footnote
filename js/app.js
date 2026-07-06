@@ -1,8 +1,8 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=e226a56';
 import { anchorFromSelection } from './anchor.js?v=e226a56';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=e226a56';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=e226a56';
-import { ensureRenderPipeline, ensureApplyEngine } from './seed.js?v=e226a56';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess } from './ghsecrets.js?v=e226a56';
+import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=e226a56';
 import { sealToBase64 } from './vendor/seal.js?v=e226a56';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=e226a56';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=e226a56';
@@ -2883,8 +2883,10 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   // null when a permission is missing, and rethrows genuine/transient errors.
   const checkAccess = async (token) => {
     let pk;
-    try { pk = await getPublicKey(token); } catch(e){ if (isScopeError(e)) return null; throw e; }
-    try { await latestRun(token); }        catch(e){ if (isScopeError(e)) return null; throw e; }
+    try { pk = await getPublicKey(token); }      catch(e){ if (isScopeError(e)) return null; throw e; }
+    // Repo-level Actions probe — NOT the invite workflow (which may not be seeded yet), so a missing
+    // invite.yml can't be misread as "token lacks Actions". ensureInvitePipeline seeds it before dispatch.
+    try { await checkActionsAccess(token); }     catch(e){ if (isScopeError(e)) return null; throw e; }
     return pk;
   };
   // Stepped Connect-email wizard: one decision per screen, provider first, with the exact "get your
@@ -3084,6 +3086,14 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
       await setVariable(etok, 'DOC_NOUN', DOC);   // keeps the invite/notify emails document-agnostic (e.g. "paper", "proposal")
+      // Ensure the invite/notify workflow exists in the data repo before dispatching it. A workspace repo
+      // seeded render-only has no invite.yml, which otherwise 404s the dispatch. Idempotent (writes only
+      // what's missing); a workflow-scope block gets the same actionable token hint.
+      try { await ensureInvitePipeline(DATA_REPO, etok); }
+      catch(e){
+        if (e.message === 'workflow-scope'){ stat.innerHTML = 'Your GitHub token can\'t write Actions workflows — go Back and regenerate it with the <b>repo</b> and <b>workflow</b> boxes ticked.'; return; }
+        throw e;
+      }
       stat.textContent = 'Sending a test email…';
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);

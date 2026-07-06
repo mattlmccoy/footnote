@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED_FILES, seedJsonFiles, seedDataRepo, RENDER_FILES, ensureRenderPipeline, APPLY_FILES, ensureApplyEngine } from '../js/seed.js';
+import { SEED_FILES, seedJsonFiles, seedDataRepo, RENDER_FILES, ensureRenderPipeline, APPLY_FILES, ensureApplyEngine, INVITE_FILES, ensureInvitePipeline } from '../js/seed.js';
 
 test('SEED_FILES maps CI scripts to root and workflows into .github/workflows', () => {
   const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
@@ -169,4 +169,58 @@ test('seedDataRepo with a project prefix puts config JSON under <id>/ but CI cod
   assert.ok(puts.includes('ci_invite.py'));                   // CI scripts stay at the repo root
   assert.ok(puts.includes('metro/advisors.json'));            // per-project config under <id>/
   assert.ok(!puts.includes('advisors.json'));                 // NOT at the root (would be a phantom project)
+});
+
+// ---- ensureInvitePipeline: idempotent self-heal for the email/invite pipeline. A workspace data repo
+//      seeded for render-only (render.yml present, invite.yml absent) made the email wizard 404 on the
+//      invite workflow and misreport it as "token missing Secrets/Actions". This seeds it once. ----
+test('INVITE_FILES is the invite/notify subset (ci_invite, ci_notify_*, invite/notify/release-notify yml)', () => {
+  const dests = INVITE_FILES.map(f => f.dest);
+  assert.ok(dests.includes('ci_invite.py'));
+  assert.ok(dests.includes('ci_notify_common.py'));
+  assert.ok(dests.includes('ci_notify_author.py'));
+  assert.ok(dests.includes('ci_notify_advisors.py'));
+  assert.ok(dests.includes('.github/workflows/invite.yml'));
+  assert.ok(dests.includes('.github/workflows/notify.yml'));
+  assert.ok(dests.includes('.github/workflows/release-notify.yml'));
+  // email pipeline only — NOT render or apply
+  assert.ok(!dests.includes('.github/workflows/render.yml'));
+  assert.ok(!dests.includes('.github/workflows/apply.yml'));
+  assert.ok(!dests.includes('ci_render.py'));
+});
+
+test('ensureInvitePipeline PUTs every missing invite file and reports them', async () => {
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 201 }; }
+    if (url.includes('/contents/')) return { ok: false, status: 404 };   // GET: file absent
+    return { ok: true, status: 200, text: async () => `template ${url}` };
+  };
+  const res = await ensureInvitePipeline('alice/ws', 'tok', fake, 'http://x/');
+  assert.equal(res.seeded.length, INVITE_FILES.length);
+  assert.equal(res.already.length, 0);
+  assert.ok(puts.includes('.github/workflows/invite.yml'));
+  assert.ok(puts.includes('ci_invite.py'));
+});
+
+test('ensureInvitePipeline skips files that already exist (idempotent)', async () => {
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') return { ok: true, status: 201 };
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200 };  // exists
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  const res = await ensureInvitePipeline('alice/ws', 'tok', fake, 'http://x/');
+  assert.equal(res.seeded.length, 0);
+  assert.equal(res.already.length, INVITE_FILES.length);
+});
+
+test('ensureInvitePipeline throws workflow-scope when GitHub blocks the workflow write (403)', async () => {
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') {
+      return url.includes('.github/workflows/') ? { ok: false, status: 403 } : { ok: true, status: 201 };
+    }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: false, status: 404 };  // all absent
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  await assert.rejects(() => ensureInvitePipeline('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
 });
