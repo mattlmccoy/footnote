@@ -57,7 +57,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .search input{flex:1;border:none;background:none;outline:none;font:inherit;color:var(--text)}
 .panes{flex:1;display:flex;min-height:0}
 .nav{flex:0 0 210px;border-right:.5px solid var(--border);overflow:auto;padding:18px 10px}
-.nav .lbl{display:flex;font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt);padding:0 8px 10px}
+.nav .lbl{display:flex;font-size:11px;letter-spacing:.08em;color:var(--text-3);padding:0 8px 10px}
 .nav a{display:flex;align-items:center;gap:6px;padding:7px 9px;border-radius:var(--r-sm);color:var(--text-2);font-size:13.5px;cursor:pointer;line-height:1.35;margin-bottom:1px}
 .nav a .chk{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;font-size:15px;color:var(--text-3);border-radius:50%}
 .nav a .chk:hover{color:var(--accent)} .nav a .chk.on{color:var(--success)}
@@ -98,7 +98,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 #doc a.xref:hover{border-bottom-color:var(--accent);background:var(--accent-bg)}
 .flash{background:var(--warn-bg);border-radius:3px;transition:background .3s}
 .comments{flex:0 0 320px;border-left:.5px solid var(--border);background:var(--bg-2);overflow:auto;padding:16px 14px}
-.comments .lbl{display:flex;font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt);margin-bottom:12px}
+.comments .lbl{display:flex;font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:12px}
 .ccard{background:var(--bg);border:.5px solid var(--border);border-radius:var(--r-md);padding:11px 12px;margin-bottom:10px;cursor:pointer}
 .ccard:hover{border-color:var(--border-2)}
 .ccard .row{display:flex;align-items:center;gap:6px;margin-bottom:7px}
@@ -119,10 +119,7 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .katex{font-size:1.02em}
 /* release page */
 .rel-page{max-width:760px;margin:0 auto;padding:26px 24px 90px}
-/* section labels as code comments — "% reviewers", lowercase mono, the % in command-blue (mirrors the launcher eyebrows) */
-.rel-sec,.home-allch{font-family:var(--mono);font-size:11px;letter-spacing:0;text-transform:lowercase;color:var(--cmt)}
-.rel-sec{margin:0 0 12px}
-.rel-sec::before,.nav .lbl::before,.comments .lbl::before,.home-allch::before{content:"% ";color:var(--kw);font-weight:500}
+.rel-sec{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--text-3);margin:0 0 12px}
 .rel-tbl{width:100%;border-collapse:collapse;font-size:13px} .rel-tbl th,.rel-tbl td{border-bottom:.5px solid var(--border);padding:7px 9px;text-align:left} .rel-tbl th{font-size:12px;font-weight:600}
 .rel-tbl input{width:16px;height:16px;accent-color:var(--accent);cursor:pointer}
 .rel-links{margin-top:8px;font-size:11.5px;color:var(--text-2);line-height:1.7} .rel-links code{background:var(--bg-3);padding:1px 6px;border-radius:5px;font-size:11px}
