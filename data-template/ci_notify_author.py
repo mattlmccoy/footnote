@@ -8,11 +8,11 @@ import ci_notify_common as C
 
 STATE = "notify_state.json"
 
-def _read_advisor_files():
-    """{ advisorId: [file_json, ...] } from advisor/*/*.json."""
+def _read_advisor_files(prefix=""):
+    """{ advisorId: [file_json, ...] } from <prefix>advisor/*/*.json."""
     out = {}
-    for p in glob.glob("advisor/*/*.json"):
-        adv = p.split(os.sep)[1]
+    for p in glob.glob(f"{prefix}advisor/*/*.json"):
+        adv = p.split(os.sep)[-2]
         j = C.load_json(p, None)
         if j is not None:
             out.setdefault(adv, []).append(j)
@@ -87,28 +87,29 @@ def _render(events, reg, labels, base, now):
     html = C.email_shell("Review digest", f"As of {stamp} · since your last digest", rows_html, width=560)
     return subject, text, html
 
-def main():
-    dry = "--dry-run" in sys.argv
-    cfg = C.load_json("notify_config.json", {})
+def _run_project(prefix, dry):
+    """Author digest for one project (prefix '' = legacy root, '<id>/' = a workspace subfolder)."""
+    cfg = C.load_json(f"{prefix}notify_config.json", {})
     to = (cfg.get("author_email") or "").strip()
     if not to:
-        print("::notice::no author_email in notify_config.json — author digest skipped."); return
-    state = C.load_json(STATE, {})
+        print(f"::notice::no author_email in {prefix}notify_config.json — author digest skipped ({prefix or 'root'})."); return
+    state_path = f"{prefix}{STATE}"
+    state = C.load_json(state_path, {})
     now = C.iso_now()
     if C.needs_bootstrap(state):
-        C.seed_bootstrap(state, C.load_json("release.json", {}), C.resolved_by_advisor(), now)
+        C.seed_bootstrap(state, C.load_json(f"{prefix}release.json", {}), C.resolved_by_advisor(prefix), now)
         if not dry:
-            C.save_json(STATE, state)
-        print("::notice::bootstrap — seeded state without emailing."); return
-    files = _read_advisor_files()
+            C.save_json(state_path, state)
+        print(f"::notice::bootstrap — seeded state without emailing ({prefix or 'root'})."); return
+    files = _read_advisor_files(prefix)
     events = collect_events(files, state["last_author_digest_ts"])
     if not events:
         state["last_author_digest_ts"] = now
         if not dry:
-            C.save_json(STATE, state)
-        print("no new advisor activity — no email sent."); return
-    reg = C.load_json("advisors.json", {"advisors": []})
-    labels = C.chapter_labels()
+            C.save_json(state_path, state)
+        print(f"no new advisor activity — no email sent ({prefix or 'root'})."); return
+    reg = C.load_json(f"{prefix}advisors.json", {"advisors": []})
+    labels = C.chapter_labels(prefix)
     base = os.environ.get("PORTAL_BASE", "")
     subject, text, html = _render(events, reg, labels, base, now)
     frm = C.smtp_from(); frm_name = os.environ.get("SMTP_FROM_NAME")
@@ -116,8 +117,14 @@ def main():
     C.send(frm, to, eml, dry=dry)
     state["last_author_digest_ts"] = now
     if not dry:
-        C.save_json(STATE, state)
-    print(f"author digest sent to {to}")
+        C.save_json(state_path, state)
+    print(f"author digest sent to {to} ({prefix or 'root'})")
+
+def main():
+    dry = "--dry-run" in sys.argv
+    # Legacy repo: root files. Consolidated workspace: one digest per <id>/ subfolder.
+    for prefix in (C.project_prefixes() or [""]):
+        _run_project(prefix, dry)
 
 if __name__ == "__main__":
     main()

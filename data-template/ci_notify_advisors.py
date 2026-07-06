@@ -31,8 +31,8 @@ def should_send_responses(new_count, last_ts, now):
         return True
     return _days_since(last_ts, now) >= STRAGGLER_DAYS
 
-def _adv_files(adv):
-    return [C.load_json(p, None) for p in glob.glob(f"advisor/{adv}/*.json") if C.load_json(p, None) is not None]
+def _adv_files(adv, prefix=""):
+    return [C.load_json(p, None) for p in glob.glob(f"{prefix}advisor/{adv}/*.json") if C.load_json(p, None) is not None]
 
 def resolved_ids_and_counts(files):
     ids, counts = set(), {"addressed": 0, "declined": 0, "noted": 0}
@@ -97,23 +97,24 @@ def _responses_email(name, counts, url, stamp):
     html = C.email_shell(f"{C.esc(author)} responded to your comments", f"As of {stamp}", inner)
     return subject, text, html
 
-def main():
-    dry = "--dry-run" in sys.argv
-    rel = C.load_json("release.json", {})
-    state = C.load_json(STATE, {})
+def _run_project(prefix, dry):
+    """Advisor released/responses emails for one project (prefix '' root, '<id>/' workspace). Returns sent."""
+    rel = C.load_json(f"{prefix}release.json", {})
+    state_path = f"{prefix}{STATE}"
+    state = C.load_json(state_path, {})
     now = C.iso_now(); stamp = now[:16].replace("T", " ")
     if C.needs_bootstrap(state):
-        C.seed_bootstrap(state, rel, C.resolved_by_advisor(), now)
+        C.seed_bootstrap(state, rel, C.resolved_by_advisor(prefix), now)
         if not dry:
-            C.save_json(STATE, state)
-        print("::notice::bootstrap — seeded state without emailing."); return
-    reg = C.load_json("advisors.json", {"advisors": []})
+            C.save_json(state_path, state)
+        print(f"::notice::bootstrap — seeded state without emailing ({prefix or 'root'})."); return 0
+    reg = C.load_json(f"{prefix}advisors.json", {"advisors": []})
     if reg.get("email_configured") is not True:
-        print("::notice::email not configured — advisor emails skipped."); return
+        print(f"::notice::email not configured — advisor emails skipped ({prefix or 'root'})."); return 0
     state.setdefault("notified_released", {})
     state.setdefault("notified_resolved", {})
     state.setdefault("last_resolved_email_ts", {})
-    labels = C.chapter_labels()
+    labels = C.chapter_labels(prefix)
     base = os.environ.get("PORTAL_BASE", "")
     frm = C.smtp_from(); frm_name = os.environ.get("SMTP_FROM_NAME")
     by_id = {a["id"]: a for a in reg.get("advisors", [])}
@@ -122,7 +123,7 @@ def main():
         a = by_id.get(adv)
         email_to = (a or {}).get("email")
         name = C.advisor_name(adv, reg)
-        url = C.portal_advisor_url(base, adv, name)
+        url = C.portal_advisor_url(base, adv, name, prefix)
         if not email_to:
             continue
         # chapter-released
@@ -138,7 +139,7 @@ def main():
                 print(f"::warning::chapter email to {email_to} failed: {e}")
         # responses-ready (only when author released responses to this advisor)
         if rel.get(adv, {}).get("responses_released"):
-            ids, counts = resolved_ids_and_counts(_adv_files(adv))
+            ids, counts = resolved_ids_and_counts(_adv_files(adv, prefix))
             already = set(state["notified_resolved"].get(adv, []))
             new_ids = ids - already
             last_ts = state["last_resolved_email_ts"].get(adv)
@@ -152,8 +153,14 @@ def main():
                 except Exception as e:
                     print(f"::warning::responses email to {email_to} failed: {e}")
     if not dry:
-        C.save_json(STATE, state)
-    print(f"done — {sent} advisor email(s) sent")
+        C.save_json(state_path, state)
+    return sent
+
+def main():
+    dry = "--dry-run" in sys.argv
+    # Legacy repo: root files. Consolidated workspace: sweep every <id>/ subfolder.
+    total = sum(_run_project(prefix, dry) for prefix in (C.project_prefixes() or [""]))
+    print(f"done — {total} advisor email(s) sent")
 
 if __name__ == "__main__":
     main()

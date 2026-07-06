@@ -48,9 +48,9 @@ def default_sender_name():
     """From-name fallback when the author name and SMTP_FROM_NAME are unset — brand, else the noun."""
     return (os.environ.get("BRAND_NAME") or "").strip() or f"{doc_noun().capitalize()} review"
 
-def chapter_labels():
-    """id -> {n, title} from chapters.json (empty dict if missing)."""
-    rows = load_json("chapters.json", [])
+def chapter_labels(prefix=""):
+    """id -> {n, title} from <prefix>chapters.json (empty dict if missing)."""
+    rows = load_json(f"{prefix}chapters.json", [])
     return {r["id"]: {"n": r["n"], "title": r["title"]} for r in rows}
 
 def short_title(t):
@@ -71,9 +71,12 @@ def advisor_name(adv_id, reg):
         return "Lab reviewer"
     return adv_id
 
-def portal_advisor_url(base, adv_id, name=""):
+def portal_advisor_url(base, adv_id, name="", prefix=""):
     base = (base or "").rstrip("/") + "/"
-    return f"{base}advisor.html?a={quote(adv_id)}&n={quote(name or '')}"
+    url = f"{base}advisor.html?a={quote(adv_id)}&n={quote(name or '')}"
+    if prefix:   # consolidated workspace: tell the reviewer bundle which project subfolder to read
+        url += f"&p={quote(prefix.rstrip('/'))}"
+    return url
 
 def esc(s):
     return (s or "").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -183,11 +186,11 @@ def smtp_from():
 def needs_bootstrap(state):
     return not state.get("bootstrapped")
 
-def resolved_by_advisor():
-    """{ advisorId: set(comment ids that already have a resolution) } from advisor/*/*.json."""
+def resolved_by_advisor(prefix=""):
+    """{ advisorId: set(comment ids that already have a resolution) } from <prefix>advisor/*/*.json."""
     out = {}
-    for p in glob.glob("advisor/*/*.json"):
-        adv = p.split(os.sep)[1]
+    for p in glob.glob(f"{prefix}advisor/*/*.json"):
+        adv = p.split(os.sep)[-2]
         j = load_json(p, None)
         if not j:
             continue

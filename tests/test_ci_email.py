@@ -126,3 +126,41 @@ def test_invite_main_processes_each_workspace_project(_ws, monkeypatch):
     # each project's advisors.json marked invited independently
     assert _json.loads(_pl.Path("metro/advisors.json").read_text())["advisors"][0]["invited"] is True
     assert _json.loads(_pl.Path("optics/advisors.json").read_text())["advisors"][0]["invited"] is True
+
+
+def test_chapter_labels_reads_prefixed_chapters(_ws):
+    _w("metro/chapters.json", [{"id": "intro", "n": 1, "title": "Introduction"}])
+    labels = C.chapter_labels("metro/")
+    assert labels["intro"]["n"] == 1
+    assert C.chapter_labels("") == {}          # no root chapters.json
+
+
+def test_portal_advisor_url_appends_p_for_workspace():
+    assert "&p=metro" in C.portal_advisor_url("https://x/", "CJS", "C", "metro/")
+    assert "&p=" not in C.portal_advisor_url("https://x/", "CJS", "C", "")
+
+
+def test_resolved_by_advisor_reads_prefixed_tree(_ws):
+    _w("metro/advisor/CJS/intro.json", {"comments": [{"id": "c1", "resolution": "done"}]})
+    out = C.resolved_by_advisor("metro/")
+    assert out.get("CJS") == {"c1"}
+    assert C.resolved_by_advisor("") == {}     # nothing at root
+
+
+def test_notify_author_bootstraps_each_workspace_project(_ws):
+    import ci_notify_author as NA
+    for pid in ("metro", "optics"):
+        _w(f"{pid}/advisors.json", {"advisors": []})
+        _w(f"{pid}/notify_config.json", {"author_email": "me@x.com"})
+    NA.main()   # first run = bootstrap per project (no email)
+    assert _pl.Path("metro/notify_state.json").read_text()   # state written under <id>/
+    assert _pl.Path("optics/notify_state.json").read_text()
+
+
+def test_notify_advisors_skips_unconfigured_per_project(_ws):
+    import ci_notify_advisors as NAd
+    _w("metro/advisors.json", {"advisors": [], "email_configured": True})
+    _w("metro/notify_state.json", {"bootstrapped": True, "last_author_digest_ts": "2020-01-01T00:00:00+00:00"})
+    _w("metro/release.json", {})
+    NAd.main()   # configured + no releases → no crash, 0 sent (per-project state honored)
+    assert _pl.Path("metro/notify_state.json").exists()
