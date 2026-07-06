@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_review_common as R  # noqa: E402
 import ci_render  # noqa: E402  (reuse the tested source resolution)
+import ci_agents  # noqa: E402  (the shipped agent catalog + the pure directive resolver)
 
 TEXT_EXTS = {".tex", ".bib", ".cls", ".sty", ".bbl", ".txt"}
 
@@ -129,16 +130,10 @@ def parse_agent_findings(raw):
     return []
 
 
-AGENT_INSTRUCTIONS = (
-    "You are the '{agent}' review agent. The document unit's source is provided as JSON in the piped "
-    "input (stdin) under UNIT. Critique it from your perspective. This is READ-ONLY: do NOT edit any "
-    "files — only report findings.\n\n"
-    "Return ONLY a JSON array, one object per finding, with keys:\n"
-    "  quote   a short EXACT substring of the source your finding is about (for anchoring)\n"
-    "  body    your critique / suggestion in plain language\n"
-    "  tag     a short category (e.g. rigor, clarity, evidence, style)\n"
-    "Return [] if you have no findings."
-)
+# The legacy generic directive is the back-compat fallback for any name not in the catalog. It now
+# lives in ci_agents (single source) so the resolver and this module agree; re-exported here because
+# tests and the resolver both reference it.
+AGENT_INSTRUCTIONS = ci_agents.LEGACY_AGENT_INSTRUCTIONS
 
 
 def agent_context(task):
@@ -165,11 +160,13 @@ def _run_claude(directive, context, model, label):
     return proc.stdout
 
 
-def run_agent_cli(agent_id, task, model=None):
-    """Invoke Claude Code (headless) as one review agent; returns a list of finding specs. Thin,
-    live-CI-gated boundary around the pure agent instructions/context + parse_agent_findings handling."""
-    out = _run_claude(AGENT_INSTRUCTIONS.format(agent=agent_id), agent_context(task), model, f"agent {agent_id}")
-    return parse_agent_findings(out) if out is not None else []
+def run_agent_cli(agent_id, task, model=None, catalog=None, field=None):
+    """Invoke Claude Code (headless) as one review agent; returns a (capped) list of finding specs.
+    Thin, live-CI-gated boundary. The directive is resolved from the catalog (real system prompt) with
+    a legacy fallback for unknown/bare names; findings are capped per agent (Q4 volume guard)."""
+    directive = ci_agents.resolve_agent_directive(agent_id, catalog, field)
+    out = _run_claude(directive, agent_context(task), model, f"agent {agent_id}")
+    return ci_agents.cap_findings(parse_agent_findings(out)) if out is not None else []
 
 
 def run_claude_cli(task, model=None):
@@ -341,8 +338,8 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     """
     if claude_fn is None:
         claude_fn = run_claude_cli
-    if agent_fn is None:
-        agent_fn = run_agent_cli
+    # agent_fn is left as passed: None means "use the catalog-aware default", which needs the loaded
+    # catalog + per-job field bound in the run-agents branch below (an injected fake is used as-is).
     jobs = R.load_json(R.jobs_path(prefix), [])
     if not isinstance(jobs, list):
         return 0
@@ -365,6 +362,9 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     import tempfile
     build_root = Path(tempfile.mkdtemp(prefix="footnote-apply-"))
     have_claude = claude_configured(os.environ)
+    # The effective agent catalog: engine-owned builtins + any user-authored agents in the repo's
+    # agents.json (repo-level, like the engine itself). Absent file → builtins only. Loaded once here.
+    catalog = ci_agents.load_catalog("agents.json")
     done = 0
     for job in todo:
         ch = job.get("chapter")
@@ -384,8 +384,22 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
+            # A job carrying any LOCAL agent (tool-using, machine-bound) belongs to the local runner
+            # (ci_local) — CI can't run it, so leave the whole job queued for the operator's local drain.
+            agents = job.get("agents") or []
+            if any(ci_agents.runnable_local(a, catalog) for a in agents):
+                print(f"[apply] {prefix}{ch}: run-agents has local agent(s) — leaving for the local "
+                      f"runner (ci_local) — skipping", file=sys.stderr)
+                continue
             task = R.build_apply_task(job, review, R.author_source(files))
-            outputs = {a: (agent_fn(a, task) or []) for a in (job.get("agents") or [])}
+            # Resolve each selected agent's real system prompt via the catalog (legacy fallback for
+            # unknown names). doc.field for the domain critic arrives on the job (client-supplied).
+            field = job.get("field") or os.environ.get("DOC_FIELD") or ""
+            resolver = agent_fn or (lambda aid, t: run_agent_cli(aid, t, catalog=catalog, field=field))
+            # run-agents is READ-ONLY: skip any catalogued doer (writer/responder/…) and any local
+            # agent so it can't run as a CI critic. Unknown/legacy names stay runnable (legacy prompt).
+            selected = [a for a in agents if ci_agents.runnable_in_ci(a, catalog)]
+            outputs = {a: (resolver(a, task) or []) for a in selected}
             jid = job.get("id")
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
                                                   idgen=lambda i, j=jid: f"a_{j}_{i}")

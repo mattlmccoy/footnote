@@ -1668,7 +1668,8 @@ async function sendJob(type){
     if (type === 'run-agents'){
       flash('Requesting agent review…');
       jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:current,
-        agents:_CFG.reviewAgents, status:'queued', requested_ts:new Date().toISOString() });
+        agents:_CFG.reviewAgents, field:(_CFG.doc && _CFG.doc.field) || '',
+        status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: agents '+current);
       flash(`Requested adversary review of ${UNITC} ${chMeta(current).n}`);
       return;

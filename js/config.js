@@ -13,7 +13,7 @@ const REQUIRED = ['owner', 'dataRepo'];
 
 const DEFAULTS = {
   brand: { name: 'Footnote', logo: 'brand/footnote-mark.png', accent: '#2c64c4' },
-  doc: { noun: 'document', unitNoun: 'chapter', title: '' },
+  doc: { noun: 'document', unitNoun: 'chapter', title: '', field: '' },
   storagePrefix: 'footnote',
   ownerPortalFile: '',
   advisorPortalFile: 'advisor.html',
@@ -123,7 +123,7 @@ export function dataRepoFromParams(search, fallback) {
 
 const PROJECT_REQUIRED = ['id', 'name', 'dataRepo'];
 const PROJECT_DEFAULTS = {
-  doc: { noun: 'document', unitNoun: 'chapter', title: '' },
+  doc: { noun: 'document', unitNoun: 'chapter', title: '', field: '' },
   advisors: [],
   reviewAgents: [],
   deadline: null,

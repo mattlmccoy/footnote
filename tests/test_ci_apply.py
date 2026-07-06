@@ -11,6 +11,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "data-template"))
 import ci_review_common as R  # noqa: E402
+import ci_apply as A  # noqa: E402
 
 
 # --------------------------------------------------------------- literal_replace
@@ -417,6 +418,42 @@ def test_process_run_agents_tolerates_an_agent_with_no_findings():
     new_review = R.process_run_agents_job(job, review, {"a": [], "b": None}, "t",
                                           idgen=lambda i: f"ag{i}")
     assert new_review["comments"] == []
+
+
+# --------------------------------------------------------------- run_agent_cli uses the catalog (B1)
+def test_run_agent_cli_sends_a_catalog_agents_real_system_prompt(monkeypatch):
+    import ci_agents as C
+    captured = {}
+    monkeypatch.setattr(A, "_run_claude", lambda directive, ctx, model, label: (captured.update(d=directive) or "[]"))
+    A.run_agent_cli("rigor", {"chapter": "ch1", "source": {}}, catalog=C.builtin_catalog())
+    d = captured["d"]
+    assert "survive scrutiny" in d.lower() or "overclaim" in d.lower()   # the real rigor prompt, not "{agent}"
+    assert "Return ONLY a JSON array" in d and "READ-ONLY" in d.upper()
+
+
+def test_run_agent_cli_falls_back_to_legacy_for_an_unknown_name(monkeypatch):
+    import ci_agents as C
+    captured = {}
+    monkeypatch.setattr(A, "_run_claude", lambda directive, ctx, model, label: (captured.update(d=directive) or "[]"))
+    A.run_agent_cli("my-old-agent", {"chapter": "ch1", "source": {}}, catalog=C.builtin_catalog())
+    assert captured["d"] == A.AGENT_INSTRUCTIONS.format(agent="my-old-agent")
+
+
+def test_run_agent_cli_caps_findings_per_agent(monkeypatch):
+    import ci_agents as C
+    flood = json.dumps([{"quote": str(i), "body": "b", "tag": "x"} for i in range(30)])
+    monkeypatch.setattr(A, "_run_claude", lambda *a, **k: flood)
+    out = A.run_agent_cli("rigor", {"chapter": "ch1", "source": {}}, catalog=C.builtin_catalog())
+    assert len(out) == C.DEFAULT_MAX_FINDINGS
+
+
+def test_run_agent_cli_fills_the_domain_field(monkeypatch):
+    import ci_agents as C
+    captured = {}
+    monkeypatch.setattr(A, "_run_claude", lambda directive, ctx, model, label: (captured.update(d=directive) or "[]"))
+    A.run_agent_cli("domain", {"chapter": "ch1", "source": {}}, catalog=C.builtin_catalog(),
+                    field="materials engineering")
+    assert "materials engineering" in captured["d"] and "{field}" not in captured["d"]
 
 
 # --------------------------------------------------------------- Claude boundary (pure parts)
