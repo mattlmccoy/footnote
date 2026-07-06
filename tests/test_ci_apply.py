@@ -208,6 +208,16 @@ def test_build_apply_task_packages_chapter_and_comments_for_claude():
     assert c2["revise_note"] == "be more specific"   # revision context forwarded to Claude
 
 
+def test_build_apply_task_forwards_the_job_revision_note():
+    # "Request changes" puts revise_note on the JOB (not the comment); Claude must see it to redo.
+    review = {"comments": [_comment("c1", "reword")]}
+    job = {"chapter": "ch1", "comment_ids": ["c1"], "revision": True,
+           "revise_note": "make it shorter"}
+    task = R.build_apply_task(job, review, {"m.tex": "x"})
+    assert task["revision"] is True
+    assert task["revise_note"] == "make it shorter"
+
+
 def test_process_apply_edits_job_stages_claude_edits_deterministically():
     review = {"comments": [_comment("c1", quote="the alpha term")]}
     job = {"id": "j1", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"]}
@@ -223,6 +233,9 @@ def test_process_apply_edits_job_stages_claude_edits_deterministically():
     assert c["claude"]["response"] == "Reworded for clarity."
     assert c["claude"]["branch"] == "review-edits/02-methods"
     assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}
+    # the SOURCE diff is persisted on the comment (mirrors apply-direct's `edit`), so merge can
+    # reapply only the approved comments' edits from main — the partial-approval mechanism.
+    assert c["source_edit"] == {"op": "replace", "find": "\\alpha", "replacement": "\\beta"}
 
 
 def test_process_apply_edits_job_answers_when_claude_makes_no_edit():
@@ -247,6 +260,48 @@ def test_process_apply_edits_job_flags_conflict_when_claude_target_absent():
     new_review, _, _, applied = R.process_apply_edits_job(
         job, review, {"ch1.tex": "text"}, edits, "t")
     assert applied is False
+    assert new_review["comments"][0]["status"] == "conflict"
+
+
+# ================================================================ approve -> merge
+def test_comment_source_edit_reads_direct_edit_or_claude_source_edit():
+    direct = {"edit": {"op": "replace", "find": "a", "replacement": "b"}}
+    claude = {"source_edit": {"op": "replace", "find": "c", "replacement": "d"}}
+    assert R.comment_source_edit(direct) == {"find": "a", "replacement": "b"}
+    assert R.comment_source_edit(claude) == {"find": "c", "replacement": "d"}
+    assert R.comment_source_edit({"body": "just a note"}) is None
+
+
+def _approved(cid, find, repl, source_edit=False):
+    key = "source_edit" if source_edit else "edit"
+    return {"id": cid, "status": "approved",
+            key: {"op": "replace", "find": find, "replacement": repl},
+            "claude": {"branch": "review-edits/x"}}
+
+
+def test_process_merge_applies_only_approved_edits_and_marks_them_merged():
+    review = {"comments": [
+        _approved("c1", "\\alpha", "\\beta"),                       # approved (apply-direct)
+        _approved("c2", "\\gamma", "\\delta", source_edit=True),    # approved (claude)
+        {"id": "c3", "status": "declined",                          # REJECTED — must NOT be applied
+         "edit": {"op": "replace", "find": "\\keepme", "replacement": "\\DROPPED"}},
+    ]}
+    job = {"id": "m1", "type": "merge", "chapter": "02-methods"}
+    files = {"methods.tex": "\\alpha \\gamma \\keepme"}
+    new_review, new_files, merged = R.process_merge_job(job, review, files, "t")
+    assert new_files["methods.tex"] == "\\beta \\delta \\keepme"    # rejected edit NOT applied
+    assert set(merged) == {"c1", "c2"}
+    byid = {c["id"]: c for c in new_review["comments"]}
+    assert byid["c1"]["status"] == "merged" and byid["c2"]["status"] == "merged"
+    assert byid["c3"]["status"] == "declined"                       # untouched
+
+
+def test_process_merge_flags_conflict_when_approved_target_missing():
+    review = {"comments": [_approved("c1", "\\notthere", "\\x")]}
+    job = {"id": "m1", "type": "merge", "chapter": "ch1"}
+    new_review, new_files, merged = R.process_merge_job(job, review, {"ch1.tex": "empty"}, "t")
+    assert merged == []
+    assert new_files == {"ch1.tex": "empty"}
     assert new_review["comments"][0]["status"] == "conflict"
 
 

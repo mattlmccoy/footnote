@@ -162,15 +162,13 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
     _git(["checkout", base], repo_dir)
 
 
-def build_preview(prefix, unit_id, source_dir, workdir):
-    """Build the branch preview ``<prefix>preview/<unit>.html`` from ``source_dir`` (a checkout of
-    the review-edits branch), reusing the SAME export/chapter-html.sh the render pipeline uses — so
-    preview and the published reading view are byte-for-byte the same renderer, just a different
-    source tree and output path. Best-effort: a failed build leaves any prior preview in place.
-    Output always goes into the data repo (cwd); only SOURCE_DIR points at the branch."""
+def _build_unit(prefix, unit_id, source_dir, out_path, workdir, label):
+    """Render one unit to ``out_path`` via the SAME export/chapter-html.sh the render pipeline uses —
+    so preview (branch) and published content (merged) are byte-for-byte the same renderer, differing
+    only in source tree and output path. Best-effort: a failed build leaves any prior output."""
     rows = ci_render.load_units(prefix)
     entry = ci_render.derive_entry(rows)
-    out = Path(R.preview_out(prefix, unit_id))
+    out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ,
                SOURCE_DIR=str(Path(source_dir).resolve()),
@@ -181,10 +179,74 @@ def build_preview(prefix, unit_id, source_dir, workdir):
         subprocess.run(["bash", str(ci_render.CHAPTER_HTML), unit_id, str(out.resolve())],
                        check=True, env=env, stdout=sys.stderr, stderr=sys.stderr)
     except subprocess.CalledProcessError as e:
-        print(f"[apply] preview {prefix}{unit_id}: build failed ({e}) — leaving prior preview", file=sys.stderr)
+        print(f"[apply] {label} {prefix}{unit_id}: build failed ({e}) — leaving prior output", file=sys.stderr)
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits")
+def build_preview(prefix, unit_id, source_dir, workdir):
+    """Branch preview → ``<prefix>preview/<unit>.html`` (the review-edits view, distinct from content/)."""
+    _build_unit(prefix, unit_id, source_dir, R.preview_out(prefix, unit_id), workdir, "preview")
+
+
+def build_content(prefix, unit_id, source_dir, workdir):
+    """Published reading view → ``<prefix>content/<unit>.html`` (rebuilt from merged main source)."""
+    _build_unit(prefix, unit_id, source_dir, ci_render.content_out(prefix, unit_id), workdir, "content")
+
+
+def _delete_branch(repo_dir, branch, token=None, remote_repo=None):
+    """Best-effort delete of the review branch on its origin (the branch's edits are now merged)."""
+    if token and remote_repo:
+        url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
+        _git(["push", url, "--delete", branch], repo_dir, check=False)
+    else:
+        _git(["push", "origin", "--delete", branch], repo_dir, check=False)
+
+
+def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_repo,
+                  token, base_branch, workdir):
+    """Publish the author-approved edits for a unit (author-triggered merge job). Reapplies ONLY the
+    approved comments' source edits to main (so rejected edits never land), writes the merged source
+    to the source main, rebuilds the published content/<unit>.html, drops the review branch + its
+    preview, and returns the updated review (approved→merged). This is the one place edits become
+    permanent — and it only runs on an author-queued merge job."""
+    new_review, new_files, merged = R.process_merge_job(job, review, files, _now_iso())
+    if not merged:
+        print(f"[apply] merge {prefix}{ch}: nothing approved to publish", file=sys.stderr)
+        return new_review
+    branch = R.branch_for(ch)
+    changed = {rel: txt for rel, txt in new_files.items() if files.get(rel) != txt}
+    if remote_repo:
+        # external source repo: write merged files into the clone and push to its main
+        for rel, txt in changed.items():
+            fp = Path(source_dir) / rel
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(txt, encoding="utf-8")
+        if changed:
+            _git(["checkout", base_branch], repo_dir, check=False)
+            _git(["add", *changed.keys()], repo_dir)
+            if _git(["diff", "--cached", "--quiet"], repo_dir, check=False).returncode != 0:
+                _git(["commit", "-m", f"merge: publish approved edits on {ch}"], repo_dir)
+                url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
+                _git(["push", url, f"HEAD:{base_branch}"], repo_dir)
+    else:
+        # in-repo (workspace) source: write merged files into <prefix>source/ on the data-repo main;
+        # the workflow's final commit lands them together with content/review/queue writeback.
+        src_rel = os.path.relpath(source_dir, repo_dir)
+        for rel, txt in changed.items():
+            fp = Path(repo_dir) / os.path.normpath(os.path.join(src_rel, rel))
+            fp.parent.mkdir(parents=True, exist_ok=True)
+            fp.write_text(txt, encoding="utf-8")
+    # rebuild the published reading view from the merged source, then drop the branch + its preview
+    build_content(prefix, ch, source_dir, workdir)
+    _delete_branch(repo_dir, branch, token, remote_repo)
+    try:
+        Path(R.preview_out(prefix, ch)).unlink()
+    except FileNotFoundError:
+        pass
+    print(f"[apply] merge {prefix}{ch}: published {len(merged)} approved edit(s)")
+    return new_review
+
+
+HANDLED_TYPES = ("apply-direct", "apply-edits", "merge")
 
 
 def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None):
@@ -224,6 +286,14 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
         ch = job.get("chapter")
         review = R.load_json(R.review_path(prefix, ch), {"comments": []})
         files = read_text_files(source_dir)
+
+        if job.get("type") == "merge":
+            new_review = publish_merge(prefix, ch, job, review, files,
+                                       source_dir, repo_dir, remote_repo, token, base_branch, build_root)
+            _write_json(R.review_path(prefix, ch), new_review)
+            jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
 
         if job.get("type") == "apply-edits":
             if not have_claude:

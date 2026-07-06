@@ -193,3 +193,54 @@ def test_apply_edits_left_queued_when_claude_not_configured(workspace_repo, monk
                              claude_fn=lambda t: called.append(t) or {})
     assert called == []                                  # Claude never invoked
     assert len(json.loads((data / "proj" / "jobs.json").read_text())) == 1   # job still queued
+
+
+def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_path):
+    """An author-approved merge job: only the approved edit lands on main, the rejected one does not,
+    content is rebuilt, the review branch + preview are dropped, and the queue drains. No pandoc."""
+    data, bare = workspace_repo
+    (data / "proj" / "source" / "methods.tex").write_text("x = \\alpha + \\keepme\n")
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "status": "approved",
+         "edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
+         "staged_edit": {"before": "a", "after": "b"}, "claude": {"branch": "review-edits/02-methods"}},
+        {"id": "c2", "status": "declined",
+         "edit": {"op": "replace", "find": "\\keepme", "replacement": "\\DROPPED"}}]}))
+    (data / "proj" / "preview").mkdir(parents=True, exist_ok=True)
+    (data / "proj" / "preview" / "02-methods.html").write_text("<old preview>")
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "m1", "type": "merge", "chapter": "02-methods", "status": "queued"}]))
+    _git(["add", "-A"], data)
+    _git(["commit", "-m", "approve + queue merge"], data)
+    _git(["push", "origin", "main"], data)
+    # a review branch exists on origin; merge should delete it
+    _git(["branch", "review-edits/02-methods"], data)
+    _git(["push", "origin", "review-edits/02-methods"], data)
+
+    fake = tmp_path / "fake.sh"
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+
+    n = ci_apply.process_project("proj/", "owner/data", token="")
+    assert n == 1
+
+    # approved edit applied to main source; rejected edit NOT applied
+    assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\beta + \\keepme\n"
+    # published content rebuilt from the merged source
+    content = (data / "proj" / "content" / "02-methods.html").read_text()
+    assert "\\beta" in content and "\\DROPPED" not in content
+    # review branch deleted from origin
+    remotes = subprocess.run(["git", "ls-remote", "--heads", str(bare), "review-edits/02-methods"],
+                             capture_output=True, text=True, check=True).stdout
+    assert remotes.strip() == ""
+    # preview dropped, queue drained, statuses updated
+    assert not (data / "proj" / "preview" / "02-methods.html").exists()
+    assert json.loads((data / "proj" / "jobs.json").read_text()) == []
+    byid = {c["id"]: c for c in json.loads(
+        (data / "proj" / "reviews" / "02-methods.json").read_text())["comments"]}
+    assert byid["c1"]["status"] == "merged" and byid["c2"]["status"] == "declined"

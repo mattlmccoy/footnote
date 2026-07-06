@@ -188,6 +188,58 @@ def process_apply_direct_job(job, review, files, ts):
     return {**review, "comments": new_comments}, work, branch, applied
 
 
+# --------------------------------------------------------------- approve -> merge
+# Merge is the ONE place edits become permanent, and it is author-triggered only (the front-end sets
+# approved comments to status 'approved' and queues a merge job; reject -> 'declined', revise ->
+# 're-queued'). Partial approval on a shared per-unit branch is handled by NOT merging the branch:
+# instead we reapply ONLY the approved comments' source edits to main from scratch, so rejected edits
+# never land. A comment's source edit is its verbatim ``edit`` (apply-direct) or ``source_edit``
+# (Claude) — the same shape, so both merge uniformly.
+
+def comment_source_edit(comment):
+    """The {find, replacement} source edit for a comment, from ``edit`` (apply-direct) or
+    ``source_edit`` (Claude apply-edits), or None if it carries neither."""
+    spec = comment.get("edit") or comment.get("source_edit")
+    if not spec or spec.get("find") is None:
+        return None
+    return {"find": spec.get("find"), "replacement": spec.get("replacement", "")}
+
+
+def process_merge_job(job, review, files, ts):
+    """Publish the APPROVED edits for a unit. Reapplies each approved comment's source edit to the
+    working files via literal_replace (rejected/other comments are ignored, so their edits never
+    land), marks the applied comments ``merged``, and flags any whose target is missing/ambiguous
+    ``conflict``. Returns ``(new_review, new_files, merged_ids)``. Pure: ``ts`` injected, inputs
+    untouched. The caller writes new_files to the source main and republishes content/<unit>.html."""
+    work = dict(files)
+    by_id = {c.get("id"): c for c in (review.get("comments") or [])}
+    updated = dict(by_id)
+    merged = []
+    for c in (review.get("comments") or []):
+        if c.get("status") != "approved":
+            continue
+        cid = c.get("id")
+        edit = comment_source_edit(c)
+        if not edit:                                   # approved but no source change (e.g. answered)
+            updated[cid] = {**c, "status": "merged"}
+            merged.append(cid)
+            continue
+        find = edit["find"]
+        hits = [p for p, text in work.items() if find and text.count(find) >= 1]
+        if len(hits) != 1:
+            updated[cid] = conflict_comment(c, f"approved edit's target matched {len(hits)} files", ts)
+            continue
+        try:
+            work[hits[0]] = literal_replace(work[hits[0]], find, edit["replacement"])
+        except EditConflict as e:
+            updated[cid] = conflict_comment(c, str(e), ts)
+            continue
+        updated[cid] = {**c, "status": "merged"}
+        merged.append(cid)
+    new_comments = [updated.get(c.get("id"), c) for c in (review.get("comments") or [])]
+    return {**review, "comments": new_comments}, work, merged
+
+
 # --------------------------------------------------------------- apply-edits (Claude-authored)
 # The apply-edits path is the one place Claude writes. Claude never mutates files directly: it reads
 # the chapter + comments (build_apply_task) and returns per-comment edit SPECS, which this tested
@@ -211,17 +263,22 @@ def build_apply_task(job, review, files):
             "edit": c.get("edit"),
             "from_advisor": c.get("from_advisor"),
         })
-    return {"chapter": job.get("chapter"), "source": dict(files), "comments": out_comments}
+    return {"chapter": job.get("chapter"), "source": dict(files), "comments": out_comments,
+            "revision": bool(job.get("revision")), "revise_note": job.get("revise_note", "")}
 
 
-def stage_claude_edit(comment, branch, ts, response, prose_before, prose_after):
-    """A comment STAGED from a Claude edit: records Claude's response text and the reader-facing
-    diff (prose before/after Claude reported), on the review branch. Input not mutated."""
+def stage_claude_edit(comment, branch, ts, response, prose_before, prose_after,
+                      source_before=None, source_after=None):
+    """A comment STAGED from a Claude edit: records Claude's response, the reader-facing diff (prose
+    before/after), AND the SOURCE diff as ``source_edit`` (mirroring apply-direct's ``edit``) so
+    merge can reapply only the approved comments' source edits from main. Input not mutated."""
     out = dict(comment)
     out["status"] = "staged"
     out["claude"] = {**(comment.get("claude") or {}),
                      "branch": branch, "response": response, "ts": ts}
     out["staged_edit"] = {"before": prose_before or "", "after": prose_after or ""}
+    if source_before is not None and source_after is not None:
+        out["source_edit"] = {"op": "replace", "find": source_before, "replacement": source_after}
     return out
 
 
@@ -268,7 +325,8 @@ def process_apply_edits_job(job, review, files, edits_by_id, ts):
                 updated[cid] = conflict_comment(comment, str(e), ts)
                 continue
             updated[cid] = stage_claude_edit(comment, branch, ts, response,
-                                             spec.get("prose_before"), spec.get("prose_after"))
+                                             spec.get("prose_before"), spec.get("prose_after"),
+                                             source_before=before, source_after=after)
             applied = True
         else:
             updated[cid] = answer_comment(comment, ts, response)

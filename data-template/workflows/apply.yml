@@ -2,9 +2,10 @@ name: apply
 # Drain the review job queue on the ADOPTER's own Actions. Handles the DETERMINISTIC apply-direct
 # job (an owner's verbatim edit — no Claude, works with the AI assistant off) and the Claude
 # apply-edits job (freeform comments → Claude-authored LaTeX edit specs, applied deterministically
-# and staged for the author to approve — never auto-merged). run-agents and merge land in later
-# slices. Dual-mode: legacy root or workspace <id>/. apply-edits only runs when ANTHROPIC_API_KEY
-# is set — otherwise the job just waits (nothing runs until the adopter configures Claude).
+# and staged for the author to approve — never auto-merged) and the author-triggered merge job
+# (publish ONLY the approved edits to main, rebuild content/<unit>.html, drop the review branch).
+# run-agents lands in a later slice. Dual-mode: legacy root or workspace <id>/. apply-edits only
+# runs when ANTHROPIC_API_KEY is set — otherwise the job just waits.
 on:
   # The app enqueues by committing jobs.json (workspace: <id>/jobs.json). The drain commits the
   # updated queue + reviews back with [skip ci], so this never loops.
