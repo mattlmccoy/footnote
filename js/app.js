@@ -7,6 +7,7 @@ import { sealToBase64 } from './vendor/seal.js?v=eceba50';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=eceba50';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=eceba50';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=eceba50';
+import { loadAgentCatalog, agentCatalogView, agentCatalogHtml } from './agentcatalog.js?v=eceba50';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=eceba50';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=eceba50';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=eceba50';
@@ -2495,8 +2496,6 @@ function openMoreMenu(){
 function aiSettingHtml(){
   const on = assistantOn();
   const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
-  const agents = shipped ? escapeHtml(_CFG.reviewAgents.join(', '))
-    : '<span style="color:var(--text-3)">none configured — “Run review agents” stays hidden</span>';
   const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
   const setup = on ? `
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
@@ -2522,10 +2521,10 @@ function aiSettingHtml(){
         <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
         <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
       </div>
-      <div style="margin:10px 0 4px"><b>3. Review agents</b> (comma-separated ids; blank = no agents):</div>
+      <div style="margin:10px 0 4px"><b>3. Review agents</b> — tick the agents to run; blank = none. Read-only critics add comments; “doer” / “local” agents run through the local runner on your machine.</div>
+      <div id="ai-agent-catalog" style="margin-bottom:8px;font-size:11.5px;color:var(--text-3)">Loading the agent catalog…</div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <input id="ai-agents" placeholder="e.g. adversary, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" style="flex:1;${inp}" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>
-        <button class="btn" id="ai-save-agents" style="padding:5px 12px">Save</button>
+        <button class="btn" id="ai-save-agents" style="padding:5px 12px" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>Save selection</button>
         <span id="ai-agents-stat" style="font-size:11.5px;color:var(--text-3)"></span>
       </div>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
@@ -2587,10 +2586,22 @@ function wireAiSetup(t){
       stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
     finally { saveSec.disabled = false; }
   };
+  // Render the visible agent catalog (B2): cards read from the data repo's agents.json (with a shipped
+  // fallback), checkbox = currently selected. Editable only in a hub project (else agents are fixed in
+  // config). This whole panel only exists when the assistant is ON, so the catalog is AI-gated by design.
+  const catalogBox = document.getElementById('ai-agent-catalog');
+  const editable = !!(_projectId && _CFG.hubRepo);
+  if (catalogBox) (async () => {
+    try {
+      const catalog = await loadAgentCatalog(t);
+      const rows = agentCatalogView(catalog, _CFG.reviewAgents || []);
+      catalogBox.innerHTML = agentCatalogHtml(rows, { editable });
+    } catch(e){ catalogBox.textContent = 'Could not load the agent catalog: ' + e.message; }
+  })();
   const saveAg = document.getElementById('ai-save-agents');
-  if (saveAg && !document.getElementById('ai-agents').disabled) saveAg.onclick = async () => {
+  if (saveAg && editable) saveAg.onclick = async () => {
     const stat = document.getElementById('ai-agents-stat');
-    const list = document.getElementById('ai-agents').value.split(',').map(s => s.trim()).filter(Boolean);
+    const list = [...(catalogBox ? catalogBox.querySelectorAll('input[data-agent]:checked') : [])].map(el => el.dataset.agent);
     saveAg.disabled = true; stat.textContent = 'Saving…'; stat.style.color = 'var(--text-3)';
     try {
       await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t);
