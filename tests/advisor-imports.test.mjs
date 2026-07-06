@@ -15,13 +15,16 @@ const body = advisor.replace(importLines, '');
 
 // helper name in the body  →  the local binding that MUST be imported for it (alias-aware)
 const WHOLEDOC_HELPERS = ['orderedUnits', 'flattenReviews', 'routeWrite', 'wrapUnit', 'stripSegmentId'];
+// Same guard for the Lane C reliability helpers (nethelpers.js): a bad cachebust rebase could drop the
+// import while leaving the calls, ReferenceError-ing the reviewer's fetch/backoff/orphan paths.
+const NET_HELPERS = ['fetchWithTimeout', 'classifyGitHubError', 'retryAfterMs', 'TTLCache', 'orphanComments'];
 
-for (const name of WHOLEDOC_HELPERS) {
-  test(`advisor.js imports '${name}' if it uses it (guards the wholedoc bad-merge drop)`, () => {
+for (const name of [...WHOLEDOC_HELPERS, ...NET_HELPERS]) {
+  test(`advisor.js imports '${name}' if it uses it (guards a bad-merge import drop)`, () => {
     const usedInBody = new RegExp(`\\b${name}\\b`).test(body);
     if (!usedInBody) return;   // not used → nothing to import
     // must be bound by an import — either `name` directly or `something as name`
     const bound = new RegExp(`\\b(?:${name}\\b|as\\s+${name}\\b)`).test(importLines);
-    assert.ok(bound, `advisor.js uses '${name}' but no import binds it — reviewer render/comment will ReferenceError`);
+    assert.ok(bound, `advisor.js uses '${name}' but no import binds it — reviewer path will ReferenceError`);
   });
 }
