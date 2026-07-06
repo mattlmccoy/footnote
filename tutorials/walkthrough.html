@@ -18,7 +18,7 @@ body{
   background:radial-gradient(1200px 700px at 50% -10%,#20264a 0%,#141830 45%,#0c0f1e 100%);
   color:#fff;overflow:hidden;
 }
-#stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;perspective:1600px}
+#stage{position:fixed;top:0;left:0;right:0;bottom:200px;display:flex;align-items:center;justify-content:center;perspective:1600px}
 
 /* progress + controls */
 #bar{position:fixed;top:0;left:0;height:3px;background:var(--accent);width:0;transition:width .25s linear;z-index:50;box-shadow:0 0 12px var(--accent)}
@@ -32,13 +32,13 @@ body.embed #ctrls,body.embed #dots{display:none}   /* clean thumbnail when embed
 #ctrls svg{width:18px;height:18px;fill:#fff}
 
 /* caption */
-#cap{position:fixed;bottom:96px;left:0;right:0;text-align:center;z-index:40;pointer-events:none;padding:0 24px}
+#cap{position:fixed;bottom:78px;left:0;right:0;text-align:center;z-index:40;pointer-events:none;padding:0 24px}
 #cap .k{font-size:12px;letter-spacing:.22em;text-transform:uppercase;color:var(--accent-2);font-weight:600;opacity:0;transform:translateY(8px);transition:.5s}
-#cap .t{font-size:29px;font-weight:600;letter-spacing:-.4px;margin-top:9px;opacity:0;transform:translateY(10px);transition:.55s .06s;line-height:1.25;max-width:760px;margin-left:auto;margin-right:auto}
+#cap .t{font-size:25px;font-weight:600;letter-spacing:-.4px;margin-top:8px;opacity:0;transform:translateY(10px);transition:.55s .06s;line-height:1.3;max-width:780px;margin-left:auto;margin-right:auto}
 #cap.show .k,#cap.show .t{opacity:1;transform:none}
 
 /* the app frame */
-.frame{width:900px;max-width:92vw;height:560px;max-height:74vh;background:var(--card);border-radius:16px;
+.frame{width:900px;max-width:92vw;height:560px;max-height:68vh;background:var(--card);border-radius:16px;
   box-shadow:0 40px 120px -30px rgba(0,0,0,.65),0 0 0 1px rgba(255,255,255,.04);
   color:var(--ink);overflow:hidden;display:flex;flex-direction:column;opacity:0;transform:scale(.965) translateY(12px);
   transition:opacity .55s cubic-bezier(.2,.7,.2,1),transform .55s cubic-bezier(.2,.7,.2,1)}
@@ -263,7 +263,7 @@ const scenes = [
   async run(my){ cur.style.opacity=1; await showFrame(); await moveTo(S('.side .s.on')); await moveTo(S('.doc h3')); const doc=S('.doc'); doc.style.transition='transform 1.8s ease'; doc.style.transform='translateY(-40px)'; await hold(2000); doc.style.transform='none'; await hold(700); } },
 
 // 2 — invite reviewers + connect email
-{ k:'Invite', t:'Invite anyone to review by email. Overleaf only lets your paid collaborators comment — Footnote opens it up.', dur:9500,
+{ k:'Invite', t:'Invite any reviewer by email — no paid Overleaf seat required. And Overleaf comments sit in raw LaTeX, not the rendered page, so reviewers judge blind. Footnote hands them the formatted document.', dur:9500,
   build(){ stage.innerHTML = frame('Reviewers', `<div class="panel"><div class="h2">Reviewers</div><div class="sub">Add a reviewer to create their private portal and send an invite.</div>
     <div style="display:flex;gap:8px;margin-bottom:14px"><input class="field" style="flex:1;margin:0" value="Dr. Ada Byron" id="rn"><input class="field" style="flex:1;margin:0" value="ada@lab.edu"><button class="btn p" id="add">Add</button></div>
     <div id="rlist"></div></div>`); },
@@ -343,7 +343,7 @@ const scenes = [
   build(){ stage.innerHTML = `<div class="wl-wrap">
     <div class="wl-card">
       <div class="wl-h">${OVERLEAF} chapters/results.tex · 2 open</div>
-      <div class="wl-row">§3.2 · Carolyn Seepersad<br><span class="wl-chip">search: "contrast was pronounced"</span><br><span class="wl-ba">before "pronounced" → after "measurable"</span></div>
+      <div class="wl-row">§3.2 · Charles Babbage<br><span class="wl-chip">search: "contrast was pronounced"</span><br><span class="wl-ba">before "pronounced" → after "measurable"</span></div>
       <div class="wl-row">§3.4 · You<br><span class="wl-chip">search: "the densification front"</span></div>
       <button class="wl-cta" id="wlcopy">Copy all as Markdown</button>
     </div>
