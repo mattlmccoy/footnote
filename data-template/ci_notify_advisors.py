@@ -126,9 +126,10 @@ def _run_project(prefix, dry):
         url = C.portal_advisor_url(base, adv, name, prefix)
         if not email_to:
             continue
+        prefs = C.load_json(f"{prefix}advisor/{adv}/prefs.json", {})   # reviewer's own email prefs (both off = zero)
         # chapter-released
         newch = new_released(adv, rel, state)
-        if newch:
+        if newch and C.reviewer_wants(prefs, "released"):
             subj, text, html = _chapters_email(name, newch, labels, url, stamp)
             try:
                 C.send(frm, email_to, C.build_eml(frm, frm_name, email_to, subj, text, html), dry=dry)
@@ -137,8 +138,8 @@ def _run_project(prefix, dry):
                 sent += 1; print(f"chapter-released email to {email_to} ({len(newch)})")
             except Exception as e:
                 print(f"::warning::chapter email to {email_to} failed: {e}")
-        # responses-ready (only when author released responses to this advisor)
-        if rel.get(adv, {}).get("responses_released"):
+        # responses-ready (only when author released responses to this advisor, and they want it)
+        if rel.get(adv, {}).get("responses_released") and C.reviewer_wants(prefs, "responses"):
             ids, counts = resolved_ids_and_counts(_adv_files(adv, prefix))
             already = set(state["notified_resolved"].get(adv, []))
             new_ids = ids - already

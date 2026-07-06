@@ -93,9 +93,13 @@ def _run_project(prefix, dry):
     to = (cfg.get("author_email") or "").strip()
     if not to:
         print(f"::notice::no author_email in {prefix}notify_config.json — author digest skipped ({prefix or 'root'})."); return
+    freq = cfg.get("frequency", "daily")            # user-chosen cadence: off | daily | weekly
     state_path = f"{prefix}{STATE}"
     state = C.load_json(state_path, {})
     now = C.iso_now()
+    # Honor the author's chosen frequency (off = zero notifications). Bootstrapped state still seeds silently.
+    if not C.needs_bootstrap(state) and not C.digest_due(freq, state.get("last_author_digest_ts")):
+        print(f"::notice::author digest not due yet (freq={freq}) — skipped ({prefix or 'root'})."); return
     if C.needs_bootstrap(state):
         C.seed_bootstrap(state, C.load_json(f"{prefix}release.json", {}), C.resolved_by_advisor(prefix), now)
         if not dry:

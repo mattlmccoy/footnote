@@ -164,3 +164,67 @@ def test_notify_advisors_skips_unconfigured_per_project(_ws):
     _w("metro/release.json", {})
     NAd.main()   # configured + no releases → no crash, 0 sent (per-project state honored)
     assert _pl.Path("metro/notify_state.json").exists()
+
+
+# ---- user-controllable notification settings: author digest frequency + reviewer per-event toggles ----
+import datetime as _dt
+
+
+def _t(hours_ago=0, days_ago=0):
+    return (_dt.datetime(2026, 7, 5, 12, 0, tzinfo=_dt.timezone.utc)
+            - _dt.timedelta(hours=hours_ago, days=days_ago)).isoformat()
+
+_NOW = _dt.datetime(2026, 7, 5, 12, 0, tzinfo=_dt.timezone.utc)
+
+
+def test_digest_due_off_never_sends():
+    assert C.digest_due("off", None, _NOW) is False
+    assert C.digest_due("off", _t(days_ago=30), _NOW) is False
+
+
+def test_digest_due_daily():
+    assert C.digest_due("daily", None, _NOW) is True          # never sent → send
+    assert C.digest_due("daily", _t(hours_ago=2), _NOW) is False
+    assert C.digest_due("daily", _t(hours_ago=21), _NOW) is True
+
+
+def test_digest_due_weekly():
+    assert C.digest_due("weekly", _t(days_ago=3), _NOW) is False
+    assert C.digest_due("weekly", _t(days_ago=8), _NOW) is True
+
+
+def test_digest_due_defaults_to_daily():
+    assert C.digest_due(None, _t(hours_ago=21), _NOW) is True
+    assert C.digest_due("", _t(hours_ago=2), _NOW) is False
+
+
+def test_reviewer_wants_event_defaults_on_and_honors_off():
+    assert C.reviewer_wants({}, "released") is True
+    assert C.reviewer_wants({"email": {"released": False}}, "released") is False
+    assert C.reviewer_wants({"email": {"released": False}}, "responses") is True   # only that event off
+    assert C.reviewer_wants({"email": {"released": False, "responses": False}}, "responses") is False
+
+
+def test_notify_author_off_skips_even_with_state(_ws, monkeypatch):
+    import ci_notify_author as NA
+    sent = []
+    monkeypatch.setattr(C, "send", lambda *a, **k: sent.append(1))
+    _w("metro/advisors.json", {"advisors": []})
+    _w("metro/notify_config.json", {"author_email": "me@x.com", "frequency": "off"})
+    _w("metro/notify_state.json", {"bootstrapped": True, "last_author_digest_ts": _t(days_ago=30)})
+    NA.main()
+    assert sent == []           # frequency off → zero digests
+
+
+def test_notify_advisors_honors_reviewer_released_off(_ws, monkeypatch):
+    import ci_notify_advisors as NAd
+    sent = []
+    monkeypatch.setattr(C, "send", lambda *a, **k: sent.append(1))
+    _w("metro/advisors.json", {"email_configured": True,
+        "advisors": [{"id": "A", "name": "A", "email": "a@x.com"}]})
+    _w("metro/release.json", {"A": {"released": ["intro"]}})
+    _w("metro/notify_state.json", {"bootstrapped": True, "notified_released": {}, "notified_resolved": {}, "last_resolved_email_ts": {}})
+    _w("metro/chapters.json", [{"id": "intro", "n": 1, "title": "Intro"}])
+    _w("metro/advisor/A/prefs.json", {"email": {"released": False}})   # reviewer opted out
+    NAd.main()
+    assert sent == []           # reviewer turned chapter-released emails off

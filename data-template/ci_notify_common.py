@@ -19,6 +19,31 @@ def save_json(path, obj):
 def iso_now():
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
+# --- user-controllable notification settings (exposed in the author/reviewer UIs; defaults preserved) ---
+_FREQ_MIN = {"daily": datetime.timedelta(hours=20), "weekly": datetime.timedelta(days=7)}
+
+def digest_due(freq, last_ts_iso, now=None):
+    """Whether the author digest may send now, given their chosen cadence. "off" never sends (zero
+    notifications is allowed); "daily"/"weekly" send only once the min gap since the last digest elapsed;
+    an unset/unknown value defaults to "daily" (the historical behavior)."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    f = (freq or "daily").strip().lower()
+    if f == "off":
+        return False
+    gap = _FREQ_MIN.get(f, _FREQ_MIN["daily"])
+    if not last_ts_iso:
+        return True
+    try:
+        last = datetime.datetime.fromisoformat(last_ts_iso)
+    except (ValueError, TypeError):
+        return True
+    return (now - last) >= gap
+
+def reviewer_wants(prefs, event):
+    """Whether a reviewer wants this event email ("released" | "responses"). Defaults ON; a reviewer can
+    turn either (or both, = zero) off in their portal. prefs is their advisor/<id>/prefs.json (or {})."""
+    return ((prefs or {}).get("email") or {}).get(event, True) is not False
+
 def project_prefixes():
     """Which project subtrees to process. Consolidated (workspace) repos hold each project under <id>/;
     a legacy repo has its files at the root. Returns [""] for legacy root, ["<id>/", …] for a workspace
