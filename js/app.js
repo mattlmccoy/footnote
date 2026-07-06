@@ -1577,6 +1577,34 @@ const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '
 // so the copy-link can embed it as &k= — a working magic link. Empty until a key is set; then links just work.
 const advKeyStoreKey = () => `footnote:advkey:${DATA_REPO}`;
 const advisorKey = () => { try { return localStorage.getItem(advKeyStoreKey()) || ''; } catch (e) { return ''; } };
+// The shared reviewer key ALSO lives in the PRIVATE data repo (advisor/access-key.json) so the copy-link
+// works on ANY owner browser — not only the one it was set on. localStorage is a fast cache;
+// loadReviewerKeyIntoCache back-fills it from the repo on panel open. Private repo → Matt-approved storage.
+const REVIEWER_KEY_FILE = 'advisor/access-key.json';   // repo-level: one shared key for the whole data repo
+async function _kfetch(url, opts, ms = 12000){
+  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
+  try { return await fetch(url, { ...opts, signal: ac.signal }); } finally { clearTimeout(timer); }
+}
+async function saveReviewerKeyToRepo(t, key){
+  if (!t || !key) return;
+  const url = `https://api.github.com/repos/${DATA_REPO}/contents/${REVIEWER_KEY_FILE}`;
+  const hdr = { Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' };
+  let sha;
+  try { const r = await _kfetch(`${url}?t=${Date.now()}`, { headers: hdr, cache:'no-store' }); if (r.ok) sha = (await r.json()).sha; } catch (e) {}
+  try {
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify({ key }, null, 2))));
+    await _kfetch(url, { method:'PUT', headers:{ ...hdr, 'Content-Type':'application/json' }, body: JSON.stringify({ message:'set reviewer access key', content, sha }) });
+  } catch (e) {}
+}
+async function loadReviewerKeyIntoCache(t){
+  try {
+    if (!t || advisorKey()) return;   // localStorage already has it — nothing to do
+    const r = await _kfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${REVIEWER_KEY_FILE}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+    if (!r || !r.ok) return;
+    const j = await r.json();   // raw → the file's JSON object
+    if (j && j.key) { try { localStorage.setItem(advKeyStoreKey(), j.key); } catch (e) {} }
+  } catch (e) {}
+}
 const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '', accessKey: advisorKey() });
 // Standalone "set the reviewer access key" — no email setup required. Caches the key locally so the
 // copy-link becomes a working magic link immediately, and (best-effort) seals it as the ADVISOR_KEY
@@ -1604,6 +1632,7 @@ function openAccessKeySheet(ownerTok){
     const stat = $('#ak-stat');
     if (!val){ stat.textContent = 'Paste a token first.'; return; }
     try { localStorage.setItem(advKeyStoreKey(), val); } catch (e) {}   // 1) local cache → copy-link magic link
+    saveReviewerKeyToRepo(ownerTok, val);                                // 2) durable: private-repo copy so any browser's copy-link works
     stat.textContent = 'Saving…';
     try {                                                               // 2) best-effort seal → email invites
       const pk = await getPublicKey(ownerTok);
@@ -2801,6 +2830,7 @@ async function openReleasePanel(){
   const advs = Object.keys(rel).filter(k => k !== '_comment');                 // gating rows + portal links
   const base = location.origin + location.pathname.replace(/[^/]+$/, '');
   const { reg: advReg, sha: advSha } = await loadAdvisorsRegistry(t);
+  await loadReviewerKeyIntoCache(t);   // back-fill the reviewer key from the private repo so the copy-link works on any browser
   // discover every reviewer comment file (named advisors AND per-person lab reviewers) via the tree
   const inbox = {};   // inbox[fileId] = [{chapter, comment}]
   const filesByAdv = {};   // filesByAdv[id] = [comment-file paths] — used to clear a person from the inbox
@@ -3275,6 +3305,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       if ((S.advkey || '').trim()) {
         await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
         try { localStorage.setItem(advKeyStoreKey(), S.advkey.trim()); } catch (e) {}   // copy-link magic link
+        saveReviewerKeyToRepo(etok, S.advkey.trim());   // durable private-repo copy → copy-link works on any browser
       }
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
