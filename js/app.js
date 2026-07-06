@@ -1,18 +1,20 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=eceba50';
-import { anchorFromSelection } from './anchor.js?v=eceba50';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=eceba50';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=eceba50';
-import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=eceba50';
-import { sealToBase64 } from './vendor/seal.js?v=eceba50';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=eceba50';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=eceba50';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=eceba50';
-import { loadAgentCatalog, agentCatalogView, agentCatalogHtml } from './agentcatalog.js?v=eceba50';
-import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=eceba50';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=eceba50';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=eceba50';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=eceba50';
-import { startWatch as startNetWatch } from './netstatus.js?v=eceba50';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=0da081c';
+import { anchorFromSelection } from './anchor.js?v=0da081c';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=0da081c';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=0da081c';
+import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=0da081c';
+import { sealToBase64 } from './vendor/seal.js?v=0da081c';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=0da081c';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=0da081c';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=0da081c';
+import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=0da081c';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=0da081c';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=0da081c';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus } from './owneradmin.js?v=0da081c';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=0da081c';
+import { startWatch as startNetWatch } from './netstatus.js?v=0da081c';
+import { settingsSections, resolveSection } from './settings.js?v=0da081c';
+import { modalReducer, topModal } from './modal.js?v=0da081c';
 startNetWatch();
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
@@ -236,6 +238,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+      <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
@@ -246,6 +249,7 @@ function renderTopbar(){
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-more').onclick = openMoreMenu;
+  document.getElementById('btn-settings').onclick = () => openSettingsPage();
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -302,7 +306,7 @@ async function loadChapter(ch){
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your ${DOC}</div>
-    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read) — stored only in this browser.</div>
+    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read), set <b>Expiration → No expiration</b> so it never needs replacing — stored only in this browser.</div>
     <button class="btn" id="connect">Add access token</button></div>`;
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
@@ -1569,7 +1573,82 @@ const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;',
 const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 // Invite links carry the project's data repo (&data=owner/repo) so an advisor — who has no hub access —
 // lands in the right project. Harmless in single-project mode (same data repo).
-const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '' });
+// The shared reviewer access key, cached locally when the owner seals it (in the email/settings wizard),
+// so the copy-link can embed it as &k= — a working magic link. Empty until a key is set; then links just work.
+const advKeyStoreKey = () => `footnote:advkey:${DATA_REPO}`;
+const advisorKey = () => { try { return localStorage.getItem(advKeyStoreKey()) || ''; } catch (e) { return ''; } };
+// The shared reviewer key ALSO lives in the PRIVATE data repo (advisor/access-key.json) so the copy-link
+// works on ANY owner browser — not only the one it was set on. localStorage is a fast cache;
+// loadReviewerKeyIntoCache back-fills it from the repo on panel open. Private repo → Matt-approved storage.
+const REVIEWER_KEY_FILE = 'advisor/access-key.json';   // repo-level: one shared key for the whole data repo
+async function _kfetch(url, opts, ms = 12000){
+  const ac = new AbortController(); const timer = setTimeout(() => ac.abort(), ms);
+  try { return await fetch(url, { ...opts, signal: ac.signal }); } finally { clearTimeout(timer); }
+}
+async function saveReviewerKeyToRepo(t, key){
+  if (!t || !key) return;
+  const url = `https://api.github.com/repos/${DATA_REPO}/contents/${REVIEWER_KEY_FILE}`;
+  const hdr = { Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' };
+  let sha;
+  try { const r = await _kfetch(`${url}?t=${Date.now()}`, { headers: hdr, cache:'no-store' }); if (r.ok) sha = (await r.json()).sha; } catch (e) {}
+  try {
+    const content = btoa(unescape(encodeURIComponent(JSON.stringify({ key }, null, 2))));
+    await _kfetch(url, { method:'PUT', headers:{ ...hdr, 'Content-Type':'application/json' }, body: JSON.stringify({ message:'set reviewer access key', content, sha }) });
+  } catch (e) {}
+}
+async function loadReviewerKeyIntoCache(t){
+  try {
+    if (!t || advisorKey()) return;   // localStorage already has it — nothing to do
+    const r = await _kfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${REVIEWER_KEY_FILE}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+    if (!r || !r.ok) return;
+    const j = await r.json();   // raw → the file's JSON object
+    if (j && j.key) { try { localStorage.setItem(advKeyStoreKey(), j.key); } catch (e) {} }
+  } catch (e) {}
+}
+const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '', accessKey: advisorKey() });
+// Standalone "set the reviewer access key" — no email setup required. Caches the key locally so the
+// copy-link becomes a working magic link immediately, and (best-effort) seals it as the ADVISOR_KEY
+// secret so emailed invites carry it too. If the owner's sign-in can't write secrets, the local cache
+// still makes shareable links work and we say how to enable it for email.
+function openAccessKeySheet(ownerTok){
+  const repo = dataRepoParts(_CFG).repo;
+  const scrim = document.createElement('div'); scrim.className = 'scrim';
+  scrim.innerHTML = `<div class="sheet" style="max-width:520px">
+    <div style="font-size:16px;font-weight:600;margin-bottom:4px">Reviewer access key</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">One shared token that every reviewer's link carries, so they click and they're in — no code to paste. Use a <b>least-privilege</b> token, <b>not</b> your account password. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>. On that page, set the <b>Expiration</b> dropdown (near the top) to <b>No expiration</b> so your reviewers' links never stop working.</div>
+    <input id="ak-input" type="password" placeholder="paste the reviewer access token" style="width:100%;box-sizing:border-box;padding:9px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
+    <div id="ak-stat" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+      <button class="btn" id="ak-cancel">Cancel</button>
+      <button class="btn btn-primary" id="ak-save">Save key</button>
+    </div></div>`;
+  document.body.appendChild(scrim);
+  const $ = s => scrim.querySelector(s);
+  const close = () => scrim.remove();
+  scrim.onclick = e => { if (e.target === scrim) close(); };
+  $('#ak-cancel').onclick = close;
+  $('#ak-save').onclick = async () => {
+    const val = ($('#ak-input').value || '').trim();
+    const stat = $('#ak-stat');
+    if (!val){ stat.textContent = 'Paste a token first.'; return; }
+    try { localStorage.setItem(advKeyStoreKey(), val); } catch (e) {}   // 1) local cache → copy-link magic link
+    saveReviewerKeyToRepo(ownerTok, val);                                // 2) durable: private-repo copy so any browser's copy-link works
+    stat.textContent = 'Saving…';
+    try {                                                               // 2) best-effort seal → email invites
+      const pk = await getPublicKey(ownerTok);
+      await putSecret(ownerTok, pk, sealToBase64, 'ADVISOR_KEY', val);
+      stat.innerHTML = 'Saved. Reviewer links now sign reviewers in, and email invites carry the key.';
+    } catch (e) {
+      stat.innerHTML = isScopeError(e)
+        ? 'Saved for shareable links. To also send it in <b>email</b> invites, connect email — that step uses a token that can write secrets.'
+        : 'Saved for shareable links. (Couldn’t seal it for email: ' + escapeHtml((e && e.message) || 'error') + '.)';
+    }
+    const lbl = document.getElementById('adv-key-state'); if (lbl) lbl.textContent = 'Set — reviewer links sign reviewers in automatically.';
+    const btn = document.getElementById('adv-setkey'); if (btn) btn.textContent = 'Update key';
+    setTimeout(close, 2400);
+  };
+  setTimeout(() => { const i = $('#ak-input'); if (i) i.focus(); }, 30);
+}
 const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
 const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));
@@ -1642,6 +1721,18 @@ async function sendJob(type){
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2)';
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+// Like flash, but with an Undo action that stays up longer so an accidental removal is recoverable.
+function undoToast(msg, onUndo){
+  document.getElementById('undo-toast')?.remove();
+  const t = document.createElement('div'); t.id = 'undo-toast';
+  t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 10px 9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2);display:flex;align-items:center;gap:10px';
+  const label = document.createElement('span'); label.textContent = msg;
+  const btn = document.createElement('button'); btn.textContent = 'Undo';
+  btn.style.cssText = 'background:none;border:none;color:var(--bg);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:2px 6px';
+  btn.onclick = () => { t.remove(); onUndo(); };
+  t.append(label, btn); document.body.appendChild(t);
+  setTimeout(() => t.remove(), 8000);
+}
 // ---------- export: chapter / document -> Word · Markdown, with comments ----------
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
@@ -1798,20 +1889,22 @@ function enterHome(){
      <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to reviewer comments"><i class="ti ti-file-text"></i>Response</button>
      <button class="btn" id="btn-overleaf" style="padding:6px 12px" title="Take reviewer feedback back to Overleaf"><i class="ti ti-file-symlink"></i>To Overleaf</button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
+     <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
+  document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
   document.getElementById('btn-export').onclick = exportAdvisorResponse;
   document.getElementById('btn-overleaf').onclick = () => openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message));
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
-  document.getElementById('btn-token').onclick = manageToken;
+  document.getElementById('btn-token').onclick = () => openSettingsPage('access');
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   const imp = document.getElementById('import-doc');
-  if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : manageToken();
+  if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : openSettingsPage('access');
   refreshInbox();
   renderHomeDownloads();
   refreshSetup();
@@ -2072,7 +2165,7 @@ async function saveChapters(chs, t){
   await putJson(t, 'chapters.json', chs, sha, `import: ${chs.length} ${UNIT}s from document`);
 }
 function importDocument(){
-  const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
+  const t = localStorage.getItem('ghpat'); if (!t){ openSettingsPage('access'); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
   let detectedLevel = null; // 'chapter' | 'section' from the parsed LaTeX; null for Word/no-parse (keeps current noun)
@@ -2476,157 +2569,17 @@ function openMoreMenu(){
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
     <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
     <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
-    <div class="mmi" data-act="assistant"><i class="ti ti-robot-face"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
+    <div class="mmi" data-act="assistant"><i class="ti ti-settings"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
+  const acts = { release: openReleasePanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
-    // The master switch now lives in Reviewers → Settings; the ⋯ entry just navigates there and scrolls to it.
-    assistant: () => openReleasePanel().then(() => document.getElementById('ai-setting')?.scrollIntoView({ block:'center' })) };
+    // Both the access token and the AI master switch now live on the dedicated Settings page.
+    assistant: () => openSettingsPage('ai') };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
-}
-// First-class AI-assistant control for the Reviewers → Settings panel. This is the master switch's
-// home (the ⋯ menu just points here). OFF by default; when ON it reveals an honest setup checklist —
-// Claude runs on the adopter's OWN data-repo Actions + Claude credentials, and nothing runs until
-// those are configured. GitHub keeps Actions secrets write-only, so status is guidance, not a probe;
-// the live dispatch/verify + backend engine land in later slices.
-function aiSettingHtml(){
-  const on = assistantOn();
-  const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
-  const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
-  const setup = on ? `
-    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
-      <div id="ai-conn-status" style="margin-bottom:10px;padding:7px 9px;border-radius:7px;background:var(--bg-3);color:var(--text-3);font-size:11.5px">Checking whether Claude is connected for this workspace…</div>
-      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. These are stored <b>once per data repo</b>, so <b>every paper in this workspace</b> uses them — you don't set this up per document.</div>
-      <div style="margin-bottom:4px"><b>1. Connect Claude Code with your subscription</b> (recommended — no API key, no extra bill; usage counts against your Claude Code plan). On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints below. <a href="https://code.claude.com/docs/en/github-actions" target="_blank" rel="noopener">How this works →</a></div>
-      <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
-      <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
-        <label for="ai-claude-token">Claude Code token</label>
-        <input id="ai-claude-token" type="password" placeholder="from ‘claude setup-token’ (→ CLAUDE_CODE_OAUTH_TOKEN)" style="${inp}">
-        <label for="ai-srctok">Source repo token <span style="color:var(--text-3)">(only for external source)</span></label>
-        <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
-      </div>
-      <div style="font-size:11px;color:var(--text-3);margin:-2px 0 6px"><b>Source repo token</b> is only needed if this paper's LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). To make one: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">create a fine-grained PAT</a> → Resource owner = you → Repository access = <b>Only select repositories</b> → pick your source repo → Permissions → <b>Contents: Read and write</b> → Generate, then paste it above.</div>
-      <details style="margin:0 0 8px">
-        <summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key instead? (billed per token)</summary>
-        <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
-          <label for="ai-key">Anthropic API key</label>
-          <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
-        </div>
-      </details>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
-        <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-      </div>
-      <div style="margin:10px 0 4px"><b>3. Review agents</b> — tick the agents to run; blank = none. Read-only critics add comments; “doer” / “local” agents run through the local runner on your machine.</div>
-      <div id="ai-agent-catalog" style="margin-bottom:8px;font-size:11.5px;color:var(--text-3)">Loading the agent catalog…</div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <button class="btn" id="ai-save-agents" style="padding:5px 12px" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>Save selection</button>
-        <span id="ai-agents-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-        <button class="btn" id="ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
-        <span id="ai-run-stat" style="font-size:11.5px;color:var(--text-3)">Drains any queued jobs — or the queue drains automatically when you send.</span>
-      </div>
-      <div style="margin-top:8px;color:var(--text-3)"><i class="ti ti-git-branch" style="margin-right:4px"></i>Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to preview and approve — nothing reaches your document without your say-so.</div>
-    </div>` : '';
-  return `<div id="ai-setting" style="margin:0 0 16px;padding:12px 14px;border:.5px solid var(--border);border-radius:9px;background:var(--bg-2)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <i class="ti ti-robot-face" style="font-size:16px;color:var(--text-2)"></i>
-        <div style="flex:1">
-          <div style="font-weight:600;font-size:13px">AI assistant · Send to Claude</div>
-          <div style="font-size:11.5px;color:var(--text-3)">Off by default. The core review flow — comment → stage → approve → merge — always works without AI.</div>
-        </div>
-        <button class="btn${on?' btn-primary':''}" id="ai-toggle" ${shipped?'disabled title="This project ships an agent list in its config — edit the config to change this."':''} style="padding:6px 16px">${on?'On':'Off'}</button>
-      </div>${setup}</div>`;
-}
-// Wire the AI setup panel: seal credentials, save the agent list, and manually run the queue. All I/O
-// runs on the owner's OWN data repo via their token; secrets are sealed client-side and never stored
-// by the app. No-ops when the panel isn't shown (assistant off).
-function wireAiSetup(t){
-  // Connection status: secrets are REPO-LEVEL, so this reflects the whole workspace (every paper), not
-  // just this project. Values are unreadable; we read the NAMES and say whether Claude is connected.
-  const refreshConnStatus = async () => {
-    const box = document.getElementById('ai-conn-status'); if (!box) return;
-    try {
-      const s = claudeConnectionStatus(await listSecretNames(t));
-      if (s.claude){ box.style.color = 'var(--success)';
-        box.innerHTML = `<i class="ti ti-circle-check" style="margin-right:5px"></i>Claude connected for <b>${escapeHtml(DATA_REPO)}</b> via <code>${s.via}</code> — every paper in this workspace is set. ${s.source?'Source token present.':''}`; }
-      else { box.style.color = 'var(--warn)';
-        box.innerHTML = `<i class="ti ti-alert-circle" style="margin-right:5px"></i>Not connected yet — add your Claude Code token below (once per data repo).`; }
-    } catch(e){ box.style.color = 'var(--text-3)';
-      box.textContent = isScopeError(e) ? 'Can’t verify connection — your access token can’t read this repo’s secrets (needs admin/Secrets read).' : 'Couldn’t check connection: ' + e.message; }
-  };
-  refreshConnStatus();
-  const saveSec = document.getElementById('ai-save-secrets');
-  if (saveSec) saveSec.onclick = async () => {
-    const stat = document.getElementById('ai-secrets-stat');
-    const keyEl = document.getElementById('ai-key');   // API key is optional (Advanced disclosure)
-    const values = { claudeCodeToken: document.getElementById('ai-claude-token').value,
-                     anthropicKey: keyEl ? keyEl.value : '',
-                     sourceToken: document.getElementById('ai-srctok').value };
-    saveSec.disabled = true; stat.textContent = 'Sealing…'; stat.style.color = 'var(--text-3)';
-    try {
-      const names = await setAiSecrets(t, sealToBase64, values);
-      if (!names.length){ stat.textContent = 'Nothing to save — paste your Claude Code token (or an API key) first.'; }
-      else {
-        // Self-heal: make sure the apply engine actually exists in this data repo (repo-level, idempotent),
-        // so connecting for the first time — or on a repo created before the engine — Just Works.
-        let engineMsg = '';
-        try { const r = await ensureApplyEngine(DATA_REPO, t); if (r.seeded.length) engineMsg = ' Installed the apply engine.'; }
-        catch(e){ engineMsg = e.message === 'workflow-scope' ? ' (Engine not installed — your token lacks the workflow scope; regenerate it with repo+workflow.)' : ' (Engine check failed: ' + e.message + ')'; }
-        stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.' + engineMsg;
-        document.getElementById('ai-claude-token').value = ''; if (keyEl) keyEl.value = ''; document.getElementById('ai-srctok').value = '';
-        refreshConnStatus();
-      }
-    } catch(e){ stat.style.color = 'var(--warn)';
-      stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
-    finally { saveSec.disabled = false; }
-  };
-  // Render the visible agent catalog (B2): cards read from the data repo's agents.json (with a shipped
-  // fallback), checkbox = currently selected. Editable only in a hub project (else agents are fixed in
-  // config). This whole panel only exists when the assistant is ON, so the catalog is AI-gated by design.
-  const catalogBox = document.getElementById('ai-agent-catalog');
-  const editable = !!(_projectId && _CFG.hubRepo);
-  if (catalogBox) (async () => {
-    try {
-      const catalog = await loadAgentCatalog(t);
-      const rows = agentCatalogView(catalog, _CFG.reviewAgents || []);
-      catalogBox.innerHTML = agentCatalogHtml(rows, { editable });
-    } catch(e){ catalogBox.textContent = 'Could not load the agent catalog: ' + e.message; }
-  })();
-  const saveAg = document.getElementById('ai-save-agents');
-  if (saveAg && editable) saveAg.onclick = async () => {
-    const stat = document.getElementById('ai-agents-stat');
-    const list = [...(catalogBox ? catalogBox.querySelectorAll('input[data-agent]:checked') : [])].map(el => el.dataset.agent);
-    saveAg.disabled = true; stat.textContent = 'Saving…'; stat.style.color = 'var(--text-3)';
-    try {
-      await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t);
-      _CFG = { ..._CFG, reviewAgents: list };                 // reflect immediately for the gate + menu
-      stat.style.color = 'var(--success)'; stat.textContent = list.length ? 'Saved ' + list.length + ' agent(s).' : 'Cleared agents.';
-      if (document.getElementById('btn-send')) renderTopbar();
-    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
-    finally { saveAg.disabled = false; }
-  };
-  const run = document.getElementById('ai-run');
-  if (run) run.onclick = async () => {
-    const stat = document.getElementById('ai-run-stat');
-    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Ensuring engine…';
-    try {
-      // Self-heal before dispatch: an existing/legacy data repo may not have apply.yml yet.
-      await ensureApplyEngine(DATA_REPO, t);
-      stat.textContent = 'Dispatching…';
-      await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
-      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.';
-    }
-    catch(e){ stat.style.color = 'var(--warn)';
-      stat.textContent = e.message === 'workflow-scope' ? 'Your token lacks the workflow scope — regenerate it with repo+workflow, then retry.'
-        : isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
-    finally { run.disabled = false; }
-  };
 }
 // Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
@@ -2640,12 +2593,224 @@ function toggleAssistant(){
   }
   if (document.getElementById('btn-send')) renderTopbar();   // refresh the top-bar button label
 }
-function manageToken(){
-  const cur = tok();
-  const v = prompt(cur ? '❯ Access token is set. Paste a new one to replace it, or leave blank and OK to remove it:' : '❯ Paste a fine-grained PAT (Contents: read/write on the data repo):', '');
-  if (v === null) return;
-  if (v.trim() === ''){ if (cur && confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); } return; }
-  localStorage.setItem('ghpat', v.trim()); flash('Token saved.'); if (document.getElementById('doc') || current) loadChapter(current);
+// Shared modal used by Settings dialogs (and, later, agent authoring). Stacks; ESC / backdrop-click
+// closes the topmost. `body` is an HTMLElement; `actions` is [{label, primary?, onClick(close)}].
+let _modalStack = [];
+let _onModalEsc = null;
+function openModal(title, body, actions = []) {
+  const id = 'm_' + (_modalStack.length + 1);
+  _modalStack = modalReducer(_modalStack, { type:'open', id });
+  const back = document.createElement('div'); back.className = 'modal-backdrop'; back.dataset.mid = id;
+  const foot = actions.map((a, i) => `<button class="btn${a.primary?' btn-primary':''}" data-i="${i}">${a.label}</button>`).join('');
+  back.innerHTML = `<div class="modal-box"><div class="modal-head">${title}<button class="modal-x" aria-label="Close">×</button></div>
+    <div class="modal-body"></div>${actions.length?`<div class="modal-foot">${foot}</div>`:''}</div>`;
+  back.querySelector('.modal-body').appendChild(body);
+  const close = () => { back.remove(); _modalStack = modalReducer(_modalStack, { type:'close' });
+    if (_onModalEsc && !_modalStack.length){ document.removeEventListener('keydown', _onModalEsc); _onModalEsc = null; } };
+  back.querySelector('.modal-x').onclick = close;
+  back.onclick = e => { if (e.target === back) close(); };
+  actions.forEach((a, i) => { const b = back.querySelector(`.modal-foot [data-i="${i}"]`); if (b) b.onclick = () => a.onClick(close); });
+  document.body.appendChild(back);
+  if (!_onModalEsc){ _onModalEsc = e => { if (e.key === 'Escape'){ const top = document.querySelector(`.modal-backdrop[data-mid="${topModal(_modalStack)}"]`); top?.querySelector('.modal-x')?.click(); } };
+    document.addEventListener('keydown', _onModalEsc); }
+  return close;
+}
+// Dedicated Settings page (Project A). In-place view like openReleasePanel: swaps topbar + main area,
+// renders a left-nav (settingsSections model) + a detail pane. `section` deep-links a starting section.
+let _setSection = null;
+async function openSettingsPage(section) {
+  const t = tok(); if (!t){ flash('Add your access token first.'); return; }
+  stopOwnerLiveSync();
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML =
+    `<strong style="font-size:16px;font-weight:600"><i class="ti ti-settings" style="margin-right:7px"></i>Settings</strong>
+     <button class="btn" id="set-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to ${UNIT}s</button>`;
+  document.getElementById('set-close').onclick = enterHome;
+  let claudeConnected = false, emailConfigured = false;
+  try { claudeConnected = claudeConnectionStatus(await listSecretNames(t)).claude; } catch {}
+  try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
+  const state = { aiOn: assistantOn(), claudeConnected, emailConfigured, hasToken: !!t };
+  const secs = settingsSections(_CFG, state);
+  _setSection = resolveSection(secs, section || _setSection);
+  const nav = secs.map(s => `<div class="set-item${s.id===_setSection?' active':''}${s.muted?' muted':''}" data-s="${s.id}">
+      <span>${escapeHtml(s.label)}</span>${s.glyph?`<span class="set-g ${s.glyph}">${s.glyph==='ok'?'✓':'●'}</span>`:''}</div>`).join('');
+  read.innerHTML = `<div class="set-wrap"><div class="set-nav">${nav}</div><div class="set-pane" id="set-pane"></div></div>`;
+  read.querySelectorAll('.set-item').forEach(el => el.onclick = () => { _setSection = el.dataset.s; openSettingsPage(_setSection); });
+  renderSettingsSection(_setSection, t);
+}
+function renderSettingsSection(id, t) {
+  const pane = document.getElementById('set-pane'); if (!pane) return;
+  if (id === 'email')  return renderSettingsEmail(pane, t);
+  if (id === 'access') return renderSettingsAccess(pane, t);
+  if (id === 'agents') return renderSettingsAgents(pane, t);
+  if (id === 'ai')     return renderSettingsAI(pane, t);
+}
+// Temporary placeholders — replaced in Tasks 4–7.
+// Email section: the "Notify me" digest (a personal preference) lives here, stored in notify_config.json.
+// The invite-email SMTP connection stays on the Reviewers page — it's part of inviting reviewers (writes
+// invite secrets, re-renders the reviewer list) — so this section just points there for it.
+async function renderSettingsEmail(pane, t) {
+  pane.innerHTML = '<div class="set-card">Loading…</div>';
+  let notifyEmail = '', notifyFreq = 'daily', emailConfigured = false;
+  try { const { json } = await getJson(t, 'notify_config.json'); if (json){ notifyEmail = json.author_email || ''; notifyFreq = json.frequency || 'daily'; } } catch {}
+  try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
+  pane.innerHTML = `
+    <div class="set-card">
+      <h4>Notify me</h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">A digest of reviewer activity, emailed to you.</div>
+      <div style="display:flex;gap:8px">
+        <input id="set-notify-email" type="email" value="${escapeHtml(notifyEmail)}" placeholder="you@example.com" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <select id="set-notify-freq" style="font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+          <option value="daily"${notifyFreq==='daily'?' selected':''}>Daily</option>
+          <option value="weekly"${notifyFreq==='weekly'?' selected':''}>Weekly</option>
+          <option value="off"${notifyFreq==='off'?' selected':''}>Off</option>
+        </select>
+        <button class="btn" id="set-notify-save" style="padding:5px 12px">Save</button>
+        <span id="set-notify-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+    </div>
+    <div class="set-card">
+      <h4>Invite email</h4>
+      <div class="set-status">${emailConfigured?'<span class="ok">✓</span> Set up — reviewer invites send automatically.':'<span class="warn">●</span> Not set up — reviewers get portal links you copy yourself.'}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:8px">Invite email is configured with your reviewers, since it sends their invitations. <a href="#" id="set-email-toreviewers">Open Reviewers →</a></div>
+    </div>`;
+  pane.querySelector('#set-notify-save').onclick = async () => {
+    const stat = pane.querySelector('#set-notify-stat');
+    const val = pane.querySelector('#set-notify-email').value.trim();
+    const f = pane.querySelector('#set-notify-freq').value;
+    stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
+    try {
+      const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
+      const cfg = json && typeof json === 'object' ? json : {};
+      cfg.author_email = val; cfg.frequency = f;
+      await putJson(t, 'notify_config.json', cfg, sha, 'notify: set author email + frequency');
+      stat.style.color = 'var(--success)';
+      stat.textContent = !val ? 'Cleared — no digest emails.' : f === 'off' ? 'Saved — digests off.' : `Saved — ${f} digest.`;
+    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
+  };
+  pane.querySelector('#set-email-toreviewers').onclick = (e) => { e.preventDefault(); openReleasePanel(); };
+}
+// Access section: the browser PAT (read/write on the data repo) + the optional source-repo token
+// (only when the paper's LaTeX lives in a separate repo). Replaces the old ⋯ prompt() flow.
+function renderSettingsAccess(pane, t) {
+  const has = !!tok();
+  pane.innerHTML = `
+    <div class="set-card">
+      <h4>Access token</h4>
+      <div class="set-status">${has?'<span class="ok">✓</span> Connected — stored only in this browser.':'<span class="warn">●</span> Not set — Footnote can’t read your repo without it.'}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="set-pat" type="password" placeholder="fine-grained PAT · Contents: read/write on ${escapeHtml(DATA_REPO)}" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary" id="set-pat-save" style="padding:5px 12px">Save</button>
+        ${has?'<button class="btn" id="set-pat-clear" style="padding:5px 12px">Remove</button>':''}
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Create a fine-grained PAT →</a></div>
+    </div>
+    <div class="set-card">
+      <h4>Source repo token <span style="font-weight:400;color:var(--text-3)">— only for external source</span></h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Only needed if this paper’s LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). Sealed into your data repo’s Actions secrets as <code>SOURCE_TOKEN</code>.</div>
+      <div style="display:flex;gap:8px">
+        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: write on the source repo" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn" id="set-srctok-save" style="padding:5px 12px">Save</button>
+        <span id="set-srctok-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+    </div>`;
+  pane.querySelector('#set-pat-save').onclick = () => {
+    const v = pane.querySelector('#set-pat').value.trim();
+    if (!v){ flash('Paste a token first.'); return; }
+    localStorage.setItem('ghpat', v); flash('Token saved.'); openSettingsPage('access');
+  };
+  const clr = pane.querySelector('#set-pat-clear');
+  if (clr) clr.onclick = () => { if (confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); openSettingsPage('access'); } };
+  pane.querySelector('#set-srctok-save').onclick = async () => {
+    const v = pane.querySelector('#set-srctok').value.trim(); const stat = pane.querySelector('#set-srctok-stat');
+    if (!v){ stat.textContent = 'Paste a token first.'; return; }
+    stat.style.color = 'var(--text-3)'; stat.textContent = 'Sealing…';
+    try { await setAiSecrets(t, sealToBase64, { sourceToken: v }); stat.style.color = 'var(--success)'; stat.textContent = 'Saved SOURCE_TOKEN.'; pane.querySelector('#set-srctok').value = ''; }
+    catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = isScopeError(e) ? 'Token lacks Secrets write.' : 'Failed: ' + e.message; }
+  };
+}
+// Agents section. B1 (the catalog) lands here later; for now it carries the existing comma-separated
+// reviewAgents list so the current capability isn't lost. Only reachable when AI is on.
+function renderSettingsAgents(pane, t) {
+  const editable = !!(_projectId && _CFG.hubRepo);
+  pane.innerHTML = `<div class="set-card">
+    <h4>Review agents</h4>
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Read-only critics that comment on your draft when you run agents. A richer catalog is coming; for now, comma-separated ids.</div>
+    <div style="display:flex;gap:8px">
+      <input id="set-agents" placeholder="e.g. rigor, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" ${editable?'':'disabled title="Set in this instance’s config"'} style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+      <button class="btn" id="set-agents-save" ${editable?'':'disabled'} style="padding:5px 12px">Save</button>
+      <span id="set-agents-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+    </div></div>`;
+  const save = pane.querySelector('#set-agents-save');
+  if (save && editable) save.onclick = async () => {
+    const stat = pane.querySelector('#set-agents-stat');
+    const list = pane.querySelector('#set-agents').value.split(',').map(s => s.trim()).filter(Boolean);
+    stat.style.color='var(--text-3)'; stat.textContent='Saving…';
+    try { await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t); _CFG = { ..._CFG, reviewAgents: list };
+      stat.style.color='var(--success)'; stat.textContent = list.length?`Saved ${list.length} agent(s).`:'Cleared.';
+      if (document.getElementById('btn-send')) renderTopbar();
+    } catch(e){ stat.style.color='var(--warn)'; stat.textContent='Failed: '+e.message; }
+  };
+}
+// Claude / AI section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
+// ON: status card (connected via <secret> / not connected) + Connect / Manage → dialog, + Run apply.
+async function renderSettingsAI(pane, t) {
+  const on = assistantOn();
+  const shipped = (_CFG.reviewAgents || []).length > 0;
+  if (!on) {
+    pane.innerHTML = `<div class="set-card">
+      <h4>AI assistant</h4>
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Off by default. The core review flow — comment → stage → approve → merge — works fully without AI. Turn on to send comments to Claude on your own GitHub Actions + credentials.</div>
+      <button class="btn" id="set-ai-toggle" style="padding:5px 14px">Turn on</button>
+    </div>`;
+    pane.querySelector('#set-ai-toggle').onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
+    return;
+  }
+  pane.innerHTML = `<div class="set-card"><div id="set-ai-conn" class="set-status">Checking…</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="set-ai-connect" style="padding:5px 12px">Connect / manage Claude</button>
+        <button class="btn" id="set-ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
+        <span id="set-ai-run-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
+      ${shipped?'':`<div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>`}
+    </div>`;
+  const conn = pane.querySelector('#set-ai-conn');
+  try { const s = claudeConnectionStatus(await listSecretNames(t));
+    conn.innerHTML = s.claude ? `<span class="ok">✓</span> Claude connected via <code>${s.via}</code> — every paper in ${escapeHtml(DATA_REPO)} is set.` : '<span class="warn">●</span> Not connected — add your Claude Code token.';
+  } catch(e){ conn.textContent = 'Couldn’t check connection: ' + e.message; }
+  pane.querySelector('#set-ai-connect').onclick = () => openClaudeDialog(t);
+  pane.querySelector('#set-ai-run').onclick = async () => {
+    const stat = pane.querySelector('#set-ai-run-stat'); stat.style.color='var(--text-3)'; stat.textContent='Ensuring engine…';
+    try { await ensureApplyEngine(DATA_REPO, t); stat.textContent='Dispatching…'; await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
+      stat.style.color='var(--success)'; stat.textContent='Apply run started — watch your repo’s Actions tab.'; }
+    catch(e){ stat.style.color='var(--warn)'; stat.textContent = e.message==='workflow-scope'?'Token lacks the workflow scope.':'Failed: '+e.message; }
+  };
+  const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
+}
+// Connect Claude dialog: primary = paste the `claude setup-token` value (CLAUDE_CODE_OAUTH_TOKEN);
+// Advanced = Anthropic API key fallback. Save seals via setAiSecrets + self-heals the engine.
+function openClaudeDialog(t) {
+  const box = document.createElement('div');
+  box.innerHTML = `
+    <div style="font-size:12.5px;margin-bottom:8px">On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints (recommended — no API bill; counts against your Claude plan).</div>
+    <input id="set-claude-tok" type="password" placeholder="CLAUDE_CODE_OAUTH_TOKEN" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
+    <details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key? (billed per token)</summary>
+      <input id="set-claude-key" type="password" placeholder="sk-ant-… (ANTHROPIC_API_KEY)" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:8px"></details>
+    <div id="set-claude-stat" style="font-size:11.5px;color:var(--text-3)"></div>`;
+  openModal('<i class="ti ti-robot-face" style="margin-right:7px"></i>Connect Claude', box, [
+    { label:'Save & connect', primary:true, onClick: async (close) => {
+      const stat = box.querySelector('#set-claude-stat');
+      const values = { claudeCodeToken: box.querySelector('#set-claude-tok').value, anthropicKey: box.querySelector('#set-claude-key')?.value || '' };
+      stat.style.color='var(--text-3)'; stat.textContent='Sealing…';
+      try { const names = await setAiSecrets(t, sealToBase64, values);
+        if (!names.length){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
+        try { await ensureApplyEngine(DATA_REPO, t); } catch {}
+        close(); flash('Saved ' + names.join(' + ') + ' to your data repo.'); openSettingsPage('ai');
+      } catch(e){ stat.style.color='var(--warn)'; stat.textContent = isScopeError(e)?'Token lacks Secrets write on the data repo.':'Failed: '+e.message; }
+    } },
+  ]);
 }
 // ---------- release gate: control which chapters each advisor's portal shows ----------
 async function openReleasePanel(){
@@ -2665,6 +2830,7 @@ async function openReleasePanel(){
   const advs = Object.keys(rel).filter(k => k !== '_comment');                 // gating rows + portal links
   const base = location.origin + location.pathname.replace(/[^/]+$/, '');
   const { reg: advReg, sha: advSha } = await loadAdvisorsRegistry(t);
+  await loadReviewerKeyIntoCache(t);   // back-fill the reviewer key from the private repo so the copy-link works on any browser
   // discover every reviewer comment file (named advisors AND per-person lab reviewers) via the tree
   const inbox = {};   // inbox[fileId] = [{chapter, comment}]
   const filesByAdv = {};   // filesByAdv[id] = [comment-file paths] — used to clear a person from the inbox
@@ -2708,17 +2874,25 @@ async function openReleasePanel(){
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
-    <div class="rel-sec">Reviewers</div>
+    <div id="rel-preflight" style="margin-bottom:22px"></div>
+    <div class="rel-sec">People</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released ${UNIT}s and write only review comments; keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-title" placeholder="Title (optional)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
-      <button class="btn btn-primary" id="adv-add"><i class="ti ti-user-plus"></i>Add</button>
+      <button class="btn btn-primary" id="adv-add"><i class="ti ti-user-plus"></i>Add &amp; invite</button>
     </div>
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
-    <div class="rel-sec">Which ${UNIT}s each reviewer can see</div>
+    <div id="adv-email-banner"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Reviewer access key</label>
+      <span id="adv-key-state" style="flex:1;font-size:12px;color:var(--text-3)">${advisorKey() ? 'Set — reviewer links sign reviewers in automatically.' : 'Not set — reviewer links will prompt for a code.'}</span>
+      <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
+    </div>
+    <div id="rel-board"></div>
+    <div class="rel-sec" style="margin-top:26px">Access — which ${UNIT}s each reviewer sees</div>
     <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => {
@@ -2730,29 +2904,8 @@ async function openReleasePanel(){
           : advisorUrl(a, rel[a].name);
         return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
       }).join('')}</div>
-    <div class="rel-sec" style="margin-top:26px">Comments received from reviewers</div>${inboxHtml}
-    <div class="rel-sec" style="margin-top:34px;padding-top:10px;border-top:1px solid var(--border)"><i class="ti ti-settings" style="margin-right:6px"></i>Settings</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Email, notifications, and access — how the reviewer system is configured, separate from managing reviewers. (Will move to its own page.)</div>
-    ${aiSettingHtml()}
-    <div id="adv-email-banner"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
-      <input id="notify-email" type="email" placeholder="you@example.com — a digest of reviewer activity"
-        style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
-      <select id="notify-freq" title="How often to email you a digest" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)">
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="off">Off — no emails</option>
-      </select>
-      <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
-      <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-    </div>`;
+    <div class="rel-sec" style="margin-top:26px">Inbox — comments received</div>${inboxHtml}`;
   const refresh = () => openReleasePanel();
-  // AI master switch (first-class home). toggleAssistant flips the flag + refreshes the top-bar; we
-  // re-open the panel so the setup checklist appears/disappears. Disabled when the instance ships agents.
-  const aiToggle = document.getElementById('ai-toggle');
-  if (aiToggle && !aiToggle.disabled) aiToggle.onclick = () => { toggleAssistant(); openReleasePanel(); };
-  wireAiSetup(t);
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;
@@ -3069,7 +3222,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
            <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read ${UNIT}s + comment)</span>
-             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>, and set <b>Expiration → No expiration</b> so it never needs rotating. Leave blank to keep the current one.</div>
              <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the reviewer access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
@@ -3148,8 +3301,12 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       await putSecret(etok, pk, sealToBase64, 'SMTP_FROM', (S.from || user).trim());   // sender ≠ login for Brevo
       // Advisor access token (emailed to advisors so they can read + comment). Only overwrite when the
       // owner supplied one — a blank field keeps the existing key. This is a separate, least-privilege
-      // token, never the owner's account PAT. Not persisted in the browser (lives only in S.advkey).
-      if ((S.advkey || '').trim()) await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
+      // token, never the owner's account PAT. Also cached locally (below) so the copy-link embeds it as &k=.
+      if ((S.advkey || '').trim()) {
+        await putSecret(etok, pk, sealToBase64, 'ADVISOR_KEY', S.advkey.trim());
+        try { localStorage.setItem(advKeyStoreKey(), S.advkey.trim()); } catch (e) {}   // copy-link magic link
+        saveReviewerKeyToRepo(etok, S.advkey.trim());   // durable private-repo copy → copy-link works on any browser
+      }
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
       await setVariable(etok, 'PORTAL_BASE', portalBase());
@@ -3226,29 +3383,41 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     await putJson(t, 'advisors.json', reg, sha, msg);   // sha refetched each call, so no cached advSha to update
     advReg.advisors = reg.advisors;
   };
+  // One-click "invite a reviewer" (Lane D): name (+ optional email) → add to advisors.json → register
+  // in release.json → the push-triggered invite workflow sends the magic-link email. Model A: the link
+  // carries the SHARED access key; there is NO per-reviewer GitHub grant. inviteReadiness (pure, TDD'd)
+  // validates + supplies the exact copy; ensureInvitePipeline self-heals a workspace/legacy repo whose
+  // invite.yml was never seeded so the send actually fires; permissionFromError names any scope gap.
   const addAdvisor = async () => {
     const name = document.getElementById('adv-name').value.trim();
     const email = document.getElementById('adv-email').value.trim();
     const title = document.getElementById('adv-title').value.trim();
     const stat = document.getElementById('adv-stat');
-    if (!name){ stat.textContent = 'Name is required.'; return; }
+    const ready = inviteReadiness({ name, email, emailConfigured: emailConfigured() });
+    if (!ready.ok){ stat.textContent = ready.message; return; }
     const id = `${slugify(name)}-${rand4()}`;
     const entry = { id, name, email, title, added_ts:new Date().toISOString(), invited:false, invited_ts:null, invite_error:null };
-    stat.textContent = 'Saving…';
+    const btn = document.getElementById('adv-add'); if (btn) btn.disabled = true;
+    stat.textContent = ready.willSend ? 'Adding reviewer and queuing their invite…' : 'Adding reviewer…';
     try {
       await mutateAdvisors(reg => reg.advisors.push(entry), `advisors: add ${name}`);
       const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
       relNow[id] = { name, released: [], responses_released: false };
       await putJson(t, 'release.json', relNow, relSha, `release: register ${name}`);
+      // Guarantee invite.yml exists before relying on the push trigger to email them. Idempotent; a
+      // missing workflow/contents scope throws here and is named below instead of silently not sending.
+      if (ready.willSend){ try { await ensureInvitePipeline(DATA_REPO, t); } catch(e){ ready._pipeErr = e; } }
       const link = `<code>${escapeHtml(advisorUrl(id, name))}</code>`;
-      stat.innerHTML = !email
-        ? `Added (no email given — share this portal link yourself): ${link}`
-        : emailConfigured()
-          ? `Added. Invite email will send shortly. Portal: ${link}`
-          : `Added, but email sending isn't set up — <b>no invite was sent</b>. Copy this portal link and send it to them, or set up email invites above: ${link}`;
+      const scope = ready._pipeErr ? permissionFromError(ready._pipeErr.message) : null;
+      stat.innerHTML = scope
+        ? `Added, but the invite couldn’t be queued — your token is missing <b>${escapeHtml(scope)}</b> access. Copy this portal link and send it yourself for now: ${link}`
+        : `${escapeHtml(ready.message)} ${link}`;
       document.getElementById('adv-name').value = document.getElementById('adv-email').value = document.getElementById('adv-title').value = '';
       renderAdvList();
-    } catch(e){ stat.textContent = 'Failed: ' + e.message; }
+    } catch(e){
+      const scope = permissionFromError(e.message);
+      stat.textContent = scope ? `Failed — your token is missing ${scope} access.` : 'Failed: ' + e.message;
+    } finally { if (btn) btn.disabled = false; }
   };
   const resendInvite = async (id) => {
     try { await mutateAdvisors(reg => { const a = reg.advisors.find(x=>x.id===id); if (a){ a.invited=false; a.invited_ts=null; a.invite_error=null; } }, `advisors: resend invite ${id}`);
@@ -3257,45 +3426,112 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   };
   // intentionally high-friction: must type the advisor's exact name. Removes them from the list +
   // release gate (their portal stops showing chapters); their already-submitted comments are kept.
-  const removeAdvisor = async (id) => {
-    const a = advReg.advisors.find(x => x.id === id); if (!a) return;
-    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their ${UNIT} access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
-    if (typed === null) return;
-    if (typed.trim() !== a.name.trim()){ flash('Name did not match — reviewer not removed.'); return; }
+  // Soft-delete: capture a tombstone (advisor entry + their release gate) so an accidental removal is
+  // recoverable via an undo toast (restoreAdvisorPlan, pure + TDD'd). Non-destructive to comments.
+  const restoreAdvisor = async (tomb) => {
     try {
-      await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
-      try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
-        if (relNow && relNow[id]){ delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
-      flash(`Removed ${a.name}.`); renderAdvList();
-    } catch(e){ flash('Failed: ' + e.message); }
+      await mutateAdvisors(reg => { const p = restoreAdvisorPlan(tomb, reg, {}); reg.advisors = p.advisors; }, `advisors: restore ${tomb.advisor.name}`);
+      const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
+      const plan = restoreAdvisorPlan(tomb, { advisors: [] }, relNow || {});
+      await putJson(t, 'release.json', plan.release, relSha, `release: restore ${tomb.advisor.name}`);
+      flash(`Restored ${tomb.advisor.name}.`); openReleasePanel();
+    } catch(e){ flash('Restore failed: ' + e.message); }
+  };
+  // In-page confirm modal (replaces a native prompt()): the Remove button stays disabled until the
+  // typed name matches, so the confirm gate survives but the UX matches the rest of the owner panel.
+  const removeAdvisor = (id) => {
+    const a = advReg.advisors.find(x => x.id === id); if (!a) return;
+    const doRemove = async () => {
+      let relEntry = null;
+      try {
+        await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
+        try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
+          if (relNow && relNow[id]){ relEntry = relNow[id]; delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
+        const tomb = { advisor: a, release: relEntry || { name: a.name, released: [], responses_released: false } };
+        undoToast(`Removed ${a.name}.`, () => restoreAdvisor(tomb));
+        renderAdvList();
+      } catch(e){ flash('Failed: ' + e.message); }
+    };
+    const scrim = document.createElement('div'); scrim.className = 'scrim';
+    scrim.innerHTML = `<div class="sheet" style="max-width:460px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Remove ${escapeHtml(a.name)}?</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;line-height:1.55">This takes them off your reviewer list and revokes their ${escapeHtml(UNIT)} access. Comments they already submitted are kept — and you can undo right after.</div>
+      <label style="font-size:12px;color:var(--text-2)">Type their full name to confirm
+        <input id="rm-confirm" autocomplete="off" placeholder="${escapeHtml(a.name)}" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px"></label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn" id="rm-cancel">Cancel</button>
+        <button class="btn" id="rm-go" style="background:var(--danger,#c0362c);color:#fff;border-color:transparent" disabled>Remove</button>
+      </div></div>`;
+    document.body.appendChild(scrim);
+    const $ = s => scrim.querySelector(s);
+    const close = () => scrim.remove();
+    scrim.onclick = e => { if (e.target === scrim) close(); };
+    $('#rm-cancel').onclick = close;
+    const inp = $('#rm-confirm'), go = $('#rm-go');
+    const match = () => inp.value.trim() === a.name.trim();
+    inp.oninput = () => { go.disabled = !match(); };
+    inp.onkeydown = e => { if (e.key === 'Enter' && match()){ e.preventDefault(); go.click(); } };
+    go.onclick = () => { if (!match()) return; close(); doRemove(); };
+    setTimeout(() => inp.focus(), 30);
   };
   document.getElementById('adv-add').onclick = addAdvisor;
+  { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
   renderAdvList();
-  // Notify-me-at: stored in notify_config.json (data repo) — written with the everyday token,
-  // read by the notify workflow. No elevated scope needed (unlike Actions variables).
+
+  // ---- Reviewer status board (Lane D feature 3) — per reviewer: units released, comments submitted,
+  // last activity, invite state. Purely from data we already loaded (advReg/rel/inbox/pres); no invented
+  // "opened the link" signal. reviewerStatus is pure + TDD'd.
+  const renderStatusBoard = () => {
+    const box = document.getElementById('rel-board'); if (!box) return;
+    const named = new Set(advReg.advisors.map(a => a.id));
+    const rows = reviewerStatus({ advisors: advReg.advisors, release: rel, inbox, presence: pres });
+    if (!rows.length){ box.innerHTML = ''; return; }
+    const chip = (bg, fg, txt) => `<span class="chip" style="background:var(--${bg});color:var(--${fg})">${txt}</span>`;
+    const inviteChip = s => s === 'invited' ? chip('success-bg','success','invited')
+      : s === 'failed' ? chip('warn-bg','warn','invite failed')
+      : s === 'pending' ? chip('warn-bg','warn','invite pending')
+      : chip('bg-3','text-3','no email');
+    box.innerHTML = `<div class="rel-sec" style="margin-top:22px">Reviewer status</div>
+      <table class="rel-tbl" style="margin-top:2px"><thead><tr>
+        <th style="text-align:left">Reviewer</th><th>${UNITC}s shared</th><th>Comments</th><th>Last active</th><th>Invite</th></tr></thead><tbody>${
+      rows.map(r => `<tr>
+        <td style="text-align:left"><b>${escapeHtml(r.name)}</b>${r.email?`<div style="font-weight:400;font-size:10.5px;color:var(--text-3)">${escapeHtml(r.email)}</div>`:''}</td>
+        <td style="text-align:center">${r.releasedCount}${r.responsesReleased?' <span title="responses released" style="color:var(--success)">✓</span>':''}</td>
+        <td style="text-align:center">${r.commentCount}${r.draftCount?` <span style="color:var(--text-3)" title="unsubmitted drafts">(+${r.draftCount})</span>`:''}</td>
+        <td style="text-align:center;font-size:11.5px;color:var(--text-3)">${r.lastActive?escapeHtml(relTime(r.lastActive)):'—'}</td>
+        <td style="text-align:center">${inviteChip(r.inviteStatus)}</td></tr>`).join('') }</tbody></table>`;
+  };
+  renderStatusBoard();
+
+  // ---- Configuration health check / preflight (Lane D feature 2) — one at-a-glance green/amber panel.
+  // Signals that need a live probe (render-built, token-write) are fetched async; the rest come from
+  // state we already have. healthSignals is pure + TDD'd; each amber row names the exact next step.
   (async () => {
-    const inp = document.getElementById('notify-email'); if (!inp) return;
-    const freq = document.getElementById('notify-freq');
-    try { const { json } = await getJson(t, 'notify_config.json');
-      if (json && json.author_email) inp.value = json.author_email;
-      if (freq && json && json.frequency) freq.value = json.frequency;
+    const box = document.getElementById('rel-preflight'); if (!box) return;
+    let renderBuilt = false, tokenCanWrite = null;
+    try {
+      const paths = await ghTree(t);
+      const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes(dpath('content/'+id+'.html')));
+      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => rel[k].released || []))];
+      renderBuilt = renderBuiltStatus({ allUnitIds: CHAPTERS.map(c => c.id), releasedUnitIds, builtUnitIds });
     } catch(e){}
-    const stat = document.getElementById('notify-stat');
-    document.getElementById('notify-save').onclick = async () => {
-      const val = inp.value.trim();
-      const f = (freq && freq.value) || 'daily';
-      stat.textContent = 'Saving…';
-      try {
-        const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
-        const cfg = json && typeof json === 'object' ? json : {};
-        cfg.author_email = val; cfg.frequency = f;
-        await putJson(t, 'notify_config.json', cfg, sha, `notify: set author email + frequency`);
-        stat.textContent = !val ? 'Cleared — no digest emails.'
-          : f === 'off' ? 'Saved — digest emails are off.'
-          : `Saved — ${f} digest of reviewer activity.`;
-      } catch(e){ stat.textContent = 'Failed: ' + e.message; }
-    };
+    try { await checkActionsAccess(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }
+    const anyReleased = Object.keys(rel).some(k => k !== '_comment' && (rel[k].released||[]).length > 0);
+    const signals = healthSignals({
+      keySet: !!advisorKey(), emailConfigured: emailConfigured(),
+      renderBuilt, anyReleased, tokenCanWrite, unitNoun: UNIT,
+    });
+    const greens = signals.filter(s => s.status === 'green').length;
+    const allGreen = greens === signals.length;
+    box.innerHTML = `<div style="border:.5px solid var(--border);border-radius:11px;padding:14px 16px;background:var(--bg-2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <i class="ti ti-${allGreen?'circle-check':'alert-triangle'}" style="font-size:16px;color:var(--${allGreen?'success':'warn'})"></i>
+        <b style="font-size:13.5px">${allGreen?'Ready to share with reviewers':`Deploy checklist — ${greens}/${signals.length} ready`}</b></div>
+      ${signals.map(s => `<div style="display:flex;align-items:flex-start;gap:9px;padding:4px 0;font-size:12.5px">
+        <i class="ti ti-${s.status==='green'?'circle-check':'circle'}" style="font-size:14px;margin-top:1px;color:var(--${s.status==='green'?'success':'warn'})"></i>
+        <div><span style="color:var(--text)">${escapeHtml(s.label)}</span>${s.status==='amber'?`<div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${escapeHtml(s.next)}</div>`:''}</div></div>`).join('')}</div>`;
   })();
+  // (Notify-me digest + AI setup moved to the dedicated Settings page.)
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
       rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });

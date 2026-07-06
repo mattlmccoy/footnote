@@ -389,6 +389,27 @@ body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}   /* lift 
 .tour-overlay .tour-tip-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:10px}
 .tour-overlay .tour-tip-prog{font-size:11px;color:var(--text-3)}
 .tour-overlay .tour-tip .btn{padding:3px 10px;font-size:11.5px}
+/* Settings page (Project A) */
+.set-wrap{display:flex;min-height:calc(100vh - 120px)}
+.set-nav{width:230px;flex:none;border-right:.5px solid var(--border);padding:14px 10px}
+.set-nav .set-item{display:flex;align-items:center;gap:8px;padding:8px 11px;border-radius:8px;cursor:pointer;font-size:13px;color:var(--text-2)}
+.set-nav .set-item:hover{background:var(--bg-3)}
+.set-nav .set-item.active{background:var(--accent-bg);color:var(--accent);font-weight:600}
+.set-nav .set-item.muted{color:var(--text-3)}
+.set-nav .set-g{margin-left:auto;font-size:13px}
+.set-nav .set-g.ok{color:var(--success)} .set-nav .set-g.warn{color:var(--warn)}
+.set-pane{flex:1;padding:20px 26px;max-width:640px}
+.set-card{border:.5px solid var(--border);border-radius:10px;padding:14px 16px;margin-bottom:14px;background:var(--bg-2)}
+.set-card h4{font-size:13px;font-weight:600;margin:0 0 4px}
+.set-status{display:flex;align-items:center;gap:8px;font-size:12.5px}
+.set-status .ok{color:var(--success)} .set-status .warn{color:var(--warn)}
+/* Shared modal */
+.modal-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:80;display:flex;align-items:center;justify-content:center}
+.modal-box{background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 60px rgba(0,0,0,.28);width:min(560px,92vw);max-height:86vh;overflow:auto;padding:0}
+.modal-head{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:.5px solid var(--border);font-weight:600;font-size:14px}
+.modal-head .modal-x{margin-left:auto;cursor:pointer;color:var(--text-3);background:none;border:none;font-size:16px}
+.modal-body{padding:16px 18px}
+.modal-foot{display:flex;gap:8px;justify-content:flex-end;padding:12px 18px;border-top:.5px solid var(--border)}
 </style>
 </head>
 <body>
@@ -400,6 +421,6 @@ body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}   /* lift 
     <aside class="comments" id="comments"></aside>
   </div>
 </div>
-<script type="module" src="./js/app.js?v=eceba50"></script>
+<script type="module" src="./js/app.js?v=0da081c"></script>
 </body>
 </html>

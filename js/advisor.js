@@ -1,14 +1,15 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=eceba50';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=eceba50';
-import { wordDiff } from './textdiff.js?v=eceba50';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=eceba50';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=eceba50';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=eceba50';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=eceba50';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=eceba50';
+import { anchorFromSelection } from './anchor.js?v=0da081c';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=0da081c';
+import { wordDiff } from './textdiff.js?v=0da081c';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=0da081c';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=0da081c';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=0da081c';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=0da081c';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=0da081c';
+import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=0da081c';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
@@ -76,12 +77,28 @@ const _API='https://api.github.com';
 let _OWNER='', _REPO='';   // populated from footnote.config.json at boot (before any fetch)
 let _PREFIX='';   // consolidated-workspace project prefix ('<id>/') from the invite link's &p=<id>; '' for legacy
 const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' });
-async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
-async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
+// Every reviewer-portal GitHub request is bounded (timeout + one transport retry) so a hung request can't
+// freeze the portal forever, and non-ok responses throw an error carrying .status+.headers so callers can
+// classify a 403 rate limit (F2/F3).
+const _gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
+const _ghErr = (r, ctx) => { const e = new Error((ctx||'GitHub')+' '+r.status); e.status = r.status; e.headers = r.headers; return e; };
+async function getJson(t, path){ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw _ghErr(r); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
+async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw _ghErr(r,'put failed:'); return (await r.json()).content.sha; }
 // binary file I/O (PNG markups) — self-contained, mirrors the JSON helpers above
-async function _getSha(t, path){ try{ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) return null; return (await r.json()).sha; }catch(e){ return null; } }
-async function putFile(t, path, base64, msg){ const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw new Error('put file failed: '+r.status); return (await r.json()).content.sha; }
-async function getDataUrl(t, path, mime='image/png'){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); return `data:${mime};base64,`+(d.content||'').replace(/\s/g,''); }
+async function _getSha(t, path){ try{ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) return null; return (await r.json()).sha; }catch(e){ return null; } }
+async function putFile(t, path, base64, msg){ const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw _ghErr(r,'put file failed:'); return (await r.json()).content.sha; }
+async function getDataUrl(t, path, mime='image/png'){ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) throw _ghErr(r); const d=await r.json(); return `data:${mime};base64,`+(d.content||'').replace(/\s/g,''); }
+// Request thrift (Model-A scale fix): rendered reading-view HTML (content/<id>.html) is immutable until
+// the author re-renders, yet it's the most-refetched file — single-chapter open, then whole-doc re-reads
+// EVERY unit again. A short-TTL in-memory cache de-dupes those bursts so a solo reviewer refreshing
+// whole-doc doesn't burn the shared 5000/hr budget. Keyed by data-repo path (cachebust `?t=` stripped).
+const _rawCache = new TTLCache(60000);   // 60s: long enough to collapse a refresh burst, short enough to see a fresh render
+async function _rawText(t, path){
+  const cached = _rawCache.get(path); if (cached !== undefined) return cached;
+  const r = await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+  if (!r.ok) throw _ghErr(r);
+  const txt = await r.text(); _rawCache.set(path, txt); return txt;
+}
 // merge two reviews of the SAME reviewer file without losing anything: union comments by id;
 // remote wins owner-authoritative fields, local wins reviewer-authoritative fields; thread merged by (author,ts).
 function mergeReviews(remote, local){
@@ -185,8 +202,23 @@ if (localStorage.getItem('theme') === 'dark') document.documentElement.classList
 
 // ---------- sync (this reviewer's own comment file only) ----------
 let reviewSha = null, syncTimer = null;
-async function syncDown(){ const t = tok(); if (!t) return;
-  try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha;
+// Rate-limit backoff (F2): the shared reviewer key draws on ONE 5000/hr GitHub budget for the whole
+// committee, so a 403/429 must NOT surface as a generic "not saved" error — pause the poll until the
+// limit resets and show an honest "reconnecting" banner. When it clears, we resume and hide the banner.
+let _rlUntil = 0;   // ms epoch; while now < _rlUntil we are rate-limited
+const _isRateLimited = () => Date.now() < _rlUntil;
+function _enterRateLimit(headers){ _rlUntil = Date.now() + Math.max(20000, retryAfterMs(headers)); renderRateBanner(); }
+function _clearRateLimit(){ if (_rlUntil){ _rlUntil = 0; renderRateBanner(); } }
+function renderRateBanner(){
+  let el = document.getElementById('ratebanner');
+  if (!_isRateLimited()){ if (el) el.remove(); return; }
+  if (!el){ el = document.createElement('div'); el.id = 'ratebanner';
+    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:60;background:#fff6e5;color:#8a5a12;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:9px 14px;text-align:center;border-top:1px solid #f0d9a8';
+    document.body.appendChild(el); }
+  el.innerHTML = '<i class="ti ti-cloud-pause"></i> GitHub is busy (usage limit) — reconnecting automatically. Your comments are saved and will sync when it clears.';
+}
+async function syncDown(){ const t = tok(); if (!t || _isRateLimited()) return;
+  try { const { json, sha } = await getJson(t, reviewPath(current)); reviewSha = sha; _clearRateLimit();
     if (json){ const rById = Object.fromEntries((json.comments||[]).map(c=>[c.id,c]));
       // honor deletion tombstones from both sides so a deleted comment is never pulled back in
       const deleted = new Set([ ...((review.deleted)||[]), ...((json.deleted)||[]) ]);
@@ -197,20 +229,34 @@ async function syncDown(){ const t = tok(); if (!t) return;
       review.comments = review.comments.filter(lc => !deleted.has(lc.id)).map(lc => { const rc = rById[lc.id]; return rc ? { ...lc, resolution: rc.resolution || lc.resolution, thread: rc.thread || lc.thread, read: rc.read ?? lc.read, sent: rc.sent ?? lc.sent } : lc; });
       (json.comments||[]).forEach(rc => { if (!deleted.has(rc.id) && !review.comments.find(c=>c.id===rc.id)) review.comments.push(rc); });
       save(); renderComments(); if (document.getElementById('doc')) paintHighlights(); } }
-  catch(e){ /* first time / offline */ } }
+  catch(e){ const c = classifyGitHubError(e); if (c.rateLimited) _enterRateLimit(c.headers); /* else: first time / offline */ } }
 // Live polling: re-pull the author's replies/resolutions on a cadence + when the tab refocuses.
 // Guard: skip the poll while the reviewer is mid-write (a comment popover is open, or a textarea in the
 // comment area has focus) so a re-render never yanks their cursor. Data is already merge-safe in syncDown.
-let livePollTimer = null;
+// Self-scheduling loop (not a fixed interval) so we can THROTTLE: the base cadence is 20s, but it backs
+// off toward 60s while the reviewer is idle (no changes seen), and while rate-limited it waits for the
+// reset — this is the Model-A scale fix that keeps the shared key viable for a committee.
+let livePollTimer = null, _pollBase = 20000, _idlePolls = 0, _liveOn = false;
 function isAdvisorBusy(){
   if (typeof pending !== 'undefined' && pending) return true;
   const a = document.activeElement;
   return !!(a && a.tagName === 'TEXTAREA');
 }
-function livePoll(){ if (!tok() || document.hidden || isAdvisorBusy()) return; syncDown(); }
-function startLiveSync(){ stopLiveSync(); livePollTimer = setInterval(livePoll, 20000); }
-function stopLiveSync(){ if (livePollTimer){ clearInterval(livePollTimer); livePollTimer = null; } }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) livePoll(); });
+function _nextPollDelay(){
+  if (_isRateLimited()) return Math.max(5000, _rlUntil - Date.now());   // wait out the limit, re-check near reset
+  const backoff = Math.min(_idlePolls, 3);                              // 20s → 30s → 45s → 60s as idleness grows
+  return _pollBase * (1 + 0.5 * backoff * backoff / 2 + backoff/2);     // gentle ramp, capped ~60s
+}
+async function livePoll(){
+  if (!tok() || document.hidden || isAdvisorBusy()){ _idlePolls++; return; }
+  const before = JSON.stringify(review.comments || []);
+  await syncDown();
+  if (JSON.stringify(review.comments || []) === before) _idlePolls++; else _idlePolls = 0;   // reset cadence on any change
+}
+function _scheduleLivePoll(){ if (!_liveOn) return; clearTimeout(livePollTimer); livePollTimer = setTimeout(async () => { try { await livePoll(); } catch(e){} _scheduleLivePoll(); }, _nextPollDelay()); }
+function startLiveSync(){ stopLiveSync(); _liveOn = true; _idlePolls = 0; _scheduleLivePoll(); }
+function stopLiveSync(){ _liveOn = false; if (livePollTimer){ clearTimeout(livePollTimer); livePollTimer = null; } }
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ _idlePolls = 0; livePoll(); } });
 // a local mutation isn't safe until confirmed on GitHub — flag it, persist, and schedule a push
 // the "unsaved" banner is driven purely by sync OUTCOME — syncUp clears it on a confirmed PUT
 // and raises it on a real failure, and the 30s heartbeat surfaces genuinely-stuck chapters.
@@ -218,18 +264,21 @@ document.addEventListener('visibilitychange', () => { if (!document.hidden) live
 function markDirty(){ review.pending = true; review.last_active = new Date().toISOString(); save(); syncUpSoon(); }
 function syncUpSoon(){ if (!tok()) return; clearTimeout(syncTimer); syncTimer = setTimeout(() => syncUp(), 1200); }
 // read-modify-merge push: returns true only when GitHub confirms (2xx). Never clobbers owner edits.
-async function syncUp(){ const t = tok(); if (!t) return false;
+async function syncUp(){ const t = tok(); if (!t || _isRateLimited()) return false;   // rate-limited: leave it pending, retryPending re-pushes when it clears
   const path = reviewPath(current), label = effId();
   for (let attempt = 0; attempt < 5; attempt++){
     let remote = null, sha = reviewSha;
     try { const g = await getJson(t, path); remote = g.json; sha = g.sha; }
     catch(e){ if (is401(e)){ keyBad = true; renderBanner(); return false; }
+      const c = classifyGitHubError(e); if (c.rateLimited){ _enterRateLimit(c.headers); return false; }   // data stays pending; no error banner
       /* non-401 (404 / empty / corrupt remote): don't reuse a stale sha — refetch the real one so the PUT can overwrite */
       sha = await _getSha(t, path); }
     const merged = mergeReviews(remote, review);
     try { reviewSha = await putJson(t, path, merged, sha, `review(${label}): ${current}`, false);
       merged.pending = false; review = merged; save(); renderBanner(); return true; }
-    catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; } renderBanner(); return false; }
+    catch(e){ if (/\b409\b/.test(e.message) && attempt < 4){ await new Promise(r => setTimeout(r, 250*(attempt+1))); continue; }
+      const c = classifyGitHubError(e); if (c.rateLimited){ _enterRateLimit(c.headers); return false; }   // leave pending, don't cry "not saved"
+      renderBanner(); return false; }
   }
   renderBanner(); return false;
 }
@@ -266,7 +315,7 @@ async function loadRelease(){
   const t = tok();
   if (location.hostname==='localhost'||location.hostname==='127.0.0.1'){ try { const r=await fetch('./release.json'); if(r.ok){ apply(await r.json()); return; } } catch(e){} }
   if (!t){ released = []; return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+  try { const r = await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (r.status === 401){ keyBad = true; return; }
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
   function apply(j){ if (j && typeof j === 'object' && !(RELEASE_ID in j)){ revoked = true; return; }   // no gate entry → this reviewer was removed
@@ -284,8 +333,7 @@ async function loadChapter(ch){
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
   if (dev){ try { const r=await fetch(`./chapters/${ch}.html`); if(r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
   const t = tok(); if (!t){ renderConnect(); return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${ch}.html?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
-    if (!r.ok) throw new Error('HTTP '+r.status); renderDoc(await r.text()); }
+  try { renderDoc(await _rawText(t, `content/${ch}.html`)); }
   catch(e){ if (is401(e)) return showKeyExpired();
     read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
 }
@@ -794,10 +842,27 @@ function paintCommentsIn(root, comments){
   const blocks=[...root.querySelectorAll('p, li, figcaption')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
   const figs=[...root.querySelectorAll('figure')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
   (comments||[]).forEach(c=>{ if(c.kind==='figure'){ const q=(c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30); const fig=(figs.find(f=>f.txt.includes(q)) || figs.find(f=>f.el.querySelector('img')?.src.endsWith(c.anchor.figure||' ')))?.el; if(fig){ fig.classList.add('cmark-fig'); fig.dataset.cid=c.id; fig.style.setProperty('--mk',`var(--${c.tag})`); } return; }
-    const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim(); if(q.length<4) return; const needle=q.slice(0,50); const el=blocks.find(b=>b.txt.includes(needle.slice(0,40)))?.el; if(!el) return; if(!wrapInNode(el,needle,c)){ el.classList.add('cmark-el'); el.dataset.cid=c.id; el.style.setProperty('--mk',`var(--${c.tag})`); el.onclick=()=>activateComment(c.id); } }); }
-function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return; if(WHOLE){ paintWholeHighlights(); return; } paintCommentsIn(doc, review.comments); }
-function paintWholeHighlights(){ const doc=document.getElementById('doc'); if(!doc) return;
-  _wholeUnits.forEach(u=>{ const seg=document.getElementById('wd-'+u.id); if(!seg) return; paintCommentsIn(seg, (_reviews[u.id]&&_reviews[u.id].comments)||[]); }); }
+    const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim(); if(q.length<4) return; const needle=q.slice(0,50); const el=blocks.find(b=>b.txt.includes(needle.slice(0,40)))?.el; if(!el) return; if(!wrapInNode(el,needle,c)){ el.classList.add('cmark-el'); el.dataset.cid=c.id; el.style.setProperty('--mk',`var(--${c.tag})`); el.onclick=()=>activateComment(c.id); } });
+  // F6: a text comment whose quote no longer appears (author edited/removed the passage) can't paint and
+  // would silently vanish. Return those so the caller can surface them instead of dropping them.
+  const isPresent=q=>blocks.some(b=>b.txt.includes(q.slice(0,40)));
+  return orphanComments(comments, isPresent); }
+function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return; if(WHOLE){ paintWholeHighlights(); return; } renderOrphanNotice(paintCommentsIn(doc, review.comments)); }
+function paintWholeHighlights(){ const doc=document.getElementById('doc'); if(!doc) return; let orphans=[];
+  _wholeUnits.forEach(u=>{ const seg=document.getElementById('wd-'+u.id); if(!seg) return; orphans=orphans.concat(paintCommentsIn(seg, (_reviews[u.id]&&_reviews[u.id].comments)||[])); });
+  renderOrphanNotice(orphans); }
+// F6: honest, dismissible notice listing comments that lost their anchor after an author edit — never
+// drop them silently. Clicking one still opens it in the rail (the comment/thread text is intact).
+function renderOrphanNotice(orphans){
+  let el=document.getElementById('orphan-notice');
+  if(!orphans||!orphans.length){ if(el) el.remove(); return; }
+  if(!el){ el=document.createElement('div'); el.id='orphan-notice';
+    el.style.cssText='margin:10px 0;padding:10px 12px;border:1px solid #e7d3a8;background:#fdf6e3;border-radius:8px;font:12.5px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:#7a5b12';
+    const cm=document.getElementById('comments'); if(cm) cm.prepend(el); else return; }
+  const rows=orphans.map(c=>`<button class="orphan-jump" data-id="${c.id}" style="display:block;width:100%;text-align:left;border:0;background:none;cursor:pointer;color:#7a5b12;padding:3px 0;font:inherit"><i class="ti ti-unlink"></i> ${escapeHtml(shortTitle((c.anchor&&c.anchor.quote)||c.body||'comment'))}</button>`).join('');
+  el.innerHTML=`<div style="font-weight:600;margin-bottom:4px"><i class="ti ti-alert-triangle"></i> ${orphans.length} comment${orphans.length>1?'s':''} lost ${orphans.length>1?'their':'its'} place</div><div style="margin-bottom:6px">The passage ${orphans.length>1?'these refer':'this refers'} to changed since ${orphans.length>1?'they were':'it was'} written, so ${orphans.length>1?'they can':'it can'}'t be highlighted in the text. ${orphans.length>1?'They\'re':'It\'s'} still saved:</div>${rows}`;
+  el.querySelectorAll('.orphan-jump').forEach(b=>b.onclick=()=>activateComment(b.dataset.id));
+}
 function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilter.SHOW_TEXT); let node, probe=needle.slice(0,30);
   while((node=tw.nextNode())){ const idx=node.nodeValue.indexOf(probe); if(idx>=0){ const r=document.createRange(); r.setStart(node,idx); r.setEnd(node,Math.min(node.nodeValue.length,idx+needle.length));
     const mk=document.createElement('mark'); mk.className='cmark'; mk.dataset.id=c.id; mk.dataset.tag=c.tag; if(c.edit) mk.dataset.sugg=c.edit.op; try{ r.surroundContents(mk); mk.onclick=e=>{ e.stopPropagation(); activateComment(c.id); }; return true; }catch(e){ return false; } } } return false; }
@@ -825,7 +890,7 @@ async function loadWholeDoc(){
   const fetchFrag=async(u)=>{
     try{
       if(dev){ const r=await fetch(`./chapters/${u.id}.html`); if(r.ok) return await r.text(); }
-      if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${u.id}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) return await r.text(); }
+      if(t){ return await _rawText(t, `content/${u.id}.html`); }
     }catch(e){}
     return null;
   };
@@ -1037,7 +1102,7 @@ async function loadResponses(){
     let json=null;
     try{
       if(dev){ const r=await fetch(`./advisor/${effId()}/${ch}.json`); if(r.ok) json=await r.json(); }
-      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
+      else if(t){ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
     }catch(e){}
     const cs=(json?.comments||[]).filter(c=>c.status==='submitted');
     cs.forEach(c=>{ const ov=localStorage.getItem(_respStateKey(ch,c.id)); if(ov!==null){ if(ov==='__open__') delete c.advisor_state; else c.advisor_state=ov; } });   // re-apply a triage flag that didn't sync
@@ -1137,7 +1202,7 @@ async function embedChangedFigures(groups){
     let html=_respFigCache[ch]||null;
     if(!html){ try{
       if(dev){ const r=await fetch(`./chapters/${ch}.html`); if(r.ok) html=await r.text(); }
-      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${ch}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) html=await r.text(); }
+      else if(t){ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${ch}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) html=await r.text(); }
     }catch(e){} if(html) _respFigCache[ch]=html; }
     if(!html) continue;
     const tmp=document.createElement('div'); tmp.innerHTML=html; const figs=[...tmp.querySelectorAll('figure')];
@@ -1162,7 +1227,7 @@ async function loadOutline(){
   let data=null; const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
   try{
     if(dev){ const r=await fetch('./outline.json'); if(r.ok) data=await r.json(); }
-    if(!data){ const t=tok(); if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) data=await r.json(); } }
+    if(!data){ const t=tok(); if(t){ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) data=await r.json(); } }
   }catch(e){}
   if(!data){ read.innerHTML=`<div class="empty">Couldn't load the outline. Check your access key.</div>`; return; }
   renderOutline(data); renderComments(); syncDown();

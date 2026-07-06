@@ -194,10 +194,11 @@ export function sourceLabel(cfg, parsed) {
 // Build a reviewer (advisor) portal invite URL. Advisors have no hub access, so the link carries the data
 // repo (&data=) directly; for a consolidated workspace project it also carries the project id (&p=<id>) so
 // the advisor bundle prefixes all its data paths with <id>/. base is the site URL (…/, trailing slash).
-export function advisorInviteUrl(base, { id, name, dataRepo, projectId } = {}) {
+export function advisorInviteUrl(base, { id, name, dataRepo, projectId, accessKey } = {}) {
   const enc = encodeURIComponent;
   let url = `${base}advisor.html?a=${enc(id || '')}&n=${enc(name || '')}&data=${enc(dataRepo || '')}`;
   if (projectId) url += `&p=${enc(projectId)}`;
+  if (accessKey) url += `&k=${enc(accessKey)}`;   // magic link: reviewer clicks and is in, no paste
   return url;
 }
 

@@ -280,6 +280,21 @@ test('advisorInviteUrl builds a portal link; adds &p only for workspace projects
     'https://x/advisor.html?a=CJS&n=&data=alice%2Fdata');   // no name
 });
 
+test('advisorInviteUrl embeds the access key as &k= so the copy-link is a working magic link', () => {
+  // with a key → &k= appended (url-encoded), after &p when present
+  assert.equal(
+    advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/ws', projectId: 'metro', accessKey: 'ghp_a b/c' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fws&p=metro&k=ghp_a%20b%2Fc');
+  // no key → byte-identical to before (no &k=)
+  assert.equal(
+    advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/data' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fdata');
+  // empty-string key → omitted, not a dangling &k=
+  assert.equal(
+    advisorInviteUrl('https://x/', { id: 'CJS', dataRepo: 'alice/data', accessKey: '' }),
+    'https://x/advisor.html?a=CJS&n=&data=alice%2Fdata');
+});
+
 // ---- sourceLabel(): the setup-checklist "Source connected ·" detail ----
 // Bug: an uploaded workspace project has _CFG.sourceRepo = the workspace repo (source lives at
 // <id>/source/), so the checklist showed "Source connected · <owner>/footnote-projects" — reads
