@@ -11,6 +11,19 @@ test('SEED_FILES maps CI scripts to root and workflows into .github/workflows', 
   assert.equal(byDest['.github/workflows/release-notify.yml'], 'workflows/release-notify.yml');
 });
 
+test('SEED_FILES includes the Phase 3 render pipeline (export scripts + driver + workflow)', () => {
+  const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
+  // the export toolchain lands at export/ in the data repo, mirroring data-template/export/
+  assert.equal(byDest['export/preprocess.py'], 'export/preprocess.py');
+  assert.equal(byDest['export/srcmap.py'], 'export/srcmap.py');
+  assert.equal(byDest['export/chapter-html.sh'], 'export/chapter-html.sh');
+  assert.equal(byDest['export/shim.tex'], 'export/shim.tex');
+  assert.equal(byDest['export/ieee.csl'], 'export/ieee.csl');
+  // the driver at the repo root + the render workflow under .github/workflows/
+  assert.equal(byDest['ci_render.py'], 'ci_render.py');
+  assert.equal(byDest['.github/workflows/render.yml'], 'workflows/render.yml');
+});
+
 test('seedJsonFiles returns the initial config files (empty/honest)', () => {
   const byPath = Object.fromEntries(seedJsonFiles().map(f => [f.path, f.json]));
   assert.deepEqual(byPath['advisors.json'], { advisors: [], email_configured: false });

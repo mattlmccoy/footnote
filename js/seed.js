@@ -13,6 +13,15 @@ export const SEED_FILES = [
   { src: 'workflows/invite.yml',          dest: '.github/workflows/invite.yml' },
   { src: 'workflows/notify.yml',          dest: '.github/workflows/notify.yml' },
   { src: 'workflows/release-notify.yml',  dest: '.github/workflows/release-notify.yml' },
+  // Phase 3 — the generic reading-view render pipeline (LaTeX → self-contained HTML + srcmap),
+  // run on the adopter's own Actions by render.yml. export/* mirrors data-template/export/.
+  { src: 'export/preprocess.py',   dest: 'export/preprocess.py' },
+  { src: 'export/srcmap.py',       dest: 'export/srcmap.py' },
+  { src: 'export/chapter-html.sh', dest: 'export/chapter-html.sh' },
+  { src: 'export/shim.tex',        dest: 'export/shim.tex' },
+  { src: 'export/ieee.csl',        dest: 'export/ieee.csl' },
+  { src: 'ci_render.py',           dest: 'ci_render.py' },
+  { src: 'workflows/render.yml',   dest: '.github/workflows/render.yml' },
 ];
 
 // Initial config files created fresh (honest empty state — email_configured stays false until a real send).
