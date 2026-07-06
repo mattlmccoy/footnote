@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, permissionFromError } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, permissionFromError, applyRunLabel } from '../js/ghsecrets.js';
+
+// After the owner applies review decisions, the apply.yml workflow processes the queue on GitHub.
+// applyRunLabel turns a workflow-run snapshot into a plain-English status so a queued job never looks
+// dead — the "5 minutes, nothing happened" complaint.
+test('applyRunLabel narrates the apply workflow run so a queued job never looks dead', () => {
+  assert.equal(applyRunLabel(null), null);                                   // no run yet → no banner
+  assert.match(applyRunLabel({ status:'queued' }), /queued/i);
+  assert.match(applyRunLabel({ status:'in_progress' }), /processing/i);
+  assert.equal(applyRunLabel({ status:'completed', conclusion:'success' }), null);  // done → clear banner
+  assert.match(applyRunLabel({ status:'completed', conclusion:'failure' }), /didn.t succeed|actions/i);
+});
 
 // The Settings panel can't read a secret's VALUE, but it can list the secret NAMES on the data repo and
 // tell the owner whether Claude is already connected for the whole workspace — so it's obvious the token

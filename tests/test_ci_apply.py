@@ -303,21 +303,54 @@ def test_process_merge_applies_only_approved_edits_and_marks_them_merged():
     ]}
     job = {"id": "m1", "type": "merge", "chapter": "02-methods"}
     files = {"methods.tex": "\\alpha \\gamma \\keepme"}
-    new_review, new_files, merged = R.process_merge_job(job, review, files, "t")
+    new_review, new_files, merged, drop_branch = R.process_merge_job(job, review, files, "t")
     assert new_files["methods.tex"] == "\\beta \\delta \\keepme"    # rejected edit NOT applied
     assert set(merged) == {"c1", "c2"}
     byid = {c["id"]: c for c in new_review["comments"]}
     assert byid["c1"]["status"] == "merged" and byid["c2"]["status"] == "merged"
     assert byid["c3"]["status"] == "declined"                       # untouched
+    assert drop_branch is True     # nothing left staged/approved → branch is safe to delete
 
 
 def test_process_merge_flags_conflict_when_approved_target_missing():
     review = {"comments": [_approved("c1", "\\notthere", "\\x")]}
     job = {"id": "m1", "type": "merge", "chapter": "ch1"}
-    new_review, new_files, merged = R.process_merge_job(job, review, {"ch1.tex": "empty"}, "t")
+    new_review, new_files, merged, drop_branch = R.process_merge_job(job, review, {"ch1.tex": "empty"}, "t")
     assert merged == []
     assert new_files == {"ch1.tex": "empty"}
     assert new_review["comments"][0]["status"] == "conflict"
+
+
+def test_process_merge_pure_rejection_drops_the_branch_without_publishing():
+    # All comments declined (a pure reject, nothing approved) — the reject bug's cleanup path.
+    review = {"comments": [
+        {"id": "c1", "status": "declined",
+         "edit": {"op": "replace", "find": "\\a", "replacement": "\\b"}}]}
+    job = {"id": "m1", "type": "merge", "chapter": "ch1"}
+    new_review, new_files, merged, drop_branch = R.process_merge_job(job, review, {"ch1.tex": "\\a"}, "t")
+    assert merged == [] and new_files == {"ch1.tex": "\\a"}   # nothing published (main untouched)
+    assert drop_branch is True                                # but the orphaned branch IS cleaned up
+
+
+def test_process_merge_keeps_branch_when_undecided_edits_remain():
+    review = {"comments": [
+        _approved("c1", "\\alpha", "\\beta"),
+        {"id": "c2", "status": "staged",                      # still undecided → branch must survive
+         "edit": {"op": "replace", "find": "\\g", "replacement": "\\d"}}]}
+    job = {"id": "m1", "type": "merge", "chapter": "ch1"}
+    _, _, merged, drop_branch = R.process_merge_job(job, review, {"ch1.tex": "\\alpha \\g"}, "t")
+    assert set(merged) == {"c1"} and drop_branch is False
+
+
+def test_process_merge_keeps_branch_when_a_revise_rerun_is_queued():
+    # A 'queued' comment (a revise re-run) will re-stage onto the branch — don't delete it out from
+    # under the pending apply-edits job.
+    review = {"comments": [
+        _approved("c1", "\\alpha", "\\beta"),
+        {"id": "c2", "status": "queued"}]}         # re-queued for revision
+    job = {"id": "m1", "type": "merge", "chapter": "ch1"}
+    _, _, merged, drop_branch = R.process_merge_job(job, review, {"ch1.tex": "\\alpha"}, "t")
+    assert set(merged) == {"c1"} and drop_branch is False
 
 
 # ================================================================ run-agents (read-only critique)

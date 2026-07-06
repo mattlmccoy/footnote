@@ -276,11 +276,21 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     to the source main, rebuilds the published content/<unit>.html, drops the review branch + its
     preview, and returns the updated review (approved→merged). This is the one place edits become
     permanent — and it only runs on an author-queued merge job."""
-    new_review, new_files, merged = R.process_merge_job(job, review, files, _now_iso())
-    if not merged:
+    new_review, new_files, merged, drop_branch = R.process_merge_job(job, review, files, _now_iso())
+    branch = R.branch_for(ch)
+    if not merged and not drop_branch:
         print(f"[apply] merge {prefix}{ch}: nothing approved to publish", file=sys.stderr)
         return new_review
-    branch = R.branch_for(ch)
+    if not merged:
+        # pure rejection: nothing published to main, but the orphaned review branch + preview
+        # must still be cleaned up so the reviewer's rejection actually resolves the unit.
+        print(f"[apply] merge {prefix}{ch}: no approved edits — clearing rejected review branch")
+        _delete_branch(repo_dir, branch, token, remote_repo)
+        try:
+            Path(R.preview_out(prefix, ch)).unlink()
+        except FileNotFoundError:
+            pass
+        return new_review
     changed = {rel: txt for rel, txt in new_files.items() if files.get(rel) != txt}
     if remote_repo:
         # external source repo: write merged files into the clone and push to its main
@@ -304,13 +314,16 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
             fp.parent.mkdir(parents=True, exist_ok=True)
             fp.write_text(txt, encoding="utf-8")
     # rebuild the published reading view from the merged source, then drop the branch + its preview
+    # UNLESS undecided edits still remain staged (drop_branch=False keeps the branch alive for them).
     build_content(prefix, ch, source_dir, workdir)
-    _delete_branch(repo_dir, branch, token, remote_repo)
-    try:
-        Path(R.preview_out(prefix, ch)).unlink()
-    except FileNotFoundError:
-        pass
-    print(f"[apply] merge {prefix}{ch}: published {len(merged)} approved edit(s)")
+    if drop_branch:
+        _delete_branch(repo_dir, branch, token, remote_repo)
+        try:
+            Path(R.preview_out(prefix, ch)).unlink()
+        except FileNotFoundError:
+            pass
+    print(f"[apply] merge {prefix}{ch}: published {len(merged)} approved edit(s)"
+          + ("" if drop_branch else " — branch kept (undecided edits remain)"))
     return new_review
 
 

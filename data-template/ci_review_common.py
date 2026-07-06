@@ -236,8 +236,13 @@ def process_merge_job(job, review, files, ts):
     """Publish the APPROVED edits for a unit. Reapplies each approved comment's source edit to the
     working files via literal_replace (rejected/other comments are ignored, so their edits never
     land), marks the applied comments ``merged``, and flags any whose target is missing/ambiguous
-    ``conflict``. Returns ``(new_review, new_files, merged_ids)``. Pure: ``ts`` injected, inputs
-    untouched. The caller writes new_files to the source main and republishes content/<unit>.html."""
+    ``conflict``. Returns ``(new_review, new_files, merged_ids, drop_branch)`` where ``drop_branch``
+    is True when no comment is left ``staged``, ``approved``, or ``queued`` — i.e. the review-edits/
+    <unit> branch and its preview are now orphaned and the caller should delete them (covers a pure
+    rejection, where nothing is approved but the staged edits must still be cleaned up, and the normal
+    post-merge case). A ``queued`` comment keeps the branch: a pending revise re-run will re-stage it.
+    Pure: ``ts`` injected, inputs untouched. The caller writes new_files to the source main and
+    republishes content/<unit>.html."""
     work = dict(files)
     by_id = {c.get("id"): c for c in (review.get("comments") or [])}
     updated = dict(by_id)
@@ -264,7 +269,8 @@ def process_merge_job(job, review, files, ts):
         updated[cid] = {**c, "status": "merged"}
         merged.append(cid)
     new_comments = [updated.get(c.get("id"), c) for c in (review.get("comments") or [])]
-    return {**review, "comments": new_comments}, work, merged
+    drop_branch = not any(c.get("status") in ("staged", "approved", "queued") for c in new_comments)
+    return {**review, "comments": new_comments}, work, merged, drop_branch
 
 
 # --------------------------------------------------------------- apply-edits (Claude-authored)

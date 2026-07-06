@@ -1,7 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=276f3ae';
 import { anchorFromSelection } from './anchor.js?v=276f3ae';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=276f3ae';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=276f3ae';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=276f3ae';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=276f3ae';
 import { sealToBase64 } from './vendor/seal.js?v=276f3ae';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=276f3ae';
@@ -1477,7 +1477,9 @@ function showApproveBar(){
   const prevBtn = previewing
     ? `<button class="btn btn-primary" id="preview-btn" style="margin-left:auto"><i class="ti ti-arrow-back-up"></i>Exit preview</button>`
     : `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button>`;
-  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${p.approved.length?'':'disabled'}>Queue ${p.approved.length} for merge</button>`;
+  const decided = p.approved.length + p.rejected.length + p.revise.length;
+  const applyLabel = decided ? `Apply ${decided} decision${decided>1?'s':''}` : 'Apply decisions';
+  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${decided?'':'disabled'}>${applyLabel}</button>`;
   read.prepend(bar);
   bar.querySelector('#merge-approved').onclick = approveChapter;
   bar.querySelector('#preview-btn').onclick = () => togglePreview(current);
@@ -1485,10 +1487,13 @@ function showApproveBar(){
 async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   const p = partitionByDecision(review.comments);
-  if (!p.approved.length){ flash('Approve at least one edit first.'); return; }
-  if (!confirm(`Queue ${p.approved.length} approved edit(s) for merge in ${UNITC} ${chMeta(current).n}?` +
-               (p.rejected.length?`\n${p.rejected.length} rejected edit(s) will be discarded.`:'') +
-               (p.revise.length?`\n${p.revise.length} edit(s) will be re-queued for revision.`:''))) return;
+  const decided = p.approved.length + p.rejected.length + p.revise.length;
+  if (!decided){ flash('Decide on at least one edit (approve, reject, or revise) first.'); return; }
+  const lines = [];
+  if (p.approved.length) lines.push(`${p.approved.length} approved edit(s) will be merged.`);
+  if (p.rejected.length) lines.push(`${p.rejected.length} rejected edit(s) will be discarded.`);
+  if (p.revise.length)   lines.push(`${p.revise.length} edit(s) will be re-queued for revision.`);
+  if (!confirm(`Apply ${decided} decision(s) in ${UNITC} ${chMeta(current).n}?\n` + lines.join('\n'))) return;
   const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
   try {
   // persist the promotion conflict-safe: re-apply queueApproved on the freshest remote copy
@@ -1501,11 +1506,42 @@ async function approveChapter(){
   const { json:jj, sha:js } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
   const jobs = Array.isArray(jj) ? jj : [];
   for (const r of revise) jobs.push({ id:'j_'+Date.now().toString(36)+Math.random().toString(36).slice(2,5), type:'apply-edits', chapter:current, comment_ids:[r.cid], revision:true, revise_note:r.note, status:'queued', requested_ts:new Date().toISOString() });
-  if (!jobs.some(j => j.type==='merge' && j.chapter===current && j.status==='queued'))
+  // A merge job publishes approved edits AND cleans up the review branch after rejections. Queue it
+  // whenever anything is approved or rejected; a revise-only pass leaves it to the apply-edits re-run.
+  const needsMerge = p.approved.length || p.rejected.length;
+  if (needsMerge && !jobs.some(j => j.type==='merge' && j.chapter===current && j.status==='queued'))
     jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
-  await putJson(t, 'jobs.json', jobs, js, `review: merge trigger for ${current}`);
-  flash(`Queued ${p.approved.length} edit(s) for merge. Claude will merge them.`);
+  await putJson(t, 'jobs.json', jobs, js, `review: apply decisions for ${current}`);
+  const parts = [];
+  if (p.approved.length) parts.push(`${p.approved.length} to merge`);
+  if (p.rejected.length) parts.push(`${p.rejected.length} rejected`);
+  if (p.revise.length)   parts.push(`${p.revise.length} to revise`);
+  flash(`Applying ${decided} decision(s) — ${parts.join(', ')}. Footnote is processing…`);
+  watchApplyRun(t);
   } catch(e){ flash('Queue failed — your decisions are saved on this device; please retry. ' + e.message, 5000); }
+}
+// After decisions are queued, follow the apply.yml run so a job never silently looks dead. Polls the
+// run status (up to ~6 min), flashes plain-English progress, and re-syncs the review when it finishes
+// so approved edits merge / rejected branches clear in the UI without a manual reload.
+let _applyWatchGen = 0;
+async function watchApplyRun(t){
+  const gen = ++_applyWatchGen;                 // a newer watcher supersedes this one
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  let lastLabel = null;
+  for (let i = 0; i < 45; i++){
+    await wait(8000);
+    if (gen !== _applyWatchGen) return;         // superseded — stop polling
+    let run = null; try { run = await applyRun(t); } catch { continue; }
+    const label = applyRunLabel(run);
+    if (label && label !== lastLabel){ flash('Footnote — ' + label, 4000); lastLabel = label; }
+    if (run && run.status === 'completed'){
+      if (run.conclusion === 'success'){
+        try { const { json } = await getJson(t, reviewPath(current)); if (json){ review = reconcileReview(review, json, true); save(); renderComments(); if (document.getElementById('doc')){ paintHighlights(); refreshStaged(); } } } catch {}
+        flash('Footnote finished processing your decisions.', 4000);
+      } else if (label){ flash('Footnote — ' + label, 6000); }
+      return;
+    }
+  }
 }
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;

@@ -188,6 +188,25 @@ export async function renderRun(tok){
   return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
 }
 
+// Newest apply.yml run (the queue consumer that stages/merges/cleans up review edits).
+export async function applyRun(tok){
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/apply.yml/runs?per_page=1`, { headers:hdr(tok), cache:'no-store' });
+  if (!r.ok) throw new Error('apply runs ' + r.status);
+  const d = await r.json(); const run = (d.workflow_runs||[])[0];
+  return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
+}
+
+// Pure: turn an apply-run snapshot into a plain-English status line, or null when there's nothing to
+// show (no run yet, or a finished successful run). Keeps a queued job from ever looking dead.
+export function applyRunLabel(run){
+  if (!run || !run.status) return null;
+  if (run.status === 'queued')      return 'Queued on GitHub…';
+  if (run.status === 'in_progress') return 'Processing your decisions…';
+  if (run.status === 'completed')   return run.conclusion === 'success' ? null
+    : 'The last run didn’t succeed — open the Actions tab on your data repo to see why.';
+  return null;
+}
+
 // Newest workflow_dispatch run id/status/conclusion for the invite workflow.
 export async function latestRun(tok){
   const r = await fetch(`${API}/repos/${slug()}/actions/workflows/${inviteWorkflow()}/runs?event=workflow_dispatch&per_page=1`, { headers:hdr(tok), cache:'no-store' });
