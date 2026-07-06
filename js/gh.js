@@ -1,4 +1,9 @@
 import { getConfig, dataRepoParts, dataPath } from './config.js?v=68b8b5d';
+import { fetchWithTimeout } from './nethelpers.js?v=68b8b5d';
+// Every GitHub request is bounded (timeout + one transport retry) so a hung request can't hang the app,
+// and non-ok responses throw an error carrying .status + .headers so callers can classify rate limits.
+const gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
+const ghErr = (r, ctx) => { const e = new Error('GitHub '+(ctx?ctx+' ':'')+r.status); e.status = r.status; e.headers = r.headers; return e; };
 export const reviewPath = ch => `reviews/${ch}.json`;
 export const mergeReview = (local, remote) => {
   if (!remote) return local;
@@ -22,15 +27,15 @@ const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.git
 // workspace mode the tree holds every project's files, so filter to this project's prefix and strip it —
 // callers get the same repo-relative paths (reviews/x.json) whether legacy or workspace.
 export async function ghTree(tok){
-  const r = await fetch(`${API}/repos/${slug()}/git/trees/main?recursive=1&t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
-  if (!r.ok) throw new Error('GitHub tree '+r.status);
+  const r = await gfetch(`${API}/repos/${slug()}/git/trees/main?recursive=1&t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
+  if (!r.ok) throw ghErr(r, 'tree');
   const d = await r.json(); const pfx = getConfig().dataPrefix || '';
   return (d.tree||[]).filter(x => x.type==='blob' && x.path.startsWith(pfx)).map(x => x.path.slice(pfx.length));
 }
 export async function getJson(tok, path){
-  const r = await fetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
+  const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
   if (r.status===404) return { json:null, sha:null };
-  if (!r.ok) throw new Error('GitHub '+r.status);
+  if (!r.ok) throw ghErr(r);
   const d = await r.json();
   if (typeof d.content !== 'string' || !d.content.trim()) throw new Error('empty content for '+path);
   const txt = decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
@@ -38,37 +43,37 @@ export async function getJson(tok, path){
 }
 // binary file helpers (figure markup PNGs): content is already base64 (no JSON wrapping)
 export async function getSha(tok, path){
-  const r = await fetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
-  if (r.status===404) return null; if (!r.ok) throw new Error('GitHub '+r.status);
+  const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
+  if (r.status===404) return null; if (!r.ok) throw ghErr(r);
   return (await r.json()).sha;
 }
 export async function putFile(tok, path, base64, msg){
-  const put = s => fetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
+  const put = s => gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
     body: JSON.stringify({ message:msg, content:base64, sha:s||undefined }) });
   let r = await put(await getSha(tok, path).catch(() => null));
-  if (!r.ok) throw new Error('github put file failed: '+r.status);
+  if (!r.ok) throw ghErr(r, 'put file');
   return (await r.json()).content.sha;
 }
 export async function deleteFile(tok, path, msg){
   const sha = await getSha(tok, path).catch(() => null);
   if (!sha) return false;                                  // already gone
-  const r = await fetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'DELETE', headers:hdr(tok),
+  const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'DELETE', headers:hdr(tok),
     body: JSON.stringify({ message:msg, sha }) });
-  if (!r.ok) throw new Error('github delete failed: '+r.status);
+  if (!r.ok) throw ghErr(r, 'delete');
   return true;
 }
 export async function getDataUrl(tok, path, mime='image/png'){
-  const r = await fetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
-  if (!r.ok) throw new Error('GitHub '+r.status);
+  const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
+  if (!r.ok) throw ghErr(r);
   const d = await r.json(); return `data:${mime};base64,` + (d.content||'').replace(/\s/g,'');
 }
 export async function putJson(tok, path, obj, sha, msg, autoRetry=true){
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2))));
-  const put = s => fetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
+  const put = s => gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
     body: JSON.stringify({ message:msg, content, sha:s||undefined }) });
   let r = await put(sha);
   if (r.status === 409 && autoRetry){                      // stale sha (whole-file replace) — refetch + retry once
     try { const cur = await getJson(tok, path); r = await put(cur.sha); } catch(e){}
   }
-  if (!r.ok) throw new Error('github put failed: '+r.status); return (await r.json()).content.sha;
+  if (!r.ok) throw ghErr(r, 'put'); return (await r.json()).content.sha;
 }
