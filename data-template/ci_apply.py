@@ -31,6 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_review_common as R  # noqa: E402
 import ci_render  # noqa: E402  (reuse the tested source resolution)
 import ci_agents  # noqa: E402  (the shipped agent catalog + the pure directive resolver)
+import ci_authoring  # noqa: E402  (B4 — generate a user-described agent into agents.json as a draft)
 
 TEXT_EXTS = {".tex", ".bib", ".cls", ".sty", ".bbl", ".txt"}
 
@@ -324,7 +325,37 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent")
+
+
+def _run_author_agent_jobs(prefix, author_jobs, jobs):
+    """Generate each described agent into ``agents.json`` as a DRAFT (B4). Needs no source, so it runs
+    before source resolution. Returns ``(jobs, done)`` with the author-agent jobs removed. A generation
+    that fails to parse/validate is dropped with a logged reason (the owner can re-describe)."""
+    have_claude = claude_configured(os.environ)
+    if not have_claude:
+        print(f"[apply] {prefix}: author-agent queued but Claude not configured — leaving job(s)",
+              file=sys.stderr)
+        return jobs, 0
+    agents_list = R.load_json("agents.json", [])
+    if not isinstance(agents_list, list):
+        agents_list = []
+    done = 0
+    changed = False
+    for job in author_jobs:
+        gen = (lambda j: _run_claude(ci_authoring.AUTHOR_DIRECTIVE, ci_authoring.author_context(j),
+                                     None, "author-agent"))
+        agents_list, entry, err = ci_authoring.author_agent(job, agents_list, gen)
+        if entry is not None:
+            changed = True
+            print(f"[apply] authored draft '{entry['id']}' — review it in Settings before it runs")
+        else:
+            print(f"[apply] author-agent failed: {err}", file=sys.stderr)
+        jobs = R.remove_job(jobs, job.get("id"))
+        done += 1
+    if changed:
+        _write_json("agents.json", agents_list)
+    return jobs, done
 
 
 def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None, agent_fn=None):
@@ -347,6 +378,18 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     if not todo:
         return 0
 
+    # author-agent jobs (B4) need no source tree — handle them first, then skip the (expensive) source
+    # resolution entirely if nothing else is queued.
+    author_done = 0
+    author_jobs = [j for j in todo if j.get("type") == "author-agent"]
+    if author_jobs:
+        jobs, author_done = _run_author_agent_jobs(prefix, author_jobs, jobs)
+        todo = [j for j in todo if j.get("type") != "author-agent"]
+        if not todo:
+            _write_json(R.jobs_path(prefix), jobs)
+            print(f"[apply] {prefix or '(root)'}: processed {author_done} author-agent job(s)")
+            return author_done
+
     project = ci_render.project_entry(prefix)
     kind, ref = ci_render.resolve_source(project, prefix, this_repo,
                                          os.environ.get("SOURCE_REPO", ""))
@@ -365,7 +408,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     # The effective agent catalog: engine-owned builtins + any user-authored agents in the repo's
     # agents.json (repo-level, like the engine itself). Absent file → builtins only. Loaded once here.
     catalog = ci_agents.load_catalog("agents.json")
-    done = 0
+    done = author_done                                     # count the pre-pass author-agent jobs too
     for job in todo:
         ch = job.get("chapter")
         review = R.load_json(R.review_path(prefix, ch), {"comments": []})

@@ -104,6 +104,29 @@ def test_local_runner_runs_local_agents_critic_or_doer():
     assert C.runnable_local("legacy-name", cat) is False    # unknown is a CI legacy critic, not local
 
 
+# --------------------------------------------------------------- status gate (B4 draft-review)
+def test_a_draft_agent_never_runs_in_either_lane():
+    cat = C.builtin_catalog()
+    cat["draft-critic"] = {"id": "draft-critic", "category": "critic", "execution": "ci",
+                           "status": "draft", "builtin": False, "systemPrompt": "p"}
+    cat["draft-local"] = {"id": "draft-local", "category": "doer", "execution": "local",
+                          "status": "draft", "builtin": False, "systemPrompt": "p"}
+    cat["active-critic"] = {"id": "active-critic", "category": "critic", "execution": "ci",
+                            "status": "active", "builtin": False, "systemPrompt": "p"}
+    cat["active-local"] = {"id": "active-local", "category": "doer", "execution": "local",
+                           "status": "active", "builtin": False, "systemPrompt": "p"}
+    # drafts are inert until approved
+    assert C.runnable_in_ci("draft-critic", cat) is False
+    assert C.runnable_local("draft-local", cat) is False
+    assert C.is_runnable("draft-critic", cat) is False
+    # approved authored agents run
+    assert C.runnable_in_ci("active-critic", cat) is True
+    assert C.runnable_local("active-local", cat) is True
+    # builtins carry no status → default active → unaffected
+    assert C.runnable_in_ci("rigor", cat) is True
+    assert C.agent_status(cat["rigor"]) == "active"
+
+
 def test_no_builtin_prompt_leaks_domain_specific_terms():
     # document-agnostic hard constraint: no RFAM / dissertation / Matt-specific hardcoding
     banned = ("rfam", "heatr", "dissertation", "phd-dissertation", "overleaf")

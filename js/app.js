@@ -1,21 +1,21 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=092b7cb';
-import { anchorFromSelection } from './anchor.js?v=092b7cb';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=092b7cb';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=092b7cb';
-import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=092b7cb';
-import { sealToBase64 } from './vendor/seal.js?v=092b7cb';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=092b7cb';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=092b7cb';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=092b7cb';
-import { loadAgentCatalog, agentCatalogView, agentCatalogHtml } from './agentcatalog.js?v=092b7cb';
-import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=092b7cb';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=092b7cb';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=092b7cb';
-import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=092b7cb';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=092b7cb';
-import { startWatch as startNetWatch } from './netstatus.js?v=092b7cb';
-import { settingsSections, resolveSection } from './settings.js?v=092b7cb';
-import { modalReducer, topModal } from './modal.js?v=092b7cb';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=702f965';
+import { anchorFromSelection } from './anchor.js?v=702f965';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=702f965';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=702f965';
+import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=702f965';
+import { sealToBase64 } from './vendor/seal.js?v=702f965';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=702f965';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=702f965';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=702f965';
+import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=702f965';
+import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=702f965';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=702f965';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=702f965';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=702f965';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=702f965';
+import { startWatch as startNetWatch } from './netstatus.js?v=702f965';
+import { settingsSections, resolveSection } from './settings.js?v=702f965';
+import { modalReducer, topModal } from './modal.js?v=702f965';
 startNetWatch();
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
@@ -2750,6 +2750,7 @@ function renderSettingsAccess(pane, t) {
 // reviewAgents list so the current capability isn't lost. Only reachable when AI is on.
 function renderSettingsAgents(pane, t) {
   const editable = !!(_projectId && _CFG.hubRepo);
+  const inp = 'width:100%;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none;box-sizing:border-box';
   pane.innerHTML = `<div class="set-card">
     <h4>Review agents</h4>
     <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Tick the agents to run. Read-only critics comment on your draft; “doer” / “local” agents run through the local runner on your machine. Only shown while AI is on.</div>
@@ -2757,16 +2758,68 @@ function renderSettingsAgents(pane, t) {
     <div style="display:flex;gap:8px;margin-top:8px">
       <button class="btn" id="set-agents-save" ${editable?'':'disabled title="Set in this instance’s config"'} style="padding:5px 12px">Save selection</button>
       <span id="set-agents-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
-    </div></div>`;
-  // B2: render the catalog as selectable cards (data-repo agents.json, shipped fallback). This whole
-  // section only renders when AI is on, so the catalog is AI-gated by design.
+    </div>
+    <div id="set-agent-drafts" style="margin-top:14px"></div>
+    ${editable ? `<div style="margin-top:14px;padding-top:12px;border-top:.5px solid var(--border)">
+      <h4 style="margin:0 0 4px">Describe a new agent</h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Say what it should review or do. Claude drafts it on <b>your own</b> credentials; you review it here before it can run.</div>
+      <input id="set-agent-name" placeholder="Name — e.g. Citation Checker" style="${inp};margin-bottom:6px">
+      <textarea id="set-agent-brief" rows="3" placeholder="What should it do? e.g. Flag every claim that asserts a number or comparison with no supporting citation." style="${inp};margin-bottom:6px;resize:vertical"></textarea>
+      <label style="display:flex;gap:6px;align-items:center;font-size:11.5px;color:var(--text-2);margin-bottom:6px"><input type="checkbox" id="set-agent-tools"> may run tools on my machine (a local agent, not a read-only critic)</label>
+      <input id="set-agent-cwd" placeholder="working directory (optional — only for a local agent)" style="${inp};margin-bottom:6px">
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-primary" id="set-agent-create" style="padding:5px 12px">Describe → draft it</button>
+        <span id="set-agent-create-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+      </div></div>` : ''}
+    </div>`;
   const box = pane.querySelector('#set-agent-catalog');
-  (async () => {
+  const draftsBox = pane.querySelector('#set-agent-drafts');
+  const badge = (label, color) => `<span style="font-size:9.5px;text-transform:uppercase;letter-spacing:.03em;padding:1px 5px;border-radius:4px;background:${color};color:#fff;margin-left:6px">${escapeHtml(label)}</span>`;
+
+  const renderDrafts = (drafts) => {
+    if (!drafts.length) return '';
+    const cards = drafts.map(d => `<div class="draft-card" data-id="${escapeHtml(d.id)}" style="border:.5px solid var(--border);border-radius:7px;padding:9px 10px;margin-top:6px;background:var(--bg)">
+        <div style="font-weight:600;font-size:12px">${escapeHtml(d.displayName||d.id)}${badge(d.category||'critic', d.category==='doer'?'var(--text-3)':'var(--accent,#2c64c4)')}${d.execution==='local'?badge('local','#8a6d3b'):''}</div>
+        <div style="font-size:11px;color:var(--text-3);margin:2px 0 6px">${escapeHtml(d.description||'')}</div>
+        <textarea class="draft-prompt" rows="4" ${editable?'':'disabled'} style="${inp};font-size:11.5px;resize:vertical">${escapeHtml(d.systemPrompt||'')}</textarea>
+        <div style="font-size:11px;color:var(--text-3);margin:4px 0">tools: ${escapeHtml((d.tools||[]).join(', ')||'none')}${d.cwd?` · cwd: ${escapeHtml(d.cwd)}`:''}</div>
+        ${editable?`<div style="display:flex;gap:6px;align-items:center">
+          <button class="btn btn-primary draft-approve" data-id="${escapeHtml(d.id)}" style="padding:4px 11px;font-size:11.5px">Approve</button>
+          <button class="btn draft-delete" data-id="${escapeHtml(d.id)}" style="padding:4px 11px;font-size:11.5px">Delete</button>
+          <span class="draft-stat" style="font-size:11.5px;color:var(--text-3)"></span></div>`:''}
+      </div>`).join('');
+    return `<h4 style="margin:0 0 2px">Drafts — review before they run</h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:2px">Claude drafted these from your descriptions. Edit the prompt if needed, then Approve to make it runnable.</div>${cards}`;
+  };
+
+  const refresh = async () => {
     try {
-      const catalog = await loadAgentCatalog(t);
-      box.innerHTML = agentCatalogHtml(agentCatalogView(catalog, _CFG.reviewAgents || []), { editable });
+      const catalog = await loadAgentCatalog(t, _CFG);
+      const { active, drafts } = partitionCatalog(catalog);
+      box.innerHTML = agentCatalogHtml(agentCatalogView(active, _CFG.reviewAgents || []), { editable });
+      draftsBox.innerHTML = renderDrafts(drafts);
+      wireDrafts();
     } catch(e){ box.textContent = 'Could not load the agent catalog: ' + e.message; }
-  })();
+  };
+
+  const wireDrafts = () => {
+    draftsBox.querySelectorAll('.draft-approve').forEach(btn => btn.onclick = async () => {
+      const card = btn.closest('.draft-card'); const id = btn.dataset.id || card.dataset.id;
+      const prompt = card.querySelector('.draft-prompt').value; const stat = card.querySelector('.draft-stat');
+      stat.style.color='var(--text-3)'; stat.textContent='Approving…';
+      try { await writeAgentsJson(_CFG, t, list => approveAuthored(editAuthored(list, id, { systemPrompt: prompt }), id));
+        await refresh(); } catch(e){ stat.style.color='var(--warn)'; stat.textContent='Failed: '+e.message; }
+    });
+    draftsBox.querySelectorAll('.draft-delete').forEach(btn => btn.onclick = async () => {
+      const card = btn.closest('.draft-card'); const id = card.dataset.id; const stat = card.querySelector('.draft-stat');
+      stat.style.color='var(--text-3)'; stat.textContent='Deleting…';
+      try { await writeAgentsJson(_CFG, t, list => deleteAuthored(list, id)); await refresh(); }
+      catch(e){ stat.style.color='var(--warn)'; stat.textContent='Failed: '+e.message; }
+    });
+  };
+
+  refresh();
+
   const save = pane.querySelector('#set-agents-save');
   if (save && editable) save.onclick = async () => {
     const stat = pane.querySelector('#set-agents-stat');
@@ -2776,6 +2829,25 @@ function renderSettingsAgents(pane, t) {
       stat.style.color='var(--success)'; stat.textContent = list.length?`Saved ${list.length} agent(s).`:'Cleared.';
       if (document.getElementById('btn-send')) renderTopbar();
     } catch(e){ stat.style.color='var(--warn)'; stat.textContent='Failed: '+e.message; }
+  };
+
+  const create = pane.querySelector('#set-agent-create');
+  if (create && editable) create.onclick = async () => {
+    const stat = pane.querySelector('#set-agent-create-stat');
+    const name = pane.querySelector('#set-agent-name').value;
+    const brief = pane.querySelector('#set-agent-brief').value;
+    if (!brief.trim()) { stat.style.color='var(--warn)'; stat.textContent='Describe what it should do first.'; return; }
+    const job = buildAuthorJob(name, brief, { cwd: pane.querySelector('#set-agent-cwd').value.trim(), wantsTools: pane.querySelector('#set-agent-tools').checked });
+    create.disabled = true; stat.style.color='var(--text-3)'; stat.textContent='Queuing…';
+    try {
+      const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
+      jobs.push({ id:'j_'+Date.now().toString(36), ...job, status:'queued', requested_ts:new Date().toISOString() });
+      await putJson(t, 'jobs.json', jobs, sha, 'agents: author-agent request');
+      try { await ensureApplyEngine(DATA_REPO, t); await dispatchApply(t, _CFG.dataPrefix ? _projectId : ''); } catch(_){}
+      pane.querySelector('#set-agent-name').value=''; pane.querySelector('#set-agent-brief').value=''; pane.querySelector('#set-agent-cwd').value=''; pane.querySelector('#set-agent-tools').checked=false;
+      stat.style.color='var(--success)'; stat.textContent='Queued — Claude is drafting it on your Actions. Reopen this panel in a minute to review the draft.';
+    } catch(e){ stat.style.color='var(--warn)'; stat.textContent='Failed: '+e.message; }
+    finally { create.disabled = false; }
   };
 }
 // Claude / AI section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
