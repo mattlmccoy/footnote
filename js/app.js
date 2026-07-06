@@ -5,7 +5,7 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=55d4584';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=55d4584';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=55d4584';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=55d4584';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl } from './config.js?v=55d4584';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=55d4584';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=55d4584';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=55d4584';
@@ -1342,15 +1342,16 @@ function openSendMenu(){
   const menu = document.createElement('div'); menu.id = 'sendmenu';
   menu.style.cssText = 'position:absolute;top:50px;right:52px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:248px';
   const open = review.comments.filter(c => c.status === 'open').length;
-  // The review-agents row is the optional AI plugin — shown only when the instance configures
-  // reviewAgents (off by default; absent from the assistant-free build).
-  const agentsRow = _CFG.reviewAgents.length
-    ? `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">${escapeHtml(_CFG.reviewAgents.join(', '))} read-only critique</div></div></div>`
-    : '';
-  menu.innerHTML = `
-    <div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>
-    ${agentsRow}
-    <div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this ${UNIT}…</div><div class="smi-d">Word · Markdown, with comments</div></div></div>`;
+  // Which rows to show is gated by the master AI switch: when the assistant is OFF, sendMenuActions
+  // returns ONLY 'export' — no Claude-dependent Apply-edits or Run-agents rows (the deterministic
+  // apply-direct path stays on the per-comment pencil editor). When ON it adds apply-edits, and
+  // run-agents only when the instance configures reviewAgents. Single source of truth in config.js.
+  const rowFor = {
+    'apply-edits': `<div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>`,
+    'run-agents': `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">${escapeHtml(_CFG.reviewAgents.join(', '))} read-only critique</div></div></div>`,
+    'export': `<div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this ${UNIT}…</div><div class="smi-d">Word · Markdown, with comments</div></div></div>`,
+  };
+  menu.innerHTML = sendMenuActions(assistantOn(), _CFG.reviewAgents).map(a => rowFor[a]).join('');
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else sendJob(el.dataset.type); }; });
@@ -2210,16 +2211,48 @@ function openMoreMenu(){
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
     <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
     <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
-    <div class="mmi" data-act="assistant"><i class="ti ti-robot-face"></i>AI assistant: ${assistantOn()?'on — turn off':'off — turn on'}</div>
+    <div class="mmi" data-act="assistant"><i class="ti ti-robot-face"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
   const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
-    assistant: toggleAssistant };
+    // The master switch now lives in Reviewers → Settings; the ⋯ entry just navigates there and scrolls to it.
+    assistant: () => openReleasePanel().then(() => document.getElementById('ai-setting')?.scrollIntoView({ block:'center' })) };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
+}
+// First-class AI-assistant control for the Reviewers → Settings panel. This is the master switch's
+// home (the ⋯ menu just points here). OFF by default; when ON it reveals an honest setup checklist —
+// Claude runs on the adopter's OWN data-repo Actions + Claude credentials, and nothing runs until
+// those are configured. GitHub keeps Actions secrets write-only, so status is guidance, not a probe;
+// the live dispatch/verify + backend engine land in later slices.
+function aiSettingHtml(){
+  const on = assistantOn();
+  const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
+  const agents = shipped ? escapeHtml(_CFG.reviewAgents.join(', '))
+    : '<span style="color:var(--text-3)">none configured — “Run review agents” stays hidden</span>';
+  const setup = on ? `
+    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
+      <div style="margin-bottom:8px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> Claude credentials. A queued edit just waits until these are set — nothing runs, and nothing is sent anywhere else.</div>
+      <div style="display:grid;gap:6px">
+        <div>1. Install the <b>Claude Code GitHub App</b> on your source and data repositories.</div>
+        <div>2. Add <code>ANTHROPIC_API_KEY</code> and <code>SOURCE_TOKEN</code> as Actions secrets in <a href="https://github.com/${escapeHtml(DATA_REPO)}/settings/secrets/actions" target="_blank" rel="noopener">Settings → Secrets → Actions</a>.</div>
+        <div>3. Review agents: ${agents}.</div>
+      </div>
+      <div style="margin-top:8px;color:var(--text-3)"><i class="ti ti-git-branch" style="margin-right:4px"></i>Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to preview and approve — nothing reaches your document without your say-so.</div>
+      <div style="margin-top:6px;color:var(--warn)"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Status: not verified from here (GitHub keeps secrets write-only). The backend that runs Claude lands next.</div>
+    </div>` : '';
+  return `<div id="ai-setting" style="margin:0 0 16px;padding:12px 14px;border:.5px solid var(--border);border-radius:9px;background:var(--bg-2)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <i class="ti ti-robot-face" style="font-size:16px;color:var(--text-2)"></i>
+        <div style="flex:1">
+          <div style="font-weight:600;font-size:13px">AI assistant · Send to Claude</div>
+          <div style="font-size:11.5px;color:var(--text-3)">Off by default. The core review flow — comment → stage → approve → merge — always works without AI.</div>
+        </div>
+        <button class="btn${on?' btn-primary':''}" id="ai-toggle" ${shipped?'disabled title="This project ships an agent list in its config — edit the config to change this."':''} style="padding:6px 16px">${on?'On':'Off'}</button>
+      </div>${setup}</div>`;
 }
 // Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
@@ -2326,6 +2359,7 @@ async function openReleasePanel(){
     <div class="rel-sec" style="margin-top:26px">Comments received from reviewers</div>${inboxHtml}
     <div class="rel-sec" style="margin-top:34px;padding-top:10px;border-top:1px solid var(--border)"><i class="ti ti-settings" style="margin-right:6px"></i>Settings</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Email, notifications, and access — how the reviewer system is configured, separate from managing reviewers. (Will move to its own page.)</div>
+    ${aiSettingHtml()}
     <div id="adv-email-banner"></div>
     <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
       <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
@@ -2340,6 +2374,10 @@ async function openReleasePanel(){
       <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
     </div>`;
   const refresh = () => openReleasePanel();
+  // AI master switch (first-class home). toggleAssistant flips the flag + refreshes the top-bar; we
+  // re-open the panel so the setup checklist appears/disappears. Disabled when the instance ships agents.
+  const aiToggle = document.getElementById('ai-toggle');
+  if (aiToggle && !aiToggle.disabled) aiToggle.onclick = () => { toggleAssistant(); openReleasePanel(); };
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;

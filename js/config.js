@@ -265,5 +265,18 @@ export function assistantEnabled(cfg, flag) {
   return flag === '1' || ((cfg && cfg.reviewAgents) || []).length > 0;
 }
 
+// Which actions the top-bar send menu offers, given the master switch and the configured agents.
+// This is the single source of truth for gating the Claude surface: when the assistant is OFF the
+// menu shows ONLY the deterministic Export action — no apply-edits (Claude) row, no run-agents row.
+// When ON it reveals apply-edits, plus run-agents only when the instance configures reviewAgents.
+// Ordered list of action ids; app.js maps each id to its menu HTML.
+export function sendMenuActions(assistantOn, reviewAgents) {
+  if (!assistantOn) return ['export'];
+  const actions = ['apply-edits'];
+  if (((reviewAgents) || []).length > 0) actions.push('run-agents');
+  actions.push('export');
+  return actions;
+}
+
 // Test-only: reset the module cache.
 export function _resetConfigCache() { _cache = null; }
