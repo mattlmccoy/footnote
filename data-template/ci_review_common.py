@@ -273,6 +273,15 @@ def process_merge_job(job, review, files, ts):
 # deterministic code applies via literal_replace and stages on the review branch for author approval.
 # Author-oversight invariant: Claude output only ever becomes a staged edit on review-edits/<unit>.
 
+def author_source(files):
+    """The author-editable subset of a source tree for Claude's context: ``.tex`` and ``.bib`` only.
+    Drops vendored/build files (``.cls``/``.sty``/``.bbl``/``.bst``/``.txt``) Claude never edits —
+    keeping the prompt small (a class file alone can be tens of KB, which blew the CLI arg-size limit)
+    and focused on the manuscript. Applying still runs over the full tree; this only trims what
+    Claude sees."""
+    return {p: t for p, t in (files or {}).items() if p.lower().endswith((".tex", ".bib"))}
+
+
 def build_apply_task(job, review, files):
     """Package what Claude needs to act on an apply-edits job: the unit id, the source files, and
     each referenced comment flattened to the fields Claude reasons over (anchor quote/section, tag,

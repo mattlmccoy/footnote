@@ -55,9 +55,13 @@ def claude_configured(env):
 # Claude produces per-comment edit SPECS; the tested deterministic engine applies them. Claude is
 # never asked to mutate files or merge — that keeps the author-oversight invariant enforceable in code.
 
+# The headless CLI reads the SHORT instruction as its `-p` argument and the (potentially large)
+# manuscript as piped STDIN context — a whole paper exceeds the OS command-line arg limit, so it can't
+# be an argv. CLAUDE_INSTRUCTIONS is the directive (argv); the TASK json goes on stdin (see claude_context).
 CLAUDE_INSTRUCTIONS = (
-    "You are a LaTeX copy-editor addressing reviewer comments on one document unit. For EACH comment "
-    "below, decide how to resolve it and return a machine-readable answer. Do NOT edit any files "
+    "You are a LaTeX copy-editor addressing reviewer comments on one document unit. The unit's source "
+    "files and the reviewer comments are provided as JSON in the piped input (stdin) under TASK. For "
+    "EACH comment, decide how to resolve it and return a machine-readable answer. Do NOT edit any files "
     "yourself and do NOT merge anything — only return the specs; a deterministic tool applies them and "
     "the author approves before anything lands.\n\n"
     "Return ONLY a JSON array, one object per comment you act on, with keys:\n"
@@ -68,15 +72,14 @@ CLAUDE_INSTRUCTIONS = (
     "  prose_before  the reader-facing text before your change (for the track-changes diff)\n"
     "  prose_after   the reader-facing text after your change\n"
     "source_before must appear VERBATIM exactly once in the source, or the edit is rejected. If a "
-    "comment is a question, return only id + response.\n\n"
+    "comment is a question, return only id + response."
 )
 
 
-def claude_prompt(task):
-    """The prompt handed to Claude Code for an apply-edits job: instructions + the packaged task
-    (unit id, source files, comments). Pure so it can be asserted in tests."""
+def claude_context(task):
+    """The apply-edits task (unit id, source files, comments) as the piped-stdin context. Pure/testable."""
     import json
-    return CLAUDE_INSTRUCTIONS + "TASK:\n" + json.dumps(task, ensure_ascii=False, indent=2)
+    return "TASK:\n" + json.dumps(task, ensure_ascii=False, indent=2)
 
 
 def _parse_claude_json(raw):
@@ -127,47 +130,54 @@ def parse_agent_findings(raw):
 
 
 AGENT_INSTRUCTIONS = (
-    "You are the '{agent}' review agent. Critique the document unit below from your perspective. "
-    "This is READ-ONLY: do NOT edit any files — only report findings.\n\n"
+    "You are the '{agent}' review agent. The document unit's source is provided as JSON in the piped "
+    "input (stdin) under UNIT. Critique it from your perspective. This is READ-ONLY: do NOT edit any "
+    "files — only report findings.\n\n"
     "Return ONLY a JSON array, one object per finding, with keys:\n"
     "  quote   a short EXACT substring of the source your finding is about (for anchoring)\n"
     "  body    your critique / suggestion in plain language\n"
     "  tag     a short category (e.g. rigor, clarity, evidence, style)\n"
-    "Return [] if you have no findings.\n\n"
+    "Return [] if you have no findings."
 )
 
 
-def agent_prompt(agent_id, task):
-    """Prompt for one read-only review agent over an apply-task-shaped payload. Pure (asserted in tests)."""
+def agent_context(task):
+    """The review unit as the piped-stdin context for a review agent. Pure/testable."""
     import json
-    return AGENT_INSTRUCTIONS.format(agent=agent_id) + "UNIT:\n" + json.dumps(task, ensure_ascii=False, indent=2)
+    return "UNIT:\n" + json.dumps(task, ensure_ascii=False, indent=2)
+
+
+def _run_claude(directive, context, model, label):
+    """Run the headless Claude Code CLI: ``directive`` is the ``-p`` argument (short), ``context`` is the
+    piped STDIN (the manuscript — too large for argv, which blew the OS arg-size limit). Returns stdout,
+    or None on a missing CLI or non-zero exit so a broken/absent Claude leaves the job queued rather than
+    crashing the whole drain."""
+    model = model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+    try:
+        proc = subprocess.run(["claude", "-p", directive, "--output-format", "json", "--model", model],
+                              input=context, capture_output=True, text=True)
+    except OSError as e:
+        print(f"[apply] {label}: claude CLI unavailable ({e}) — leaving job", file=sys.stderr)
+        return None
+    if proc.returncode != 0:
+        print(f"[apply] {label}: claude CLI failed ({proc.returncode}): {proc.stderr[:300]}", file=sys.stderr)
+        return None
+    return proc.stdout
 
 
 def run_agent_cli(agent_id, task, model=None):
     """Invoke Claude Code (headless) as one review agent; returns a list of finding specs. Thin,
-    live-CI-gated boundary around the pure agent_prompt + parse_claude_edits list handling."""
-    model = model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
-    proc = subprocess.run(
-        ["claude", "-p", agent_prompt(agent_id, task), "--output-format", "json", "--model", model],
-        capture_output=True, text=True)
-    if proc.returncode != 0:
-        print(f"[apply] agent {agent_id} failed ({proc.returncode}): {proc.stderr[:200]}", file=sys.stderr)
-        return []
-    return parse_agent_findings(proc.stdout)
+    live-CI-gated boundary around the pure agent instructions/context + parse_agent_findings handling."""
+    out = _run_claude(AGENT_INSTRUCTIONS.format(agent=agent_id), agent_context(task), model, f"agent {agent_id}")
+    return parse_agent_findings(out) if out is not None else []
 
 
 def run_claude_cli(task, model=None):
     """Invoke Claude Code (headless) to produce edit specs for one apply-edits task. This is the thin,
-    live-CI-gated boundary; the parse/prompt logic around it is pure and unit-tested. Requires the
-    ``claude`` CLI on PATH and ANTHROPIC_API_KEY in the environment (the adopter's own)."""
-    model = model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
-    proc = subprocess.run(
-        ["claude", "-p", claude_prompt(task), "--output-format", "json", "--model", model],
-        capture_output=True, text=True)
-    if proc.returncode != 0:
-        print(f"[apply] claude CLI failed ({proc.returncode}): {proc.stderr[:300]}", file=sys.stderr)
-        return {}
-    return parse_claude_edits(proc.stdout)
+    live-CI-gated boundary; the parse/prompt logic around it is pure and unit-tested. The directive is
+    the -p arg and the manuscript is piped stdin; auth is the adopter's own Claude Code credential."""
+    out = _run_claude(CLAUDE_INSTRUCTIONS, claude_context(task), model, "apply-edits")
+    return parse_claude_edits(out) if out is not None else {}
 
 
 def read_text_files(root):
@@ -361,7 +371,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
-            task = R.build_apply_task(job, review, files)
+            task = R.build_apply_task(job, review, R.author_source(files))
             outputs = {a: (agent_fn(a, task) or []) for a in (job.get("agents") or [])}
             jid = job.get("id")
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
@@ -376,7 +386,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: apply-edits queued but Claude not configured "
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
-            task = R.build_apply_task(job, review, files)
+            task = R.build_apply_task(job, review, R.author_source(files))
             edits = claude_fn(task) or {}
             new_review, new_files, branch, applied = R.process_apply_edits_job(
                 job, review, files, edits, _now_iso())

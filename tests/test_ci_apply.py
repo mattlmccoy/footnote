@@ -193,6 +193,21 @@ def _comment(cid="c1", body="please reword this", quote="the alpha term"):
                        "resolved_line": None, "ts": None}}
 
 
+def test_author_source_keeps_tex_and_bib_drops_vendored_files():
+    files = {
+        "main.tex": "\\documentclass{elsarticle}\\begin{document}...",
+        "chapters/intro.tex": "intro text",
+        "references.bib": "@article{...}",
+        "elsarticle.cls": "% 35KB of class internals",   # vendored — Claude never edits it
+        "elsarticle-num.bst": "% bibliography style",
+        "extra.sty": "% package",
+        "notes.txt": "scratch",
+    }
+    out = R.author_source(files)
+    assert set(out) == {"main.tex", "chapters/intro.tex", "references.bib"}
+    assert "elsarticle.cls" not in out and "elsarticle-num.bst" not in out
+
+
 def test_build_apply_task_packages_chapter_and_comments_for_claude():
     review = {"comments": [_comment("c1", "reword", "alpha"),
                            dict(_comment("c2", "cite here", "beta"),
@@ -306,13 +321,15 @@ def test_process_merge_flags_conflict_when_approved_target_missing():
 
 
 # ================================================================ run-agents (read-only critique)
-def test_agent_prompt_names_the_agent_and_demands_comment_json():
+def test_agent_directive_names_agent_and_demands_json_context_carries_the_unit():
     import ci_apply as A
-    p = A.agent_prompt("adversary", {"chapter": "ch1", "source": {"m.tex": "claim without evidence"}})
-    assert "adversary" in p and "ch1" in p
-    assert "JSON" in p and "quote" in p and "body" in p
-    # read-only: the prompt tells the agent to critique, never to edit
-    assert "do not edit" in p.lower() or "read-only" in p.lower()
+    # directive (the -p arg): names the agent, demands JSON, read-only, points at piped stdin
+    d = A.AGENT_INSTRUCTIONS.format(agent="adversary")
+    assert "adversary" in d and "JSON" in d and "quote" in d and "body" in d
+    assert ("do not edit" in d.lower() or "read-only" in d.lower()) and "stdin" in d.lower()
+    # context (the piped stdin): carries the unit source, NOT the instructions
+    c = A.agent_context({"chapter": "ch1", "source": {"m.tex": "claim without evidence"}})
+    assert "ch1" in c and "claim without evidence" in c
 
 
 def test_process_run_agents_appends_authored_critique_comments():
@@ -370,15 +387,17 @@ def test_process_run_agents_tolerates_an_agent_with_no_findings():
 
 
 # --------------------------------------------------------------- Claude boundary (pure parts)
-def test_claude_prompt_includes_comments_and_demands_json_only():
+def test_claude_directive_demands_json_specs_context_carries_task():
     import ci_apply as A
     task = {"chapter": "02-methods", "source": {"m.tex": "x"},
             "comments": [{"id": "c1", "quote": "alpha", "body": "reword"}]}
-    p = A.claude_prompt(task)
-    assert "02-methods" in p and "c1" in p and "reword" in p
-    assert "JSON" in p                       # instructs a machine-readable answer
-    # oversight: the prompt tells Claude to return specs, not to touch files / merge
-    assert "source_before" in p and "source_after" in p
+    # directive (the -p arg): demands machine-readable specs, oversight (specs not file edits), stdin note
+    d = A.CLAUDE_INSTRUCTIONS
+    assert "JSON" in d and "source_before" in d and "source_after" in d
+    assert "do not" in d.lower() and ("merge" in d.lower()) and "stdin" in d.lower()
+    # context (the piped stdin): carries the unit id + comments + source, NOT the instructions
+    c = A.claude_context(task)
+    assert "02-methods" in c and "c1" in c and "reword" in c and "JSON" not in c
 
 
 def test_parse_claude_edits_from_cli_envelope_with_fenced_json():
