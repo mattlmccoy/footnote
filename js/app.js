@@ -1861,7 +1861,7 @@ function enterHome(){
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   const imp = document.getElementById('import-doc');
-  if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : manageToken();
+  if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : openSettingsPage('access');
   refreshInbox();
   renderHomeDownloads();
   refreshSetup();
@@ -2122,7 +2122,7 @@ async function saveChapters(chs, t){
   await putJson(t, 'chapters.json', chs, sha, `import: ${chs.length} ${UNIT}s from document`);
 }
 function importDocument(){
-  const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
+  const t = localStorage.getItem('ghpat'); if (!t){ openSettingsPage('access'); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
   let detectedLevel = null; // 'chapter' | 'section' from the parsed LaTeX; null for Word/no-parse (keeps current noun)
