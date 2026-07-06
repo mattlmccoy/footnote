@@ -2,10 +2,10 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=17b5049';
-import { seedDataRepo } from './seed.js?v=17b5049';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, migrateProjectToWorkspace } from './importdoc.js?v=17b5049';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=17b5049';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=69a0da0';
+import { seedDataRepo } from './seed.js?v=69a0da0';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, migrateProjectToWorkspace } from './importdoc.js?v=69a0da0';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=69a0da0';
 
 // ---- pure helpers (unit-tested) ----
 
