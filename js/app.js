@@ -1971,14 +1971,19 @@ function _setupStep(ok, label, detail){
     <span>${escapeHtml(label)}${detail ? ` <span style="color:var(--text-3)">· ${detail}</span>` : ''}</span></div>`;
 }
 function setupChecklistHtml(){
-  const src = !!(_CFG.sourceRepo), parsed = CHAPTERS.length > 0;
-  // Source + units present → likely fully set up; render hidden and let refreshSetup() reveal it only if
-  // the reading view isn't built yet (avoids a flash on ready projects).
+  const parsed = CHAPTERS.length > 0;
+  // Source is "connected" if the project names an external sourceRepo OR units are already parsed — because
+  // parsing requires reading a source. This covers legacy/migrated projects (source wired via a SOURCE_REPO
+  // Actions var, no project field) and uploaded projects (source lives in the workspace), which have no
+  // _CFG.sourceRepo but are clearly connected.
+  const src = !!(_CFG.sourceRepo) || parsed;
+  // Both source + units present → likely fully set up; render hidden and let refreshSetup() reveal it only
+  // if the reading view isn't built yet (avoids a flash on ready projects).
   const hide = src && parsed;
   return `<div id="setup-strip" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:24px;background:var(--bg-2)${hide ? ';display:none' : ''}">
       <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Project setup</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${_setupStep(src, 'Source connected', src ? escapeHtml(_CFG.sourceRepo) : 'point Footnote at your LaTeX, or upload it')}
+        ${_setupStep(src, 'Source connected', _CFG.sourceRepo ? escapeHtml(_CFG.sourceRepo) : (parsed ? '' : 'point Footnote at your LaTeX, or upload it'))}
         ${_setupStep(parsed, 'Document parsed', parsed ? `${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''}` : `import your ${DOC}`)}
         <div id="setup-render">${_setupStep(false, 'Reading view built', 'checking…')}</div>
       </div></div>`;
@@ -1997,7 +2002,7 @@ async function refreshSetup(){
     : built > 0 ? `${built} of ${CHAPTERS.length} rendered — building the rest`
     : 'not built yet — renders once your source is in place';
   if (line) line.innerHTML = _setupStep(allBuilt, 'Reading view built', detail);
-  strip.style.display = (!!_CFG.sourceRepo && allBuilt) ? 'none' : '';   // hide once fully set up
+  strip.style.display = allBuilt ? 'none' : '';   // all units rendered ⟹ source+parsed done → hide the strip
 }
 function homeHtml(){
   const last = localStorage.getItem('lastChapter');
