@@ -1556,6 +1556,7 @@ function enterHome(){
   if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : manageToken();
   refreshInbox();
   renderHomeDownloads();
+  refreshSetup();
 }
 // ---------- take reviewer feedback back to Overleaf ----------
 function ensureOverleafPanel(){
@@ -1962,6 +1963,42 @@ const CREDIT_FOOTER = `<div style="margin-top:48px;padding-top:16px;border-top:.
     <a href="https://github.com/mattlmccoy/footnote/issues" target="_blank" rel="noopener" title="Report an issue" aria-label="Report an issue" style="width:26px;height:26px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;color:var(--text-3)"><svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 9.5a1.5 1.5 0 100-3 1.5 1.5 0 000 3z"/><path d="M8 0a8 8 0 100 16A8 8 0 008 0zM1.5 8a6.5 6.5 0 1113 0 6.5 6.5 0 01-13 0z"/></svg></a>
   </span>
 </div>`;
+// Per-project setup checklist — makes "what's left before this is usable" legible for a new adopter.
+// Source + parsed are known synchronously; "reading view built" is filled async by refreshSetup (ghTree).
+function _setupStep(ok, label, detail){
+  return `<div style="display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--text-2)">
+    <i class="ti ${ok ? 'ti-circle-check' : 'ti-circle-dashed'}" style="font-size:17px;flex:0 0 auto;color:${ok ? 'var(--success)' : 'var(--text-3)'}"></i>
+    <span>${escapeHtml(label)}${detail ? ` <span style="color:var(--text-3)">· ${detail}</span>` : ''}</span></div>`;
+}
+function setupChecklistHtml(){
+  const src = !!(_CFG.sourceRepo), parsed = CHAPTERS.length > 0;
+  // Source + units present → likely fully set up; render hidden and let refreshSetup() reveal it only if
+  // the reading view isn't built yet (avoids a flash on ready projects).
+  const hide = src && parsed;
+  return `<div id="setup-strip" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:24px;background:var(--bg-2)${hide ? ';display:none' : ''}">
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Project setup</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${_setupStep(src, 'Source connected', src ? escapeHtml(_CFG.sourceRepo) : 'point Footnote at your LaTeX, or upload it')}
+        ${_setupStep(parsed, 'Document parsed', parsed ? `${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''}` : `import your ${DOC}`)}
+        <div id="setup-render">${_setupStep(false, 'Reading view built', 'checking…')}</div>
+      </div></div>`;
+}
+async function refreshSetup(){
+  const strip = document.getElementById('setup-strip'); if (!strip) return;
+  const line = document.getElementById('setup-render'); const t = tok();
+  const parsed = CHAPTERS.length > 0; let built = 0;
+  if (t && parsed){
+    try { const set = new Set(await ghTree(t));
+      built = CHAPTERS.filter(c => set.has(dpath('content/' + c.id + '.html'))).length; } catch(e){}
+  }
+  const allBuilt = parsed && built >= CHAPTERS.length;
+  const detail = !parsed ? `import your ${DOC} first`
+    : allBuilt ? `all ${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''} rendered`
+    : built > 0 ? `${built} of ${CHAPTERS.length} rendered — building the rest`
+    : 'not built yet — renders once your source is in place';
+  if (line) line.innerHTML = _setupStep(allBuilt, 'Reading view built', detail);
+  strip.style.display = (!!_CFG.sourceRepo && allBuilt) ? 'none' : '';   // hide once fully set up
+}
 function homeHtml(){
   const last = localStorage.getItem('lastChapter');
   const lm = last && chMeta(last);
@@ -1998,6 +2035,7 @@ function homeHtml(){
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
+      ${setupChecklistHtml()}
       ${cont}
       ${allCh}
       <div id="inbox-panel" class="ibx" style="display:none;margin-top:28px;margin-bottom:0"></div>
