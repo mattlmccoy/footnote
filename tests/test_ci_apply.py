@@ -348,6 +348,19 @@ def test_parse_agent_findings_empty_on_garbage():
     assert A.parse_agent_findings("not json") == []
 
 
+# --------------------------------------------------------------- Claude credentials
+def test_claude_configured_recognizes_subscription_or_api_key():
+    import ci_apply as A
+    # Recommended path: a Claude Code subscription OAuth token (from `claude setup-token`).
+    assert A.claude_configured({"CLAUDE_CODE_OAUTH_TOKEN": "sk-ant-oat01-..."}) is True
+    # Alternative: a raw Anthropic API key.
+    assert A.claude_configured({"ANTHROPIC_API_KEY": "sk-ant-..."}) is True
+    # Neither set → not configured (the job waits).
+    assert A.claude_configured({}) is False
+    # Empty strings don't count as configured.
+    assert A.claude_configured({"CLAUDE_CODE_OAUTH_TOKEN": "", "ANTHROPIC_API_KEY": ""}) is False
+
+
 def test_process_run_agents_tolerates_an_agent_with_no_findings():
     review = {"comments": []}
     job = {"type": "run-agents", "chapter": "ch1", "agents": ["a", "b"]}

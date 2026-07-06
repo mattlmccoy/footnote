@@ -2462,14 +2462,21 @@ function aiSettingHtml(){
   const setup = on ? `
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
       <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. A queued edit just waits until these are set.</div>
-      <div style="margin-bottom:4px"><b>1. Install the Claude Code GitHub App</b> on your source and data repositories — <a href="https://github.com/apps/claude" target="_blank" rel="noopener">github.com/apps/claude</a>.</div>
+      <div style="margin-bottom:4px"><b>1. Connect Claude Code with your subscription</b> (recommended — no API key, no extra bill; usage counts against your Claude Code plan). On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints below. <a href="https://code.claude.com/docs/en/github-actions" target="_blank" rel="noopener">How this works →</a></div>
       <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
       <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
-        <label for="ai-key">Anthropic API key</label>
-        <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
+        <label for="ai-claude-token">Claude Code token</label>
+        <input id="ai-claude-token" type="password" placeholder="from ‘claude setup-token’ (→ CLAUDE_CODE_OAUTH_TOKEN)" style="${inp}">
         <label for="ai-srctok">Source repo token</label>
         <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
       </div>
+      <details style="margin:0 0 8px">
+        <summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key instead? (billed per token)</summary>
+        <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
+          <label for="ai-key">Anthropic API key</label>
+          <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
+        </div>
+      </details>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
         <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
         <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
@@ -2503,14 +2510,16 @@ function wireAiSetup(t){
   const saveSec = document.getElementById('ai-save-secrets');
   if (saveSec) saveSec.onclick = async () => {
     const stat = document.getElementById('ai-secrets-stat');
-    const values = { anthropicKey: document.getElementById('ai-key').value,
+    const keyEl = document.getElementById('ai-key');   // API key is optional (Advanced disclosure)
+    const values = { claudeCodeToken: document.getElementById('ai-claude-token').value,
+                     anthropicKey: keyEl ? keyEl.value : '',
                      sourceToken: document.getElementById('ai-srctok').value };
     saveSec.disabled = true; stat.textContent = 'Sealing…'; stat.style.color = 'var(--text-3)';
     try {
       const names = await setAiSecrets(t, sealToBase64, values);
-      if (!names.length){ stat.textContent = 'Nothing to save — enter at least one credential.'; }
+      if (!names.length){ stat.textContent = 'Nothing to save — paste your Claude Code token (or an API key) first.'; }
       else { stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.';
-             document.getElementById('ai-key').value = ''; document.getElementById('ai-srctok').value = ''; }
+             document.getElementById('ai-claude-token').value = ''; if (keyEl) keyEl.value = ''; document.getElementById('ai-srctok').value = ''; }
     } catch(e){ stat.style.color = 'var(--warn)';
       stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
     finally { saveSec.disabled = false; }

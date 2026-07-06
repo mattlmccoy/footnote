@@ -4,8 +4,9 @@ name: apply
 # apply-edits job (freeform comments → Claude-authored LaTeX edit specs, applied deterministically
 # and staged for the author to approve — never auto-merged) and the author-triggered merge job
 # (publish ONLY the approved edits to main, rebuild content/<unit>.html, drop the review branch).
-# run-agents lands in a later slice. Dual-mode: legacy root or workspace <id>/. apply-edits only
-# runs when ANTHROPIC_API_KEY is set — otherwise the job just waits.
+# run-agents lands in a later slice. Dual-mode: legacy root or workspace <id>/. Claude jobs run only
+# when Claude Code is connected — a subscription token (CLAUDE_CODE_OAUTH_TOKEN, recommended) or an
+# ANTHROPIC_API_KEY; otherwise the job just waits.
 on:
   # The app enqueues by committing jobs.json (workspace: <id>/jobs.json). The drain commits the
   # updated queue + reviews back with [skip ci], so this never loops.
@@ -43,12 +44,16 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             pandoc poppler-utils \
             texlive-latex-base texlive-latex-extra texlive-pictures texlive-science
-      - name: Install Claude Code CLI (only used by apply-edits when ANTHROPIC_API_KEY is set)
-        run: npm install -g @anthropic-ai/claude-code || echo "claude CLI unavailable — apply-edits will wait"
+      - name: Install Claude Code CLI (used by apply-edits/run-agents when Claude is connected)
+        run: npm install -g @anthropic-ai/claude-code || echo "claude CLI unavailable — Claude jobs will wait"
       - name: Drain review job queue
         env:
           SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
           SOURCE_REPO: ${{ vars.SOURCE_REPO }}
+          # RECOMMENDED: a Claude Code subscription token (`claude setup-token`, Pro/Max/Team/Enterprise).
+          # Usage counts against the subscription — no API bill. The headless CLI reads it automatically.
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # ALTERNATIVE: a raw Anthropic API key (billed per token). Either one enables Claude jobs.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
           PROJECT: ${{ github.event.inputs.project }}

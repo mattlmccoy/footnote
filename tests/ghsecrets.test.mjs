@@ -5,14 +5,22 @@ import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan } from '
 // Slice 7: the AI setup panel seals the adopter's OWN Claude credentials. aiSecretsPlan decides which
 // Actions secrets to write from the form — only non-empty fields, trimmed, mapped to their secret names.
 test('aiSecretsPlan seals only the non-empty fields, trimmed, under the right names', () => {
+  // The RECOMMENDED credential is a Claude Code subscription token → CLAUDE_CODE_OAUTH_TOKEN.
   assert.deepStrictEqual(
-    aiSecretsPlan({ anthropicKey: 'sk-ant-123', sourceToken: 'ghp_abc' }),
-    [{ name: 'ANTHROPIC_API_KEY', value: 'sk-ant-123' }, { name: 'SOURCE_TOKEN', value: 'ghp_abc' }]);
-  // blank / whitespace-only fields are skipped (don't overwrite an existing secret with empty)
-  assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: 'sk-ant-123', sourceToken: '   ' }),
+    aiSecretsPlan({ claudeCodeToken: 'sk-ant-oat01-x', sourceToken: 'ghp_abc' }),
+    [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', value: 'sk-ant-oat01-x' }, { name: 'SOURCE_TOKEN', value: 'ghp_abc' }]);
+  // The API key is the alternative → ANTHROPIC_API_KEY.
+  assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: 'sk-ant-123' }),
     [{ name: 'ANTHROPIC_API_KEY', value: 'sk-ant-123' }]);
-  assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: '  sk-x  ', sourceToken: '' }),
-    [{ name: 'ANTHROPIC_API_KEY', value: 'sk-x' }]);          // trimmed
+  // Both credentials + source, in a stable order (subscription first).
+  assert.deepStrictEqual(
+    aiSecretsPlan({ claudeCodeToken: 'oat', anthropicKey: 'key', sourceToken: 'ghp' }),
+    [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', value: 'oat' },
+     { name: 'ANTHROPIC_API_KEY', value: 'key' },
+     { name: 'SOURCE_TOKEN', value: 'ghp' }]);
+  // blank / whitespace-only fields are skipped (don't overwrite an existing secret with empty)
+  assert.deepStrictEqual(aiSecretsPlan({ claudeCodeToken: '  oat  ', sourceToken: '   ' }),
+    [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', value: 'oat' }]);       // trimmed
   assert.deepStrictEqual(aiSecretsPlan({}), []);              // nothing to do
 });
 

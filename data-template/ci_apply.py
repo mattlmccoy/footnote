@@ -38,6 +38,19 @@ def _now_iso():
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# Claude Code credentials the headless CLI honors. The RECOMMENDED path for adopters is a Claude Code
+# SUBSCRIPTION token (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`, Pro/Max/Team/Enterprise) — most
+# users have a subscription, not a raw API key. ANTHROPIC_API_KEY / ANTHROPIC_AUTH_TOKEN remain supported
+# alternatives. `claude -p` picks up whichever is set (usage counts against the subscription, no API bill).
+CLAUDE_CRED_ENVS = ("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN")
+
+
+def claude_configured(env):
+    """True if any recognized Claude Code credential is present (non-empty) in ``env``. When none is,
+    Claude jobs are left queued — honest 'nothing runs until you connect Claude Code'."""
+    return any((env.get(name) or "").strip() for name in CLAUDE_CRED_ENVS)
+
+
 # --------------------------------------------------------------- Claude boundary
 # Claude produces per-comment edit SPECS; the tested deterministic engine applies them. Claude is
 # never asked to mutate files or merge — that keeps the author-oversight invariant enforceable in code.
@@ -328,7 +341,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
 
     import tempfile
     build_root = Path(tempfile.mkdtemp(prefix="footnote-apply-"))
-    have_claude = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    have_claude = claude_configured(os.environ)
     done = 0
     for job in todo:
         ch = job.get("chapter")
@@ -346,7 +359,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
         if job.get("type") == "run-agents":
             if not have_claude:
                 print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
-                      f"(set ANTHROPIC_API_KEY) — leaving job", file=sys.stderr)
+                      f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
             task = R.build_apply_task(job, review, files)
             outputs = {a: (agent_fn(a, task) or []) for a in (job.get("agents") or [])}
@@ -361,7 +374,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
         if job.get("type") == "apply-edits":
             if not have_claude:
                 print(f"[apply] {prefix}{ch}: apply-edits queued but Claude not configured "
-                      f"(set ANTHROPIC_API_KEY) — leaving job", file=sys.stderr)
+                      f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
             task = R.build_apply_task(job, review, files)
             edits = claude_fn(task) or {}

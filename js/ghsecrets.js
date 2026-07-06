@@ -106,10 +106,13 @@ export async function dispatchRender(tok, projectId){
 
 // Which Actions secrets to write from the AI setup form: only non-empty fields, trimmed, under their
 // canonical names (the same names apply.yml/ci_apply read). Pure so the gating is unit-tested; blanks
-// are skipped so "Save" never clobbers an existing secret with an empty value.
-export function aiSecretsPlan({ anthropicKey, sourceToken } = {}){
+// are skipped so "Save" never clobbers an existing secret with an empty value. The RECOMMENDED Claude
+// credential is a Claude Code SUBSCRIPTION token (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`) —
+// most adopters have a subscription, not an API key; ANTHROPIC_API_KEY is the alternative.
+export function aiSecretsPlan({ claudeCodeToken, anthropicKey, sourceToken } = {}){
   const plan = [];
   const push = (name, v) => { const t = (v || '').trim(); if (t) plan.push({ name, value: t }); };
+  push('CLAUDE_CODE_OAUTH_TOKEN', claudeCodeToken);
   push('ANTHROPIC_API_KEY', anthropicKey);
   push('SOURCE_TOKEN', sourceToken);
   return plan;
