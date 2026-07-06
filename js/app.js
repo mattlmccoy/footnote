@@ -7,6 +7,7 @@ import { sealToBase64 } from './vendor/seal.js?v=76919ff';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=76919ff';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=76919ff';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=76919ff';
+import { loadAgentCatalog, agentCatalogView, agentCatalogHtml } from './agentcatalog.js?v=76919ff';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=76919ff';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=76919ff';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=76919ff';
@@ -2736,16 +2737,25 @@ function renderSettingsAgents(pane, t) {
   const editable = !!(_projectId && _CFG.hubRepo);
   pane.innerHTML = `<div class="set-card">
     <h4>Review agents</h4>
-    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Read-only critics that comment on your draft when you run agents. A richer catalog is coming; for now, comma-separated ids.</div>
-    <div style="display:flex;gap:8px">
-      <input id="set-agents" placeholder="e.g. rigor, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" ${editable?'':'disabled title="Set in this instance’s config"'} style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
-      <button class="btn" id="set-agents-save" ${editable?'':'disabled'} style="padding:5px 12px">Save</button>
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Tick the agents to run. Read-only critics comment on your draft; “doer” / “local” agents run through the local runner on your machine. Only shown while AI is on.</div>
+    <div id="set-agent-catalog" style="font-size:11.5px;color:var(--text-3)">Loading the agent catalog…</div>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button class="btn" id="set-agents-save" ${editable?'':'disabled title="Set in this instance’s config"'} style="padding:5px 12px">Save selection</button>
       <span id="set-agents-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
     </div></div>`;
+  // B2: render the catalog as selectable cards (data-repo agents.json, shipped fallback). This whole
+  // section only renders when AI is on, so the catalog is AI-gated by design.
+  const box = pane.querySelector('#set-agent-catalog');
+  (async () => {
+    try {
+      const catalog = await loadAgentCatalog(t);
+      box.innerHTML = agentCatalogHtml(agentCatalogView(catalog, _CFG.reviewAgents || []), { editable });
+    } catch(e){ box.textContent = 'Could not load the agent catalog: ' + e.message; }
+  })();
   const save = pane.querySelector('#set-agents-save');
   if (save && editable) save.onclick = async () => {
     const stat = pane.querySelector('#set-agents-stat');
-    const list = pane.querySelector('#set-agents').value.split(',').map(s => s.trim()).filter(Boolean);
+    const list = [...box.querySelectorAll('input[data-agent]:checked')].map(el => el.dataset.agent);
     stat.style.color='var(--text-3)'; stat.textContent='Saving…';
     try { await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t); _CFG = { ..._CFG, reviewAgents: list };
       stat.style.color='var(--success)'; stat.textContent = list.length?`Saved ${list.length} agent(s).`:'Cleared.';
