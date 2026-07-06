@@ -118,6 +118,27 @@ export function aiSecretsPlan({ claudeCodeToken, anthropicKey, sourceToken } = {
   return plan;
 }
 
+// Interpret the data repo's Actions secret NAMES (values are write-only) into an AI connection status:
+// whether Claude is connected and via which credential (subscription token preferred), and whether a
+// SOURCE_TOKEN is present. Pure so the status copy is unit-tested. Secrets are REPO-LEVEL, so this status
+// applies to every project in the workspace — the panel uses it to say "set once, every paper here works".
+export function claudeConnectionStatus(names){
+  const set = new Set(names || []);
+  const via = set.has('CLAUDE_CODE_OAUTH_TOKEN') ? 'CLAUDE_CODE_OAUTH_TOKEN'
+    : set.has('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY' : null;
+  return { claude: !!via, via, source: set.has('SOURCE_TOKEN') };
+}
+
+// List the data repo's Actions secret NAMES (never values). Needs a token with Secrets read (admin) — a
+// 403/404 means the token can't see them; caller treats that as "unknown", not "not connected".
+export async function listSecretNames(tok){
+  const r = await fetch(`${API}/repos/${slug()}/actions/secrets?per_page=100`, { headers:hdr(tok), cache:'no-store' });
+  if (r.status === 403 || r.status === 404){ const e = new Error('no-secret-scope'); e.code = 'NOSCOPE'; throw e; }
+  if (!r.ok) throw new Error('secrets list ' + r.status);
+  const d = await r.json();
+  return (d.secrets || []).map(s => s.name);
+}
+
 // Seal the AI secrets from the form (one public-key fetch, then a sealed PUT each). sealFn comes from
 // vendor/seal.js, exactly like the email flow. Returns the names actually written.
 export async function setAiSecrets(tok, sealFn, values){

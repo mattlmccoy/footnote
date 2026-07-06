@@ -1,6 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus } from '../js/ghsecrets.js';
+
+// The Settings panel can't read a secret's VALUE, but it can list the secret NAMES on the data repo and
+// tell the owner whether Claude is already connected for the whole workspace — so it's obvious the token
+// is repo-level (set once, every paper here uses it), not per-paper.
+test('claudeConnectionStatus reports Claude/source connection from the secret names', () => {
+  assert.deepStrictEqual(claudeConnectionStatus(['CLAUDE_CODE_OAUTH_TOKEN', 'SOURCE_TOKEN']),
+    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', source: true });
+  assert.deepStrictEqual(claudeConnectionStatus(['ANTHROPIC_API_KEY']),
+    { claude: true, via: 'ANTHROPIC_API_KEY', source: false });
+  // subscription token wins the "via" label when both are present
+  assert.deepStrictEqual(claudeConnectionStatus(['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']),
+    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', source: false });
+  assert.deepStrictEqual(claudeConnectionStatus([]),
+    { claude: false, via: null, source: false });
+  assert.deepStrictEqual(claudeConnectionStatus(null),
+    { claude: false, via: null, source: false });   // defensive
+});
 
 // Slice 7: the AI setup panel seals the adopter's OWN Claude credentials. aiSecretsPlan decides which
 // Actions secrets to write from the form — only non-empty fields, trimmed, mapped to their secret names.

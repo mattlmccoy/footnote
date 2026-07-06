@@ -1,8 +1,8 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=39f9d35';
 import { anchorFromSelection } from './anchor.js?v=39f9d35';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=39f9d35';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=39f9d35';
-import { ensureRenderPipeline } from './seed.js?v=39f9d35';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=39f9d35';
+import { ensureRenderPipeline, ensureApplyEngine } from './seed.js?v=39f9d35';
 import { sealToBase64 } from './vendor/seal.js?v=39f9d35';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=39f9d35';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=39f9d35';
@@ -2463,15 +2463,17 @@ function aiSettingHtml(){
   const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
   const setup = on ? `
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
-      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. A queued edit just waits until these are set.</div>
+      <div id="ai-conn-status" style="margin-bottom:10px;padding:7px 9px;border-radius:7px;background:var(--bg-3);color:var(--text-3);font-size:11.5px">Checking whether Claude is connected for this workspace…</div>
+      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. These are stored <b>once per data repo</b>, so <b>every paper in this workspace</b> uses them — you don't set this up per document.</div>
       <div style="margin-bottom:4px"><b>1. Connect Claude Code with your subscription</b> (recommended — no API key, no extra bill; usage counts against your Claude Code plan). On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints below. <a href="https://code.claude.com/docs/en/github-actions" target="_blank" rel="noopener">How this works →</a></div>
       <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
       <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
         <label for="ai-claude-token">Claude Code token</label>
         <input id="ai-claude-token" type="password" placeholder="from ‘claude setup-token’ (→ CLAUDE_CODE_OAUTH_TOKEN)" style="${inp}">
-        <label for="ai-srctok">Source repo token</label>
+        <label for="ai-srctok">Source repo token <span style="color:var(--text-3)">(only for external source)</span></label>
         <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
       </div>
+      <div style="font-size:11px;color:var(--text-3);margin:-2px 0 6px"><b>Source repo token</b> is only needed if this paper's LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). To make one: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">create a fine-grained PAT</a> → Resource owner = you → Repository access = <b>Only select repositories</b> → pick your source repo → Permissions → <b>Contents: Read and write</b> → Generate, then paste it above.</div>
       <details style="margin:0 0 8px">
         <summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key instead? (billed per token)</summary>
         <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
@@ -2509,6 +2511,20 @@ function aiSettingHtml(){
 // runs on the owner's OWN data repo via their token; secrets are sealed client-side and never stored
 // by the app. No-ops when the panel isn't shown (assistant off).
 function wireAiSetup(t){
+  // Connection status: secrets are REPO-LEVEL, so this reflects the whole workspace (every paper), not
+  // just this project. Values are unreadable; we read the NAMES and say whether Claude is connected.
+  const refreshConnStatus = async () => {
+    const box = document.getElementById('ai-conn-status'); if (!box) return;
+    try {
+      const s = claudeConnectionStatus(await listSecretNames(t));
+      if (s.claude){ box.style.color = 'var(--success)';
+        box.innerHTML = `<i class="ti ti-circle-check" style="margin-right:5px"></i>Claude connected for <b>${escapeHtml(DATA_REPO)}</b> via <code>${s.via}</code> — every paper in this workspace is set. ${s.source?'Source token present.':''}`; }
+      else { box.style.color = 'var(--warn)';
+        box.innerHTML = `<i class="ti ti-alert-circle" style="margin-right:5px"></i>Not connected yet — add your Claude Code token below (once per data repo).`; }
+    } catch(e){ box.style.color = 'var(--text-3)';
+      box.textContent = isScopeError(e) ? 'Can’t verify connection — your access token can’t read this repo’s secrets (needs admin/Secrets read).' : 'Couldn’t check connection: ' + e.message; }
+  };
+  refreshConnStatus();
   const saveSec = document.getElementById('ai-save-secrets');
   if (saveSec) saveSec.onclick = async () => {
     const stat = document.getElementById('ai-secrets-stat');
@@ -2520,8 +2536,16 @@ function wireAiSetup(t){
     try {
       const names = await setAiSecrets(t, sealToBase64, values);
       if (!names.length){ stat.textContent = 'Nothing to save — paste your Claude Code token (or an API key) first.'; }
-      else { stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.';
-             document.getElementById('ai-claude-token').value = ''; if (keyEl) keyEl.value = ''; document.getElementById('ai-srctok').value = ''; }
+      else {
+        // Self-heal: make sure the apply engine actually exists in this data repo (repo-level, idempotent),
+        // so connecting for the first time — or on a repo created before the engine — Just Works.
+        let engineMsg = '';
+        try { const r = await ensureApplyEngine(DATA_REPO, t); if (r.seeded.length) engineMsg = ' Installed the apply engine.'; }
+        catch(e){ engineMsg = e.message === 'workflow-scope' ? ' (Engine not installed — your token lacks the workflow scope; regenerate it with repo+workflow.)' : ' (Engine check failed: ' + e.message + ')'; }
+        stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.' + engineMsg;
+        document.getElementById('ai-claude-token').value = ''; if (keyEl) keyEl.value = ''; document.getElementById('ai-srctok').value = '';
+        refreshConnStatus();
+      }
     } catch(e){ stat.style.color = 'var(--warn)';
       stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
     finally { saveSec.disabled = false; }
@@ -2542,11 +2566,17 @@ function wireAiSetup(t){
   const run = document.getElementById('ai-run');
   if (run) run.onclick = async () => {
     const stat = document.getElementById('ai-run-stat');
-    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Dispatching…';
-    try { await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
-      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.'; }
+    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Ensuring engine…';
+    try {
+      // Self-heal before dispatch: an existing/legacy data repo may not have apply.yml yet.
+      await ensureApplyEngine(DATA_REPO, t);
+      stat.textContent = 'Dispatching…';
+      await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
+      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.';
+    }
     catch(e){ stat.style.color = 'var(--warn)';
-      stat.textContent = isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
+      stat.textContent = e.message === 'workflow-scope' ? 'Your token lacks the workflow scope — regenerate it with repo+workflow, then retry.'
+        : isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
     finally { run.disabled = false; }
   };
 }

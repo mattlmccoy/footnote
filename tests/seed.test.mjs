@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { SEED_FILES, seedJsonFiles, seedDataRepo, RENDER_FILES, ensureRenderPipeline } from '../js/seed.js';
+import { SEED_FILES, seedJsonFiles, seedDataRepo, RENDER_FILES, ensureRenderPipeline, APPLY_FILES, ensureApplyEngine } from '../js/seed.js';
 
 test('SEED_FILES maps CI scripts to root and workflows into .github/workflows', () => {
   const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
@@ -108,6 +108,54 @@ test('ensureRenderPipeline throws a clear workflow-scope error when GitHub block
     return { ok: true, status: 200, text: async () => 'x' };
   };
   await assert.rejects(() => ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
+});
+
+// ---- ensureApplyEngine: idempotent self-heal for the Claude round-trip engine, so an EXISTING data
+//      repo (created before the engine, or where the first seed failed) gets it once, repo-level. ----
+test('APPLY_FILES is the apply-engine subset (ci_review_common, ci_apply, apply.yml)', () => {
+  const dests = APPLY_FILES.map(f => f.dest);
+  assert.ok(dests.includes('ci_review_common.py'));
+  assert.ok(dests.includes('ci_apply.py'));
+  assert.ok(dests.includes('.github/workflows/apply.yml'));
+  // repo-level engine only — NOT the render or invite/notify CI
+  assert.ok(!dests.includes('.github/workflows/render.yml'));
+  assert.ok(!dests.includes('.github/workflows/invite.yml'));
+});
+
+test('ensureApplyEngine PUTs every missing apply file and reports them', async () => {
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 201 }; }
+    if (url.includes('/contents/')) return { ok: false, status: 404 };   // GET: file absent
+    return { ok: true, status: 200, text: async () => `template ${url}` };
+  };
+  const res = await ensureApplyEngine('alice/ws', 'tok', fake, 'http://x/');
+  assert.equal(res.seeded.length, APPLY_FILES.length);
+  assert.equal(res.already.length, 0);
+  assert.ok(puts.includes('.github/workflows/apply.yml'));
+  assert.ok(puts.includes('ci_apply.py'));
+});
+
+test('ensureApplyEngine skips files that already exist (idempotent — safe to call every open)', async () => {
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { puts.push(url); return { ok: true, status: 201 }; }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200 };  // exists
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  const res = await ensureApplyEngine('alice/ws', 'tok', fake, 'http://x/');
+  assert.equal(res.seeded.length, 0);
+  assert.equal(res.already.length, APPLY_FILES.length);
+  assert.equal(puts.length, 0);
+});
+
+test('ensureApplyEngine surfaces the workflow-scope error (403 on the workflow write)', async () => {
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') return url.includes('.github/workflows/') ? { ok: false, status: 403 } : { ok: true, status: 201 };
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: false, status: 404 };
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  await assert.rejects(() => ensureApplyEngine('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
 });
 
 test('seedDataRepo with a project prefix puts config JSON under <id>/ but CI code at the repo root', async () => {

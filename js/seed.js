@@ -51,18 +51,23 @@ const API = 'https://api.github.com';
 export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
   dest.startsWith('export/') || dest === 'ci_render.py' || dest === '.github/workflows/render.yml');
 
-// Ensure the render pipeline exists in the data repo, PUTting ONLY the files that are missing (idempotent —
-// safe to call on every "Build reading view"). Returns { seeded:[], already:[] }. Throws Error('workflow-scope')
-// when GitHub blocks a .github/workflows/ write with 403 — the token lacks the `workflow` scope — so the caller
-// can tell the user exactly how to fix it (regenerate the token via the repo,workflow link) instead of failing
-// silently. Requires a token with write access to the data repo.
-export async function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
+// The Claude round-trip engine subset — the repo-level files that must exist for a queued Send-to-Claude
+// / apply-direct / merge job to actually run on the user's Actions. Seeded on New Project, but ALSO
+// ensured on demand (self-heal) so an EXISTING data repo created before the engine — or one where the
+// first seed failed — gets it once, WITHOUT re-importing. Repo-level, so one seal covers every paper.
+export const APPLY_FILES = SEED_FILES.filter(({ dest }) =>
+  dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === '.github/workflows/apply.yml');
+
+// Shared idempotent seeder: PUT ONLY the missing files from `files` into the data repo. Returns
+// { seeded:[], already:[] }. Throws Error('workflow-scope') when GitHub blocks a .github/workflows/ write
+// with 403 (token lacks the `workflow` scope) so the caller can tell the user exactly how to fix it.
+async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
-  if (!f) throw new Error('no fetch available to build the reading view');
+  if (!f) throw new Error('no fetch available to seed the data repo');
   const root = (base || (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : './'));
   const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
   const out = { seeded: [], already: [] };
-  for (const { src, dest } of RENDER_FILES) {
+  for (const { src, dest } of files) {
     const head = await f(`${API}/repos/${dataRepo}/contents/${dest}`, { headers: h });
     if (head && head.ok) { out.already.push(dest); continue; }        // already present — leave it
     const res = await f(`${root}data-template/${src}`);
@@ -70,13 +75,24 @@ export async function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
     const put = await f(`${API}/repos/${dataRepo}/contents/${dest}`, {
       method: 'PUT',
       headers: { ...h, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ message: `seed: render pipeline — ${dest}`, content: b64(await res.text()) }),
+      body: JSON.stringify({ message: `seed: ${label} — ${dest}`, content: b64(await res.text()) }),
     });
     if (put && put.ok) { out.seeded.push(dest); continue; }
     if (put && put.status === 403 && dest.startsWith('.github/workflows/')) throw new Error('workflow-scope');
     throw new Error(`seed ${dest}: ${put ? put.status : 'no response'}`);
   }
   return out;
+}
+
+// Self-heal the render pipeline (see RENDER_FILES). Safe to call on every "Build reading view".
+export function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
+  return ensureFiles(RENDER_FILES, dataRepo, token, fetchImpl, base, 'render pipeline');
+}
+
+// Self-heal the Claude apply engine (see APPLY_FILES). Safe to call whenever AI setup runs — idempotent,
+// repo-level, so one call fixes every paper in the workspace without per-project setup.
+export function ensureApplyEngine(dataRepo, token, fetchImpl, base) {
+  return ensureFiles(APPLY_FILES, dataRepo, token, fetchImpl, base, 'apply engine');
 }
 
 // Seed a data repo. base is where data-template/ is served from (default the current page). `prefix` (e.g.
