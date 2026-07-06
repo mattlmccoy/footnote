@@ -5,7 +5,7 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=efe4616';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=efe4616';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=efe4616';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath } from './config.js?v=efe4616';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=efe4616';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=efe4616';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=efe4616';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=efe4616';
@@ -1310,7 +1310,7 @@ const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;',
 const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 // Invite links carry the project's data repo (&data=owner/repo) so an advisor — who has no hub access —
 // lands in the right project. Harmless in single-project mode (same data repo).
-const advisorUrl = (id, name) => `${portalBase()}advisor.html?a=${encodeURIComponent(id)}&n=${encodeURIComponent(name||'')}&data=${encodeURIComponent(DATA_REPO)}`;
+const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, dataRepo: DATA_REPO, projectId: _CFG.dataPrefix ? _CFG.projectId : '' });
 const slugify = s => (s||'').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'').slice(0,32) || 'advisor';
 const rand4 = () => Math.random().toString(36).slice(2,6);
 async function loadAdvisorsRegistry(t){ const { json, sha } = await getJson(t, 'advisors.json').catch(() => ({ json:null, sha:null }));

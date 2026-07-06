@@ -5,7 +5,7 @@ import {
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
-  writeProjectPatch, assistantEnabled, dataPath,
+  writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -253,4 +253,14 @@ test('resolveProject leaves prefixes empty for legacy per-project repos', () => 
   assert.equal(eff.dataRepo, 'alice/a-data');
   assert.equal(eff.dataPrefix, '');
   assert.equal(eff.srcPrefix, '');
+});
+
+// ---- advisor invite links carry the workspace project prefix (&p=<id>) ----
+test('advisorInviteUrl builds a portal link; adds &p only for workspace projects', () => {
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/data' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fdata');
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/ws', projectId: 'metro' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fws&p=metro');
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', dataRepo: 'alice/data' }),
+    'https://x/advisor.html?a=CJS&n=&data=alice%2Fdata');   // no name
 });

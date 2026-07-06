@@ -69,13 +69,14 @@ const deleteComment = (r, id) => ({ ...r, comments:r.comments.filter(c => c.id!=
 // --- data-repo I/O (self-contained) ---
 const _API='https://api.github.com';
 let _OWNER='', _REPO='';   // populated from footnote.config.json at boot (before any fetch)
+let _PREFIX='';   // consolidated-workspace project prefix ('<id>/') from the invite link's &p=<id>; '' for legacy
 const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github+json' });
-async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
-async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
+async function getJson(t, path){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
+async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw new Error('put failed: '+r.status); return (await r.json()).content.sha; }
 // binary file I/O (PNG markups) — self-contained, mirrors the JSON helpers above
-async function _getSha(t, path){ try{ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) return null; return (await r.json()).sha; }catch(e){ return null; } }
-async function putFile(t, path, base64, msg){ const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw new Error('put file failed: '+r.status); return (await r.json()).content.sha; }
-async function getDataUrl(t, path, mime='image/png'){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); return `data:${mime};base64,`+(d.content||'').replace(/\s/g,''); }
+async function _getSha(t, path){ try{ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) return null; return (await r.json()).sha; }catch(e){ return null; } }
+async function putFile(t, path, base64, msg){ const put=s=>fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw new Error('put file failed: '+r.status); return (await r.json()).content.sha; }
+async function getDataUrl(t, path, mime='image/png'){ const r=await fetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) throw new Error('GitHub '+r.status); const d=await r.json(); return `data:${mime};base64,`+(d.content||'').replace(/\s/g,''); }
 // merge two reviews of the SAME reviewer file without losing anything: union comments by id;
 // remote wins owner-authoritative fields, local wins reviewer-authoritative fields; thread merged by (author,ts).
 function mergeReviews(remote, local){
@@ -241,7 +242,7 @@ async function loadRelease(){
   const t = tok();
   if (location.hostname==='localhost'||location.hostname==='127.0.0.1'){ try { const r=await fetch('./release.json'); if(r.ok){ apply(await r.json()); return; } } catch(e){} }
   if (!t){ released = []; return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}release.json?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (r.status === 401){ keyBad = true; return; }
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
   function apply(j){ if (j && typeof j === 'object' && !(RELEASE_ID in j)){ revoked = true; return; }   // no gate entry → this reviewer was removed
@@ -257,7 +258,7 @@ async function loadChapter(ch){
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
   if (dev){ try { const r=await fetch(`./chapters/${ch}.html`); if(r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
   const t = tok(); if (!t){ renderConnect(); return; }
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${ch}.html?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (!r.ok) throw new Error('HTTP '+r.status); renderDoc(await r.text()); }
   catch(e){ if (is401(e)) return showKeyExpired();
     read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
@@ -842,7 +843,7 @@ async function loadResponses(){
     let json=null;
     try{
       if(dev){ const r=await fetch(`./advisor/${effId()}/${ch}.json`); if(r.ok) json=await r.json(); }
-      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
+      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}advisor/${effId()}/${ch}.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) json=await r.json(); }
     }catch(e){}
     const cs=(json?.comments||[]).filter(c=>c.status==='submitted');
     cs.forEach(c=>{ const ov=localStorage.getItem(_respStateKey(ch,c.id)); if(ov!==null){ if(ov==='__open__') delete c.advisor_state; else c.advisor_state=ov; } });   // re-apply a triage flag that didn't sync
@@ -942,7 +943,7 @@ async function embedChangedFigures(groups){
     let html=_respFigCache[ch]||null;
     if(!html){ try{
       if(dev){ const r=await fetch(`./chapters/${ch}.html`); if(r.ok) html=await r.text(); }
-      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) html=await r.text(); }
+      else if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}content/${ch}.html?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.ok) html=await r.text(); }
     }catch(e){} if(html) _respFigCache[ch]=html; }
     if(!html) continue;
     const tmp=document.createElement('div'); tmp.innerHTML=html; const figs=[...tmp.querySelectorAll('figure')];
@@ -967,7 +968,7 @@ async function loadOutline(){
   let data=null; const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
   try{
     if(dev){ const r=await fetch('./outline.json'); if(r.ok) data=await r.json(); }
-    if(!data){ const t=tok(); if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/outline.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) data=await r.json(); } }
+    if(!data){ const t=tok(); if(t){ const r=await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(r.status===401) return showKeyExpired(); if(r.ok) data=await r.json(); } }
   }catch(e){}
   if(!data){ read.innerHTML=`<div class="empty">Couldn't load the outline. Check your access key.</div>`; return; }
   renderOutline(data); renderComments(); syncDown();
@@ -1117,7 +1118,7 @@ async function renderAdvisorDownloads(){
 async function downloadArtifact(path){
   const t=tok(); if(!t){ flash('Add your access key first.'); return; }
   flash('Fetching…');
-  try{ const url=`https://api.github.com/repos/${DATA_REPO}/contents/${path}?t=${Date.now()}`;
+  try{ const url=`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`;
     const r=await fetch(url,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if(!r.ok) throw new Error('GitHub '+r.status);
     const blob=await r.blob();
@@ -1139,7 +1140,11 @@ async function boot(){
   // repo as ?data=owner/repo (they have no hub access). Resolve it, push it into the shared config cache so
   // loadChapters/loadRelease/getJson all read the right project's data repo.
   const _cfg = await loadConfig();
-  const _eff = { ..._cfg, dataRepo: dataRepoFromParams(location.search, _cfg.dataRepo) };
+  // &p=<id> means a consolidated-workspace project: prefix every data path with <id>/ so this reviewer reads
+  // the right subfolder of the shared workspace repo (loadChapters/getJson/content all honor dataPrefix).
+  const _pid = new URLSearchParams(location.search).get('p') || '';
+  _PREFIX = _pid ? `${_pid}/` : '';
+  const _eff = { ..._cfg, dataRepo: dataRepoFromParams(location.search, _cfg.dataRepo), dataPrefix: _PREFIX };
   setConfig(_eff);
   ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_eff));
   DATA_REPO = _eff.dataRepo;
