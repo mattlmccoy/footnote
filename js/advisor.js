@@ -1,14 +1,14 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=276f3ae';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=276f3ae';
-import { wordDiff } from './textdiff.js?v=276f3ae';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=276f3ae';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=276f3ae';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=276f3ae';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=276f3ae';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=276f3ae';
+import { anchorFromSelection } from './anchor.js?v=eceba50';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=eceba50';
+import { wordDiff } from './textdiff.js?v=eceba50';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=eceba50';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=eceba50';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=eceba50';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=eceba50';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=eceba50';
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
