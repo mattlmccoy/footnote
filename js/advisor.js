@@ -1,13 +1,13 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=8c5b449';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=8c5b449';
-import { wordDiff } from './textdiff.js?v=8c5b449';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=8c5b449';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=8c5b449';   // magic-link: key in the invite URL
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=8c5b449';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=8c5b449';
+import { anchorFromSelection } from './anchor.js?v=ea833ae';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=ea833ae';
+import { wordDiff } from './textdiff.js?v=ea833ae';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=ea833ae';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=ea833ae';   // magic-link: key in the invite URL
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=ea833ae';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=ea833ae';
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
