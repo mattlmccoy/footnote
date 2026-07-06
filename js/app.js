@@ -2271,8 +2271,13 @@ async function openReleasePanel(){
     <div id="adv-email-banner"></div>
     <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
       <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
-      <input id="notify-email" type="email" placeholder="you@example.com (twice-daily digest of reviewer activity)"
+      <input id="notify-email" type="email" placeholder="you@example.com — a digest of reviewer activity"
         style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
+      <select id="notify-freq" title="How often to email you a digest" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)">
+        <option value="daily">Daily</option>
+        <option value="weekly">Weekly</option>
+        <option value="off">Off — no emails</option>
+      </select>
       <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
       <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
     </div>`;
@@ -2773,17 +2778,24 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   // read by the notify workflow. No elevated scope needed (unlike Actions variables).
   (async () => {
     const inp = document.getElementById('notify-email'); if (!inp) return;
-    try { const { json } = await getJson(t, 'notify_config.json'); if (json && json.author_email) inp.value = json.author_email; } catch(e){}
+    const freq = document.getElementById('notify-freq');
+    try { const { json } = await getJson(t, 'notify_config.json');
+      if (json && json.author_email) inp.value = json.author_email;
+      if (freq && json && json.frequency) freq.value = json.frequency;
+    } catch(e){}
     const stat = document.getElementById('notify-stat');
     document.getElementById('notify-save').onclick = async () => {
       const val = inp.value.trim();
+      const f = (freq && freq.value) || 'daily';
       stat.textContent = 'Saving…';
       try {
         const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
         const cfg = json && typeof json === 'object' ? json : {};
-        cfg.author_email = val;
-        await putJson(t, 'notify_config.json', cfg, sha, `notify: set author email`);
-        stat.textContent = val ? 'Saved — digests will send twice daily.' : 'Cleared — digests off.';
+        cfg.author_email = val; cfg.frequency = f;
+        await putJson(t, 'notify_config.json', cfg, sha, `notify: set author email + frequency`);
+        stat.textContent = !val ? 'Cleared — no digest emails.'
+          : f === 'off' ? 'Saved — digest emails are off.'
+          : `Saved — ${f} digest of reviewer activity.`;
       } catch(e){ stat.textContent = 'Failed: ' + e.message; }
     };
   })();

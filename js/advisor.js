@@ -786,13 +786,43 @@ function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old)
   document.body.appendChild(menu);
   setTimeout(()=>document.addEventListener('click',function h(e){ if(!menu.contains(e.target)&&e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click',h); } }),0);
 }
+// Reviewer email preferences — stored in advisor/<id>/prefs.json (written with the reviewer's own key,
+// read by the notify CI). Unchecking both = zero emails. Defaults ON to preserve current behavior.
+async function openNotifyPrefs(){
+  const t = tok(); if(!t){ alert('Enter your access key first.'); return; }
+  document.getElementById('np-pop')?.remove();
+  let email = {}; try { const r = await getJson(t, `advisor/${effId()}/prefs.json`); email = (r.json && r.json.email) || {}; } catch(e){}
+  const rel = email.released !== false, resp = email.responses !== false;
+  const pop = document.createElement('div'); pop.id='np-pop';
+  pop.style.cssText='position:absolute;top:52px;right:14px;z-index:60;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.18);padding:14px;min-width:266px';
+  pop.innerHTML=`<div style="font-size:13px;font-weight:600;margin-bottom:3px">Email me when…</div>
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:11px">Uncheck both for zero emails.</div>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:9px;cursor:pointer"><input type="checkbox" id="np-rel" ${rel?'checked':''}> new ${escapeHtml(UNIT)}s are released to me</label>
+    <label style="display:flex;gap:8px;align-items:center;font-size:13px;margin-bottom:13px;cursor:pointer"><input type="checkbox" id="np-resp" ${resp?'checked':''}> the author responds to my comments</label>
+    <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center"><span id="np-s" style="font-size:11px;color:var(--text-3);margin-right:auto"></span><button class="btn" id="np-x2" style="padding:5px 11px;font-size:12px">Cancel</button><button class="btn btn-primary" id="np-ok" style="padding:5px 11px;font-size:12px">Save</button></div>`;
+  document.body.appendChild(pop);
+  pop.querySelector('#np-x2').onclick=()=>pop.remove();
+  pop.querySelector('#np-ok').onclick=async()=>{
+    const s = pop.querySelector('#np-s'); s.textContent='Saving…';
+    try {
+      const cur = await getJson(t, `advisor/${effId()}/prefs.json`).catch(()=>({json:null,sha:null}));
+      const obj = (cur.json && typeof cur.json==='object') ? cur.json : {};
+      obj.email = { released: pop.querySelector('#np-rel').checked, responses: pop.querySelector('#np-resp').checked };
+      await putJson(t, `advisor/${effId()}/prefs.json`, obj, cur.sha, `prefs(${effId()}): email settings`);
+      s.textContent='Saved ✓'; setTimeout(()=>pop.remove(), 800);
+    } catch(e){ s.textContent='Failed: '+e.message; }
+  };
+  setTimeout(()=>document.addEventListener('click', function h(e){ if(!pop.contains(e.target) && e.target.id!=='btn-notify' && !e.target.closest?.('#btn-notify')){ pop.remove(); document.removeEventListener('click', h); } }), 0);
+}
 function enterHome(){
   stopLiveSync();
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
   document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 52 52" style="flex:0 0 auto"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg><strong style="font-size:16px;font-weight:600">Footnote</strong><span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
      <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>
+     <button class="icbtn" id="btn-notify" title="Email notifications"><i class="ti ti-bell"></i></button>
      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
+  document.getElementById('btn-notify').onclick=openNotifyPrefs;
   const askKey=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
   document.getElementById('btn-key').onclick=askKey;
   // first-run: no access key yet — prompt for it before anything else
