@@ -89,3 +89,31 @@ def test_apply_direct_end_to_end(workspace_repo, monkeypatch):
                           cwd=data, capture_output=True, text=True, check=True).stdout.strip()
     assert head == "main"
     assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
+
+
+def test_apply_direct_builds_preview_from_the_branch(workspace_repo, monkeypatch, tmp_path):
+    """The preview is rendered from the review-edits branch (edited source), reusing the render
+    pipeline's chapter-html.sh. Stub the renderer so we need no pandoc/TeX but still prove the
+    choreography: preview/<unit>.html lands in the data repo and reflects the EDITED source."""
+    data, bare = workspace_repo
+    # a fake chapter-html.sh: args = <unit> <out>; emit the SOURCE_DIR's methods.tex verbatim so
+    # the test can prove the preview was built from the branch source (which carries \beta).
+    fake = tmp_path / "fake-chapter-html.sh"
+    fake.write_text(
+        '#!/usr/bin/env bash\nset -e\nprintf "<h1>%s</h1>" "$1" > "$2"\n'
+        'cat "$SOURCE_DIR/methods.tex" >> "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="")
+
+    preview = data / "proj" / "preview" / "02-methods.html"
+    assert preview.exists()
+    body = preview.read_text()
+    assert "<h1>02-methods</h1>" in body
+    assert "\\beta" in body            # built from the BRANCH source (the edit), not main
+    assert "\\alpha" not in body

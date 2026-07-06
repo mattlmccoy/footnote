@@ -56,10 +56,13 @@ def _git(args, cwd, check=True):
                           stdout=sys.stderr, stderr=sys.stderr)
 
 
-def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=None, push=True):
+def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=None,
+                  push=True, after_commit=None):
     """Create/switch to ``branch`` off ``base`` in ``repo_dir``, write ``changed`` ({relpath: text}),
-    commit, and (when ``push``) push to origin. Returns to ``base`` afterwards so the data-repo
-    working tree is left on its default branch for the review/jobs writeback."""
+    commit, and (when ``push``) push to origin. ``after_commit`` (if given) runs WHILE the branch is
+    still checked out — used to build the preview from the branch's edited source. Returns to
+    ``base`` afterwards so the data-repo working tree is left on its default branch for the
+    review/jobs writeback."""
     _git(["config", "user.name", "github-actions[bot]"], repo_dir, check=False)
     _git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], repo_dir, check=False)
     # start the branch from base (create if new, reset onto base if it exists)
@@ -75,13 +78,36 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
     if _git(["diff", "--cached", "--quiet"], repo_dir, check=False).returncode != 0:
         _git(["commit", "-m", msg], repo_dir)
         if push:
-            target = branch
             if token and remote_repo:
                 url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
                 _git(["push", url, f"HEAD:{branch}"], repo_dir)
             else:
-                _git(["push", "origin", target], repo_dir)
+                _git(["push", "origin", branch], repo_dir)
+    if after_commit is not None:
+        after_commit()                 # build preview while the branch source is checked out
     _git(["checkout", base], repo_dir)
+
+
+def build_preview(prefix, unit_id, source_dir, workdir):
+    """Build the branch preview ``<prefix>preview/<unit>.html`` from ``source_dir`` (a checkout of
+    the review-edits branch), reusing the SAME export/chapter-html.sh the render pipeline uses — so
+    preview and the published reading view are byte-for-byte the same renderer, just a different
+    source tree and output path. Best-effort: a failed build leaves any prior preview in place.
+    Output always goes into the data repo (cwd); only SOURCE_DIR points at the branch."""
+    rows = ci_render.load_units(prefix)
+    entry = ci_render.derive_entry(rows)
+    out = Path(R.preview_out(prefix, unit_id))
+    out.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ,
+               SOURCE_DIR=str(Path(source_dir).resolve()),
+               CHAPTERS_JSON=str(Path(f"{prefix}chapters.json").resolve()),
+               RENDER_ENTRY=entry,
+               BUILD_DIR=str((Path(workdir) / "build" / (prefix.rstrip("/") or "root")).resolve()))
+    try:
+        subprocess.run(["bash", str(ci_render.CHAPTER_HTML), unit_id, str(out.resolve())],
+                       check=True, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"[apply] preview {prefix}{unit_id}: build failed ({e}) — leaving prior preview", file=sys.stderr)
 
 
 def process_project(prefix, this_repo, token, base_branch="main"):
@@ -108,6 +134,8 @@ def process_project(prefix, this_repo, token, base_branch="main"):
         source_dir = Path(ref).resolve()
         remote_repo = None
 
+    import tempfile
+    build_root = Path(tempfile.mkdtemp(prefix="footnote-apply-"))
     done = 0
     for job in direct:
         ch = job.get("chapter")
@@ -121,9 +149,12 @@ def process_project(prefix, this_repo, token, base_branch="main"):
             src_rel = os.path.relpath(source_dir, repo_dir)
             changed = {os.path.normpath(os.path.join(src_rel, rel)): txt
                        for rel, txt in new_files.items() if files.get(rel) != txt}
+            # build the preview from the branch's edited source (after_commit runs on-branch), so
+            # the author can review the rendered change before approving — the oversight gate.
             commit_branch(repo_dir, branch, changed, base_branch,
                           f"apply-direct: stage edits on {ch}",
-                          token=token, remote_repo=remote_repo, push=True)
+                          token=token, remote_repo=remote_repo, push=True,
+                          after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
         _write_json(R.review_path(prefix, ch), new_review)
         jobs = R.remove_job(jobs, job.get("id"))
         done += 1

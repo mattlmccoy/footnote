@@ -101,6 +101,14 @@ def test_conflict_comment_records_reason_without_staging():
     assert "staged_edit" not in out
 
 
+# --------------------------------------------------------------- preview output path
+def test_preview_out_is_project_prefixed():
+    # the reviewer loads the branch view from <prefix>preview/<unit>.html (js/app.js dpath),
+    # distinct from the merged/published content/<unit>.html the render pipeline writes.
+    assert R.preview_out("", "02-methods") == "preview/02-methods.html"
+    assert R.preview_out("proj/", "02-methods") == "proj/preview/02-methods.html"
+
+
 # --------------------------------------------------------------- project routing
 def test_apply_prefixes_discovers_root_and_workspace_queues(tmp_path, monkeypatch):
     # legacy root project: jobs.json at the repo root

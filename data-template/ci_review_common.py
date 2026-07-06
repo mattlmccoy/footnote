@@ -86,6 +86,13 @@ def review_path(prefix, unit_id):
     return f"{prefix}reviews/{unit_id}.json"
 
 
+def preview_out(prefix, unit_id):
+    """The branch-preview reading view: ``<prefix>preview/<unit>.html`` (matches js/app.js
+    dpath('preview/…')). Distinct from ``<prefix>content/<unit>.html``, the merged/published view
+    the render pipeline writes — preview shows the review-edits/<unit> branch without merging."""
+    return f"{prefix}preview/{unit_id}.html"
+
+
 # --------------------------------------------------------------- apply-direct (deterministic)
 # The apply-direct path applies an owner's VERBATIM edit — no Claude. It must keep working with the
 # AI assistant OFF: the front-end (js/app.js stageDirectEdit) writes a comment with
