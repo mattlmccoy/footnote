@@ -482,7 +482,7 @@ function showPopover(anchor,rects,defaultTag='wording',figEl=null){
 // ---------- draw-on-figure markup (capture-only: composites figure + strokes → PNG) ----------
 const markupCache = {};   // path -> dataURL, so a freshly-drawn markup shows instantly
 function openFigureMarkup(fig, anchor){
-  if (WHOLE){ flash(`Open this single ${UNIT} to draw on a figure — the whole-${DOC} view supports figure comments, not drawing yet.`); return; }
+  if (WHOLE && !anchor.chapterId){ flash(`Couldn't tell which ${UNIT} this figure is in — reopen it and try again.`); return; }   // whole-doc: the markup routes to anchor.chapterId's review
   document.getElementById('pop')?.remove();
   const img = fig.querySelector('img') || fig;
   const ir = img.getBoundingClientRect();
@@ -528,14 +528,24 @@ function openFigureMarkup(fig, anchor){
     try { const ex = document.createElement('canvas'); ex.width=W; ex.height=H; const ec = ex.getContext('2d');
       ec.drawImage(ov.querySelector('.figmk-img'), 0,0, W,H); ec.drawImage(canvas, 0,0);
       const dataUrl = ex.toDataURL('image/png'); b64 = dataUrl.split(',')[1];
-      review = addComment(review, { anchor, kind:'figure', tag:'figure', body:note, author:authorId() });
-      const c = review.comments[review.comments.length-1];
+      // whole-doc: route the markup to the figure's OWN chapter review; else the current chapter.
+      const chId = WHOLE ? anchor.chapterId : null;
+      let rev = addComment(chId ? routeWrite(_reviews, chId, id => loadLocal(id)) : review, { anchor, kind:'figure', tag:'figure', body:note, author:authorId() });
+      const c = rev.comments[rev.comments.length-1];
       const path = `markups/${c.id}.png`; markupCache[path] = dataUrl;
-      review = updateComment(review, c.id, { markup:{ path, ts:new Date().toISOString() } });
-      markDirty(); renderComments(); buildNav(); paintHighlights(); ov.remove();
+      rev = updateComment(rev, c.id, { markup:{ path, ts:new Date().toISOString() } });
       const t = tok();
-      if (t){ await putFile(t, path, b64, `markup: ${effId()} ${c.id}`); flash('Markup saved.'); }
-      else flash('Markup saved locally — add your access key to upload it.');
+      if (chId){
+        rev.pending = true; rev.last_active = new Date().toISOString();
+        _reviews[chId] = rev; localStorage.setItem(localKey(chId), JSON.stringify(rev));
+        paintWholeHighlights(); buildNavWhole(); renderWholeComments(); ov.remove();
+        if (t){ await putFile(t, path, b64, `markup: ${effId()} ${c.id}`); await pushChapterReviewAdv(chId); flash('Markup saved.'); }
+        else flash('Markup saved locally — add your access key to upload it.');
+      } else {
+        review = rev; markDirty(); renderComments(); buildNav(); paintHighlights(); ov.remove();
+        if (t){ await putFile(t, path, b64, `markup: ${effId()} ${c.id}`); flash('Markup saved.'); }
+        else flash('Markup saved locally — add your access key to upload it.');
+      }
     } catch(e){ flash('Markup upload failed: '+e.message); }
   };
 }
