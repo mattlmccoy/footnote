@@ -1,0 +1,55 @@
+name: render
+# Phase 3 — build the reading view. Runs the generic export pipeline (export/chapter-html.sh)
+# over every project in this data repo and commits content/<unit>.html + content/<unit>.srcmap.json
+# that the reviewer reads. Dual-mode: legacy root project or a consolidated workspace (<id>/).
+# Source LaTeX comes from the in-repo <id>/source/ (workspace) or an external sourceRepo cloned
+# read-only with SOURCE_TOKEN (the adopter's own least-privilege PAT — never anyone else's repo).
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project id to render (blank = all projects in this repo)'
+        required: false
+        default: ''
+  repository_dispatch:
+    types: [render]
+permissions:
+  contents: write
+concurrency:
+  group: render
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pandoc + TeX (figures/units) + poppler (PDF→PNG)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pandoc poppler-utils \
+            texlive-latex-base texlive-latex-extra texlive-pictures texlive-science
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Render reading view
+        env:
+          SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+          PROJECT: ${{ github.event.inputs.project }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python3 ci_render.py
+      - name: Commit rendered content
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no content changes"
+          else
+            git commit -m "render: rebuild reading view [skip ci]"
+            for attempt in 1 2 3; do
+              git push && break
+              echo "push rejected — rebasing (attempt $attempt)"
+              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || { git rebase --abort; break; }
+            done
+          fi

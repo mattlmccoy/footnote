@@ -1,0 +1,39 @@
+% ============================================================================
+% export/shim.tex — prepended to a reading unit before pandoc so it can digest
+% siunitx units and neutralize \ensuremath. Document-agnostic: it hardcodes NO
+% adopter preamble. Custom math macros, if the adopter has a preamble/macros.tex
+% (or macros.tex), are appended after this shim by chapter-html.sh. Glossaries
+% (\gls) and cleveref (\cref) are handled upstream in preprocess.py.
+% ============================================================================
+\renewcommand{\ensuremath}[1]{#1}  % neutralize \ensuremath so pandoc's math reader
+                                   % doesn't choke on \bar\ensuremath{...} etc.
+
+% --- siunitx (v2 \SI/\si and v3 \qty/\unit) -> plain text -------------------
+\makeatletter
+\newcommand{\SI}[2]{#1\,#2}
+\newcommand{\si}[1]{#1}
+\newcommand{\num}[1]{#1}
+\newcommand{\qty}[2]{#1\,#2}
+\newcommand{\unit}[1]{#1}
+\newcommand{\SIrange}[3]{#1--#2\,#3}
+\newcommand{\qtyrange}[3]{#1--#2\,#3}
+\newcommand{\numrange}[2]{#1--#2}
+\newcommand{\numlist}[1]{#1}
+\newcommand{\SIlist}[2]{#1\,#2}
+\newcommand{\ang}[1]{#1\degsym}
+\makeatother
+
+% --- SI prefixes ------------------------------------------------------------
+\newcommand{\kilo}{k}\newcommand{\mega}{M}\newcommand{\giga}{G}\newcommand{\tera}{T}
+\newcommand{\milli}{m}\newcommand{\micro}{µ}\newcommand{\nano}{n}\newcommand{\pico}{p}
+\newcommand{\centi}{c}\newcommand{\deci}{d}\newcommand{\deca}{da}\newcommand{\hecto}{h}
+% --- units ------------------------------------------------------------------
+\newcommand{\hertz}{Hz}\newcommand{\meter}{m}\newcommand{\metre}{m}\newcommand{\second}{s}
+\newcommand{\watt}{W}\newcommand{\volt}{V}\newcommand{\ampere}{A}\newcommand{\ohm}{Ω}
+\newcommand{\siemens}{S}\newcommand{\pascal}{Pa}\newcommand{\joule}{J}\newcommand{\kelvin}{K}
+\newcommand{\celsius}{°C}\newcommand{\degsym}{°}\newcommand{\gram}{g}\newcommand{\kilogram}{kg}
+\newcommand{\poise}{P}\newcommand{\percent}{\%}\newcommand{\radian}{rad}\newcommand{\liter}{L}
+\newcommand{\litre}{L}\newcommand{\minute}{min}\newcommand{\hour}{h}\newcommand{\newton}{N}
+\newcommand{\mole}{mol}\newcommand{\mol}{mol}
+\newcommand{\per}{/}\newcommand{\square}[1]{#1²}\newcommand{\cubic}[1]{#1³}
+\newcommand{\squared}{²}\newcommand{\cubed}{³}
