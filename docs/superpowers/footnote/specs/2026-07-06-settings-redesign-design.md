@@ -43,21 +43,23 @@ With the **Agent Network** (Project B) about to add a catalog, an agent-authorin
   - chapter/reading topbar (`renderTopbar`, ~app.js:231 group), and
   - home topbar (`enterHome`, ~app.js:1843 group, next to `btn-releases`).
 - Gear → `openSettingsPage()` — a new in-place view that mirrors how `openReleasePanel` swaps `#topbar` + `#read` (hide `#nav`/`#comments`, set a "Settings" topbar with a "Back" button, render the page into `#read`). No new route/file; same SPA-panel pattern already used for Reviewers.
-- The `⋯` More-menu "AI assistant … in Settings" entry and any `⋯ → Settings` references now point at `openSettingsPage()` (deep-linking to a section via an argument, e.g. `openSettingsPage('ai')`), replacing today's "open Reviewers then scrollIntoView" hack.
+- The `⋯` More-menu entries become **deep-links into Settings** (decision Q1): "AI assistant … in Settings" → `openSettingsPage('ai')` (replacing today's "open Reviewers then scrollIntoView" hack); the **"Access token"** item → `openSettingsPage('access')`, and its inline `prompt()` flow (`manageToken`) is **removed** — token management lives only in the Access section now. `openSettingsPage(section)` takes an optional section id for deep-linking.
 
 ### Settings page (left-nav, C)
 Left column = section list; right column = active section's detail pane. Sections at ship:
-1. **Claude / AI** — status card + Connect dialog (§ below).
-2. **Agents** — placeholder now (moves the existing `reviewAgents` list field here from the AI block); Project B fills it in. Shown only when AI is on.
-3. **Email & notifications** — two rows (§ below).
-4. **Access token** — the browser PAT (`manageToken`) as a section instead of a `⋯` menu item: status ("connected"/"not set") + set/replace/remove.
+1. **Email & notifications** — two rows (§ below). Always shown; leads the list (non-AI, everyone uses it).
+2. **Access token** — the browser PAT (`manageToken`) as a section: status ("connected"/"not set") + set/replace/remove. Always shown. Also home of the source-repo token.
+3. **Agents** — moves the existing `reviewAgents` list field here from the AI block; Project B fills it in. **Shown only when AI is enabled.**
+4. **Claude / AI** — status card + Connect dialog (§ below). Holds the AI master switch. **Understated when off** (see stance below).
 
 Each left-nav item shows a **state glyph**: `✓` configured, `●` needs attention, none = optional/empty. This is the at-a-glance overview that replaces reading the whole page.
 
-Section visibility respects the product stance: **Claude/AI** always shows (with its OFF state); **Agents** appears only when AI is enabled.
+**Product-stance visibility (decision Q2 — "the switch must exist but not too obviously"):** Footnote is not AI-forward.
+- The **Agents** section is **hidden entirely** while AI is off.
+- The **Claude / AI** section stays present (the master switch must always be reachable) but **understated when off**: placed **last** in the left-nav, muted label (no glyph, `--text-3`), and its detail pane is just the one-line "off by default" card + the toggle — no setup, no color, nothing that markets AI. Turning it **on** promotes it (normal weight) and reveals the Agents section above it. This keeps the switch discoverable for those who want it, invisible-ish for those who don't.
 
 ### Section pattern: status card + dialog
-Every section renders a **status card** (one line + a verb link) at rest. Setup/edit opens a **dialog** (reuse the app's existing modal/overlay convention — the Overleaf panel `ovl-panel` and the existing `openConnectForm` show the pattern). The dialog owns the dense fields and instructions; the page stays calm.
+Every section renders a **status card** (one line + a verb link) at rest. Setup/edit opens a **dialog**. Per decision Q3, introduce a small **shared `modal(title, contentEl, {actions})` helper** (open/close, overlay, ESC/click-out, focus) rather than hand-rolling each dialog — the Connect-Claude and Connect-email dialogs both use it, and Project B's agent-authoring will reuse it. It generalizes the existing `ovl-panel`/`openConnectForm` overlay convention into one tested primitive.
 
 #### Claude / AI section (decision B)
 - **OFF (default):** card with the master toggle + one honest line ("Off by default. The core review flow works without AI."). Unchanged copy from today's header, minus the setup body.
@@ -70,6 +72,12 @@ Every section renders a **status card** (one line + a verb link) at rest. Setup/
 - **Row 1 — "Notify me":** the digest email + frequency (`notify-email`, `notify-freq`, `notify-save`) exactly as today, presented as its own labeled row.
 - **Row 2 — "Invite email":** a status card — green "Invite email set up · Change ▸" (when `advReg.email_configured === true`) or amber "Not set up · Connect email ▸". "Connect email" opens the dialog.
 - **Connect email dialog (C):** leads with a **provider picker** — Gmail / Outlook / Other SMTP — backed by the existing `PROVIDERS` table + `detectProvider()` in `ghsecrets.js`. Selecting a provider shows only that provider's steps + its prefilled `host`/`port` and app-password deep-link (`keyUrl`), plus the fields. "Set up manually" (the full `gh secret set …` guide) becomes a secondary disclosure inside the dialog, not the page. Reuses `openConnectForm`/`openTestSend` where possible.
+
+### Reviewers page cleanup (decision Q4)
+After Settings moves out, lightly reorganize what remains on the Reviewers page (`openReleasePanel`) so it reads as one coherent job — managing reviewers — instead of a leftover scroll. Keep every function; only regroup and de-noise:
+- **Group into three clear blocks** with headers: **People** (add-reviewer form + roster), **Access** (the "which units each reviewer can see" gating table + release-responses toggle + portal links), **Inbox** (comments received, per reviewer).
+- Remove the now-orphaned `Settings` header + its email/AI/notify block entirely (it lives in the Settings page).
+- No behavior/data changes to roster, gating, invites, or inbox — this is regrouping + heading/spacing only. Bounded to avoid scope creep; if a sub-item needs real rework it's flagged, not silently expanded.
 
 ## No-function-loss mapping (audit)
 
@@ -96,7 +104,8 @@ Every current element gets a home. Nothing is dropped.
 
 Most of this is DOM/layout (not unit-testable) — those get a **browser-verification gate** (preview server + click-through of every state), stated explicitly rather than skipped. The genuinely testable logic is pure and gets red-green tests first:
 
-- **`settingsSections(cfg, {claudeConnected, emailConfigured, hasToken})` → ordered section descriptors** with `{id, label, glyph}` — the left-nav model + visibility rules (Agents hidden when AI off; glyph = ✓/●/none per section). Pure; `node --test`.
+- **`settingsSections(cfg, {aiOn, claudeConnected, emailConfigured, hasToken})` → ordered section descriptors** with `{id, label, glyph, muted}` — the left-nav model + visibility rules: order = Email, Access, [Agents only when `aiOn`], Claude-last; Claude `muted:true` when `!aiOn`; glyph = ✓/●/none per section. Pure; `node --test`.
+- **`modal()` helper** — the open/close/stack/ESC state is testable at the logic level (which element is active, close resolves). DOM wiring browser-gated.
 - **`claudeConnectionStatus`** (exists) — reused as-is; add a test if missing for the "connected line" mapping.
 - **`detectProvider` / `PROVIDERS`** (exist, tested) — reused by the provider picker.
 - **Deep-link routing:** `openSettingsPage(section)` selects the right section — extract the pure "which section id is valid/active" resolver and test it.
@@ -113,9 +122,9 @@ Browser-verified states (gate, enumerated): AI off; AI on/not-connected; AI on/c
 - Do not touch the manual dissertation systems (phd-dissertation, dissertation-tracker*).
 - Cache-bust bot bumps `?v=<sha>` on JS imports; expect/resolve those in rebases. `app.js` has emoji/binary — use `grep -a`.
 
-## Open questions
+## Resolved decisions (owner)
 
-1. **Access section — remove the `⋯ → Access token` menu item** once it's a Settings section, or keep both entries? (Proposed: keep the `⋯` item as a deep-link to Settings→Access, remove the inline `prompt()` flow.)
-2. **Agents section when AI is off** — hide entirely (proposed) or show disabled with "enable AI to configure agents"?
-3. **Dialog mechanism** — reuse the existing overlay/panel styling (`ovl-panel`) for the two new dialogs, or introduce a small shared `modal()` helper? (Proposed: shared helper, since B's agent-authoring will want modals too.)
-4. **Reviewers page** — after Settings moves out, do we also lightly reorganize what remains (roster/gating/inbox), or leave it exactly as-is this pass? (Proposed: leave as-is; scope creep otherwise.)
+1. **Access token** — keep the `⋯` menu item as a **deep-link** into Settings → Access; **remove** the inline `prompt()` (`manageToken`) flow. Token management lives only in the Access section.
+2. **Agents section when AI is off** — **hidden entirely**. The AI master switch still exists but is **understated**: the Claude/AI section sits last, muted, off by default (see Product-stance visibility above).
+3. **Dialog mechanism** — **add a shared `modal()` helper**; both new dialogs (and Project B's agent authoring) use it.
+4. **Reviewers page** — **reorganize** the leftovers into People / Access / Inbox blocks (regrouping + headings only, no behavior change). See "Reviewers page cleanup" above.
