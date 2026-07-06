@@ -1244,16 +1244,21 @@ async function loadWholeDoc(){
   const t = tok(); if (!t){ renderConnect(); return; }
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  const parts = [];
-  for (const u of _wholeUnits){
-    let frag = null;
+  // Fetch every unit's rendered HTML CONCURRENTLY (was one sequential GitHub round-trip per unit, slow on a
+  // large doc). Order is preserved by mapping back over _wholeUnits, not by fetch-completion order.
+  const fetchFrag = async (u) => {
     try {
-      if (dev){ const r = await fetch(`./chapters/${u.id}.html`); if (r.ok) frag = await r.text(); }
-      if (frag == null){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+u.id+'.html')}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } }); if (r.ok) frag = await r.text(); }
+      if (dev){ const r = await fetch(`./chapters/${u.id}.html`); if (r.ok) return await r.text(); }
+      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+u.id+'.html')}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+      if (r.ok) return await r.text();
     } catch(e){}
-    if (frag == null) frag = `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
-    parts.push(wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag));
-  }
+    return null;
+  };
+  const frags = await Promise.all(_wholeUnits.map(fetchFrag));
+  const parts = _wholeUnits.map((u, i) => {
+    const frag = frags[i] != null ? frags[i] : `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
+    return wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag);
+  });
   read.innerHTML = `<article id="doc">${parts.join('\n')}</article>`;
   const doc = document.getElementById('doc');
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
@@ -1265,7 +1270,9 @@ async function loadAllReviews(units){
   const t = tok(); const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   let advPaths = [];
   if (!dev && t){ try { advPaths = await ghTree(t); } catch(e){} }
-  for (const u of units){
+  // Load every unit's review CONCURRENTLY (was N sequential round-trips). Each unit's own advisor files
+  // load concurrently too. Per-item try/catch so one failure can't reject the whole batch.
+  await Promise.all(units.map(async (u) => {
     let rev = loadLocalReview(u.id);
     try {
       if (dev){ const r = await fetch(`./reviews/${u.id}.json`); if (r.ok) rev = reconcileReview(rev, await r.json(), true); }
@@ -1276,10 +1283,10 @@ async function loadAllReviews(units){
     if (!dev && t){
       const re = new RegExp(`^advisor/([^/]+)/${u.id}\\.json$`);
       const ids = [...new Set(advPaths.map(p => { const m = p.match(re); return m && m[1]; }).filter(Boolean))];
-      for (const a of ids){ try { const { json } = await getJson(t, `advisor/${a}/${u.id}.json`); (json?.comments||[]).forEach(c => { if (c.status !== 'open') adv.push({ ...c, _advisor:a }); }); } catch(e){} }
+      await Promise.all(ids.map(async (a) => { try { const { json } = await getJson(t, `advisor/${a}/${u.id}.json`); (json?.comments||[]).forEach(c => { if (c.status !== 'open') adv.push({ ...c, _advisor:a }); }); } catch(e){} }));
     }
     _wholeAdv[u.id] = adv;
-  }
+  }));
 }
 function paintWholeHighlights(){
   const doc = document.getElementById('doc'); if (!doc) return;
