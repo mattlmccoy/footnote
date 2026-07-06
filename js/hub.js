@@ -6,6 +6,8 @@ import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from '.
 import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=4fe239a';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=4fe239a';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=4fe239a';
+import { startWatch as startNetWatch } from './netstatus.js?v=4fe239a';
+startNetWatch();
 
 // ---- pure helpers (unit-tested) ----
 

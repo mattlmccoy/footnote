@@ -6,6 +6,8 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=4fe239a';
 import { wordDiff } from './textdiff.js?v=4fe239a';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=4fe239a';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=4fe239a';   // magic-link: key in the invite URL
+import { startWatch as startNetWatch } from './netstatus.js?v=4fe239a';
+startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour

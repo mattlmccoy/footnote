@@ -11,6 +11,8 @@ import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=4fe239a';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=4fe239a';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=4fe239a';
+import { startWatch as startNetWatch } from './netstatus.js?v=4fe239a';
+startNetWatch();
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1523,6 +1525,8 @@ function markFigure(doc, c){
   const figs = [...doc.querySelectorAll('figure')];
   const q = (c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30);
   const fig = figs.find(f => f.textContent.replace(/\s+/g,' ').includes(q)) || figs.find(f => f.querySelector('img')?.src.endsWith(c.anchor.figure||' '));
+import { startWatch as startNetWatch } from './netstatus.js?v=4fe239a';
+startNetWatch();
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
