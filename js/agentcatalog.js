@@ -3,7 +3,7 @@
 // an injectable fetchImpl. This surface is owner-only and gated on assistantOn(); advisor.js never
 // imports it (the reviewer surface stays AI-free).
 
-import { getConfig, dataRepoParts } from './config.js?v=f17e452';
+import { getConfig, dataRepoParts } from './config.js?v=092b7cb';
 
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
