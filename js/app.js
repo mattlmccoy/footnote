@@ -2756,7 +2756,45 @@ function renderSettingsSection(id, t) {
 }
 // Temporary placeholders — replaced in Tasks 4–7.
 function renderSettingsEmail(p){ p.innerHTML = '<div class="set-card">Email — TODO Task 5</div>'; }
-function renderSettingsAccess(p){ p.innerHTML = '<div class="set-card">Access — TODO Task 4</div>'; }
+// Access section: the browser PAT (read/write on the data repo) + the optional source-repo token
+// (only when the paper's LaTeX lives in a separate repo). Replaces the old ⋯ prompt() flow.
+function renderSettingsAccess(pane, t) {
+  const has = !!tok();
+  pane.innerHTML = `
+    <div class="set-card">
+      <h4>Access token</h4>
+      <div class="set-status">${has?'<span class="ok">✓</span> Connected — stored only in this browser.':'<span class="warn">●</span> Not set — Footnote can’t read your repo without it.'}</div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="set-pat" type="password" placeholder="fine-grained PAT · Contents: read/write on ${escapeHtml(DATA_REPO)}" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary" id="set-pat-save" style="padding:5px 12px">Save</button>
+        ${has?'<button class="btn" id="set-pat-clear" style="padding:5px 12px">Remove</button>':''}
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Create a fine-grained PAT →</a></div>
+    </div>
+    <div class="set-card">
+      <h4>Source repo token <span style="font-weight:400;color:var(--text-3)">— only for external source</span></h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Only needed if this paper’s LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). Sealed into your data repo’s Actions secrets as <code>SOURCE_TOKEN</code>.</div>
+      <div style="display:flex;gap:8px">
+        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: write on the source repo" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn" id="set-srctok-save" style="padding:5px 12px">Save</button>
+        <span id="set-srctok-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+    </div>`;
+  pane.querySelector('#set-pat-save').onclick = () => {
+    const v = pane.querySelector('#set-pat').value.trim();
+    if (!v){ flash('Paste a token first.'); return; }
+    localStorage.setItem('ghpat', v); flash('Token saved.'); openSettingsPage('access');
+  };
+  const clr = pane.querySelector('#set-pat-clear');
+  if (clr) clr.onclick = () => { if (confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); openSettingsPage('access'); } };
+  pane.querySelector('#set-srctok-save').onclick = async () => {
+    const v = pane.querySelector('#set-srctok').value.trim(); const stat = pane.querySelector('#set-srctok-stat');
+    if (!v){ stat.textContent = 'Paste a token first.'; return; }
+    stat.style.color = 'var(--text-3)'; stat.textContent = 'Sealing…';
+    try { await setAiSecrets(t, sealToBase64, { sourceToken: v }); stat.style.color = 'var(--success)'; stat.textContent = 'Saved SOURCE_TOKEN.'; pane.querySelector('#set-srctok').value = ''; }
+    catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = isScopeError(e) ? 'Token lacks Secrets write.' : 'Failed: ' + e.message; }
+  };
+}
 function renderSettingsAgents(p){ p.innerHTML = '<div class="set-card">Agents — TODO Task 7</div>'; }
 function renderSettingsAI(p){ p.innerHTML = '<div class="set-card">AI — TODO Task 6</div>'; }
 // ---------- release gate: control which chapters each advisor's portal shows ----------
