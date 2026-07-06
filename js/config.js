@@ -180,6 +180,17 @@ export function dataPath(cfg, path) {
   return `${(cfg && cfg.dataPrefix) || ''}${path}`;
 }
 
+// Detail shown after "Source connected ·" in the setup checklist. An uploaded workspace project
+// has sourceRepo = the workspace repo (source lives at <id>/source/), which reads like a repo the
+// user connected — it's an upload. srcPrefix (set only for in-workspace uploads) disambiguates.
+// Returns { repo } to render an escaped repo slug, or { text } for a fixed phrase.
+export function sourceLabel(cfg, parsed) {
+  const uploaded = !!(cfg && cfg.srcPrefix);
+  if (cfg && cfg.sourceRepo && !uploaded) return { repo: cfg.sourceRepo };
+  if (uploaded) return { text: 'uploaded' };
+  return { text: parsed ? '' : 'point Footnote at your LaTeX, or upload it' };
+}
+
 // Build a reviewer (advisor) portal invite URL. Advisors have no hub access, so the link carries the data
 // repo (&data=) directly; for a consolidated workspace project it also carries the project id (&p=<id>) so
 // the advisor bundle prefixes all its data paths with <id>/. base is the site URL (…/, trailing slash).

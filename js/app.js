@@ -6,7 +6,7 @@ import { ensureRenderPipeline } from './seed.js?v=6696df8';
 import { sealToBase64 } from './vendor/seal.js?v=6696df8';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=6696df8';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=6696df8';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=6696df8';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=6696df8';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=6696df8';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=6696df8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=6696df8';
@@ -2203,7 +2203,7 @@ function setupChecklistHtml(){
   return `<div id="setup-strip" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:24px;background:var(--bg-2)${hide ? ';display:none' : ''}">
       <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Project setup</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        ${_setupStep(src, 'Source connected', _CFG.sourceRepo ? escapeHtml(_CFG.sourceRepo) : (parsed ? '' : 'point Footnote at your LaTeX, or upload it'))}
+        ${(() => { const sl = sourceLabel(_CFG, parsed); return _setupStep(src, 'Source connected', sl.repo ? escapeHtml(sl.repo) : sl.text); })()}
         ${_setupStep(parsed, 'Document parsed', parsed ? `${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''}` : `import your ${DOC}`)}
         <div id="setup-render">${_setupStep(false, 'Reading view built', 'checking…')}</div>
       </div></div>`;

@@ -278,3 +278,23 @@ test('advisorInviteUrl builds a portal link; adds &p only for workspace projects
   assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', dataRepo: 'alice/data' }),
     'https://x/advisor.html?a=CJS&n=&data=alice%2Fdata');   // no name
 });
+
+// ---- sourceLabel(): the setup-checklist "Source connected ·" detail ----
+// Bug: an uploaded workspace project has _CFG.sourceRepo = the workspace repo (source lives at
+// <id>/source/), so the checklist showed "Source connected · <owner>/footnote-projects" — reads
+// like a repo the user connected. It's an upload. srcPrefix distinguishes the two.
+import { sourceLabel } from '../js/config.js';
+
+test('sourceLabel: external repo → shows the repo slug', () => {
+  assert.deepEqual(sourceLabel({ sourceRepo: 'me/my-thesis', srcPrefix: '' }, true), { repo: 'me/my-thesis' });
+});
+test('sourceLabel: uploaded workspace project → "uploaded", not the workspace repo slug', () => {
+  // metrology-task-1: resolveProject sets sourceRepo=wsRepo AND srcPrefix='metrology-task-1/source/'
+  assert.deepEqual(sourceLabel({ sourceRepo: 'me/footnote-projects', srcPrefix: 'metrology-task-1/source/' }, true), { text: 'uploaded' });
+});
+test('sourceLabel: legacy connected (parsed, no repo name) → empty detail', () => {
+  assert.deepEqual(sourceLabel({ sourceRepo: '', srcPrefix: '' }, true), { text: '' });
+});
+test('sourceLabel: nothing connected yet → the prompt', () => {
+  assert.deepEqual(sourceLabel({ sourceRepo: '', srcPrefix: '' }, false), { text: 'point Footnote at your LaTeX, or upload it' });
+});
