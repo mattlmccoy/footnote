@@ -6,7 +6,7 @@ import { sealToBase64 } from './vendor/seal.js?v=17b5049';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=17b5049';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=17b5049';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=17b5049';
-import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=17b5049';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=17b5049';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=17b5049';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=17b5049';
 // Load the effective config before the module body evaluates. Two modes:
@@ -33,9 +33,10 @@ if (_hub) {
 setConfig(_CFG);
 // Document nouns for user-facing copy (default "dissertation"/"chapter"; an adopter sets e.g.
 // "thesis"/"section" or "paper"/"part"). Capitalized variants for sentence starts.
-const DOC = _CFG.doc.noun, UNIT = _CFG.doc.unitNoun;
+const DOC = _CFG.doc.noun;
+let UNIT = _CFG.doc.unitNoun;                                 // let: an import can update the unit noun in-session
 const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
-const UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // "Chapter"/"Section"/… for visible unit labels
+let UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);     // "Chapter"/"Section"/… for visible unit labels
 // Optional AI assistant (Send to Claude / run agents) — OFF by default; the deterministic review→stage→
 // approve→merge flow is core. Toggled per-user in ⋯ menu (localStorage) or shipped on via reviewAgents.
 const ASSIST_KEY = 'footnote:assistant';
@@ -1802,7 +1803,8 @@ async function detectFromRepo(src, entry, t){
   const includes = [...main.matchAll(/\\(?:include|input)\s*\{([^}]+)\}/g)].map(m => m[1].trim().replace(/\.tex$/, ''));
   const map = {};
   await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${sp}${p}.tex`, t); } catch { map[p] = null; } }));
-  return parseLatexChapters(main, p => map[p] ?? null);
+  const resolve = p => map[p] ?? null;
+  return { chapters: parseLatexChapters(main, resolve), level: detectUnitLevel(main, resolve) };
 }
 async function saveChapters(chs, t){
   let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
@@ -1812,6 +1814,7 @@ function importDocument(){
   const t = localStorage.getItem('ghpat'); if (!t){ manageToken(); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
+  let detectedLevel = null; // 'chapter' | 'section' from the parsed LaTeX; null for Word/no-parse (keeps current noun)
   let pendingTex = null;    // { name, text } — a single .tex we'll commit as main.tex
   let pendingFiles = null;  // [{ path, isText, text?, base64? }] — a whole project folder
   const suggestion = src || sourceRepoSuggestion(_CFG.projectName || DOC, _CFG.owner);
@@ -1852,7 +1855,7 @@ function importDocument(){
     pendingTex = null; pendingFiles = null; $('#imp-srcwrap').style.display = 'none';   // detecting from the repo: nothing to commit
     const entry = prompt('Entry .tex file in the source repo:', 'main.tex'); if (!entry) return;
     status(`Reading ${entry} from ${src}…`);
-    try { preview(await detectFromRepo(src, entry.trim(), t)); status(''); }
+    try { const r = await detectFromRepo(src, entry.trim(), t); detectedLevel = r.level; preview(r.chapters); status(''); }
     catch (e){ status('Could not read the source: ' + e.message); }
   };
   $('#imp-file').onchange = async e => {
@@ -1861,11 +1864,12 @@ function importDocument(){
     status(`Parsing ${f.name}…`);
     try {
       if (importFormat(f.name) === 'docx') {
-        pendingTex = null; $('#imp-srcwrap').style.display = 'none';
+        pendingTex = null; detectedLevel = null; $('#imp-srcwrap').style.display = 'none';   // Word → keep the current unit noun
         preview(parseDocxChapters(await docxToXml(await f.arrayBuffer())));
       } else {
         const text = await f.text();
         pendingTex = { name: f.name, text };                       // stage for commit into the source repo
+        detectedLevel = detectUnitLevel(text, () => null);
         showSrc(`Footnote commits this as <code>main.tex</code> into this source repo <span style="color:var(--text-3)">— created if it doesn't exist. A single file won't carry figures/refs; use the folder upload for a full project.</span>`);
         preview(parseLatexChapters(text, () => null));
       }
@@ -1898,6 +1902,7 @@ function importDocument(){
       const map = {};
       for (const f of files) if (/\.tex$/i.test(f.path)) map[f.path.replace(/\.tex$/i, '')] = f.text;
       const entryText = files.find(f => f.path === entry).text;
+      detectedLevel = detectUnitLevel(entryText, p => (p in map ? map[p] : null));
       const nfig = files.filter(f => !f.isText).length;
       showSrc(`Commit this project (<b>${files.length}</b> files${nfig ? `, ${nfig} figure${nfig!==1?'s':''}` : ''}${skipped ? `; ${skipped} skipped >40&nbsp;MB` : ''}) into this source repo, entry <code>${escapeHtml(entry)}</code> <span style="color:var(--text-3)">— created if it doesn't exist.</span>`);
       preview(parseLatexChapters(entryText, p => (p in map ? map[p] : null)));
@@ -1929,6 +1934,14 @@ function importDocument(){
         // Persist the source repo on the project (multi-project mode writes projects.json).
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { sourceRepo: repo }, t); } catch (e) { console.warn('sourceRepo persist:', e.message); } }
         _CFG.sourceRepo = repo; setConfig(_CFG);
+      }
+      // Adopt the detected unit level (chapter/section) so the reviewer's labels match the document, but
+      // never clobber a custom noun the adopter set. Persist to projects.json so it survives reload.
+      const nextNoun = resolveUnitNoun(_CFG.doc.unitNoun, detectedLevel);
+      if (nextNoun !== _CFG.doc.unitNoun) {
+        _CFG.doc = { ..._CFG.doc, unitNoun: nextNoun }; setConfig(_CFG);
+        UNIT = nextNoun; UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // refresh the live labels this session
+        if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); } catch (e) { console.warn('unitNoun persist:', e.message); } }
       }
       status('Saving…');
       await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();

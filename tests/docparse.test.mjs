@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters, slugifyId, latexTitleText, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
 
 // Build a minimal STORED (uncompressed) zip containing one entry, to test the zip reader without inflate.
 function storedZip(name, content) {
@@ -160,4 +160,41 @@ test('parseLatexChapters still prefers \\chapter when both chapters and sections
 test('parseLatexChapters does not treat \\subsection as a top-level \\section unit', () => {
   const tex = `\\section{Only}\n\\subsection{Nested}\n\\subsubsection{Deeper}\n`;
   assert.deepEqual(parseLatexChapters(tex).map(c => c.title), ['Only']);
+});
+
+// ---- detectUnitLevel: expose the reading-unit level so the import flow can set doc.unitNoun ----
+test('detectUnitLevel returns "chapter" for a document with \\chapter', () => {
+  const tex = `\\documentclass{book}\n\\begin{document}\n\\chapter{Introduction}\ntext\n\\end{document}`;
+  assert.equal(detectUnitLevel(tex), 'chapter');
+});
+
+test('detectUnitLevel returns "section" for an article with only \\section', () => {
+  const tex = `\\documentclass{elsarticle}\n\\begin{document}\n\\section{Introduction}\n\\subsection{Background}\n\\section{Methods}\n\\end{document}`;
+  assert.equal(detectUnitLevel(tex), 'section');
+});
+
+test('detectUnitLevel is consistent across an \\include-assembled document (chapter in an included file)', () => {
+  const main = `\\documentclass{book}\n\\begin{document}\n\\include{chapters/intro}\n\\end{document}`;
+  const files = { 'chapters/intro': '\\chapter{Introduction}\n\\section{Background}' };
+  assert.equal(detectUnitLevel(main, p => files[p] ?? null), 'chapter');
+});
+
+// ---- resolveUnitNoun: the import-flow guard — adopt the detected level, but never clobber a custom noun ----
+test('resolveUnitNoun adopts the detected level over an auto-managed default', () => {
+  assert.equal(resolveUnitNoun('chapter', 'section'), 'section');
+  assert.equal(resolveUnitNoun('section', 'chapter'), 'chapter');
+});
+
+test('resolveUnitNoun keeps a default unchanged when detection agrees', () => {
+  assert.equal(resolveUnitNoun('chapter', 'chapter'), 'chapter');
+});
+
+test('resolveUnitNoun respects a custom (explicitly overridden) noun and never clobbers it', () => {
+  assert.equal(resolveUnitNoun('part', 'section'), 'part');
+  assert.equal(resolveUnitNoun('essay', 'chapter'), 'essay');
+});
+
+test('resolveUnitNoun keeps the current noun when nothing was detected', () => {
+  assert.equal(resolveUnitNoun('chapter', null), 'chapter');
+  assert.equal(resolveUnitNoun('part', ''), 'part');
 });
