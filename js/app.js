@@ -1,17 +1,17 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=803cf70';
-import { anchorFromSelection } from './anchor.js?v=803cf70';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=803cf70';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess } from './ghsecrets.js?v=803cf70';
-import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=803cf70';
-import { sealToBase64 } from './vendor/seal.js?v=803cf70';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=803cf70';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=803cf70';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=803cf70';
-import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=803cf70';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=803cf70';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=803cf70';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=803cf70';
-import { startWatch as startNetWatch } from './netstatus.js?v=803cf70';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=8c5b449';
+import { anchorFromSelection } from './anchor.js?v=8c5b449';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=8c5b449';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess } from './ghsecrets.js?v=8c5b449';
+import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=8c5b449';
+import { sealToBase64 } from './vendor/seal.js?v=8c5b449';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=8c5b449';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=8c5b449';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=8c5b449';
+import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=8c5b449';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=8c5b449';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8c5b449';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=8c5b449';
+import { startWatch as startNetWatch } from './netstatus.js?v=8c5b449';
 startNetWatch();
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
