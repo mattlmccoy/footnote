@@ -224,7 +224,24 @@ Not unit-testable (substitute a gate): the live `claude -p` call in `run_agent_c
 
 ---
 
-## 6. Open questions needing Matt's decision
+## 6b. RESOLVED — B1 implemented (commit `9446e8b`, branch `feat/agent-network`)
+
+Matt's decisions on the six questions below, as built:
+
+1. **Store — Option A confirmed.** `data-template/agents.json` is the seeded JSON mirror; builtins are engine-owned in `data-template/ci_agents.py` (`BUILTIN_AGENTS`); a pytest gate keeps the two byte-equivalent. No JS copy.
+2. **Upgrades — builtins auto-upgrade, keyed on `builtin`.** `load_catalog` takes builtins from the engine (authoritative) and reads the repo `agents.json` ONLY for `builtin:false` user agents; a builtin id in the repo file is ignored.
+3. **Default-on — 5:** `rigor, clarity, citations, structure, copyedit`. Off: `figure, domain, technical`.
+4. **Volume — cap findings per agent.** `cap_findings(..., DEFAULT_MAX_FINDINGS=20)` applied in `run_agent_cli`.
+5. **`domain` field — optional `doc.field`.** Added to config `doc` defaults; the domain prompt's `{field}` is filled at resolve time (neutral phrase when unset); `domain` ships OFF. The run-agents job carries `field` (app.js).
+6. **UI author identity — deferred to B2.** Comments stay `author=<id>`; no rendering change in B1.
+
+**Extra decision:** shipped an **8th critic `technical`** (generic code/technical reviewer, `docTypes:["code"]`, default-OFF) — the one read-only-critic mechanic (fleet `code-reviewer`) otherwise unrepresented.
+
+Engine boundary: `resolve_agent_directive` (pure) resolves catalog prompt + shared output contract, legacy fallback for unknown names. `run_agent_cli(agent_id, task, catalog=, field=)`. `process_project` loads the catalog once and threads it. Seams B2–B5 left inert (`triggers`/`docTypes` fields present, `builtin:false` path works, `agent_fn` still the single injectable local-runner boundary).
+
+---
+
+## 6. Open questions needing Matt's decision (ANSWERED — see §6b)
 
 1. **Catalog store — confirm Option A?** Authoritative `data-template/agents.json` seeded per data repo, engine reads from the repo with a bundled fallback, client fetches the same file. (Alternative: keep a JS copy for the client. Recommendation: don't — one source.)
 2. **Catalog upgrades for existing repos.** When the shipped catalog changes (new agent, improved prompt), how do live data repos get it? Options: (a) engine always prefers **bundled defaults** for `builtin` ids and only reads the repo file for user agents (auto-upgrade, but overrides local edits); (b) repo file wins, upgrades are an explicit re-seed/merge (stable, but repos drift). Recommendation leans (a) for builtins + (b) for user agents, keyed on `builtin`. Confirm?
