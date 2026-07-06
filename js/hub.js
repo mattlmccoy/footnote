@@ -2,11 +2,11 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=e6ddec7';
-import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=e6ddec7';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=e6ddec7';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=e6ddec7';
-import { startWatch as startNetWatch } from './netstatus.js?v=e6ddec7';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=79b46e8';
+import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=79b46e8';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=79b46e8';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=79b46e8';
+import { startWatch as startNetWatch } from './netstatus.js?v=79b46e8';
 startNetWatch();
 
 // ---- pure helpers (unit-tested) ----
