@@ -2212,7 +2212,8 @@ async function refreshSetup(){
   const parsed = CHAPTERS.length > 0; let built = 0;
   if (t && parsed){
     try { const set = new Set(await ghTree(t));
-      built = CHAPTERS.filter(c => set.has(dpath('content/' + c.id + '.html'))).length; } catch(e){}
+      // ghTree() already strips this project's dataPrefix, so match the bare repo-relative path (no dpath()).
+      built = CHAPTERS.filter(c => set.has('content/' + c.id + '.html')).length; } catch(e){}
   }
   const allBuilt = parsed && built >= CHAPTERS.length;
   const detail = !parsed ? `import your ${DOC} first`
