@@ -6,6 +6,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=ea833ae';
 import { wordDiff } from './textdiff.js?v=ea833ae';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=ea833ae';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=ea833ae';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=ea833ae';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=ea833ae';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { startWatch as startNetWatch } from './netstatus.js?v=ea833ae';
 startNetWatch();
@@ -143,7 +144,19 @@ const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) re
 
 const read = document.getElementById('read');
 let current = null, review = null, released = [], responsesReleased = false;
-const tok = () => localStorage.getItem('ghpat');
+const _store = makeSafeStore();   // Safari Private / storage-blocked degrades to in-memory instead of throwing
+const tok = () => _store.get('ghpat');
+// Honest, dismissible notice when the browser blocks storage — never a blank page (Lane E F4).
+function storageWarn(){
+  if (typeof document === 'undefined' || document.getElementById('storewarn')) return;
+  const b = document.createElement('div'); b.id = 'storewarn';
+  b.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#fbecea;color:#8a2a22;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:8px 34px 8px 14px;text-align:center;border-bottom:1px solid #e7b7b0';
+  b.textContent = 'Your browser is blocking storage (Private Browsing?). You can review now, but this device may not remember your access — reopen the emailed link if you come back.';
+  const x = document.createElement('button'); x.textContent = '×'; x.setAttribute('aria-label', 'Dismiss');
+  x.style.cssText = 'position:absolute;right:8px;top:4px;border:0;background:none;color:#8a2a22;font-size:18px;line-height:1;cursor:pointer';
+  x.onclick = () => b.remove(); b.append(x);
+  document.body.prepend(b);
+}
 let keyBad = false, revoked = false;
 const is401 = e => /\b401\b/.test((e && e.message) || '');
 function showKeyExpired(){
@@ -1322,7 +1335,7 @@ async function boot(){
   // history or shared by copying the URL. Reviewers just click — no token to paste.
   const _mk = keyFromSearch(location.search);
   if (_mk) {
-    localStorage.setItem('ghpat', _mk);
+    if (!_store.set('ghpat', _mk)) storageWarn();   // never throws — a blocked browser degrades, it doesn't blank
     try { history.replaceState(null, '', location.pathname + searchWithoutKey(location.search) + location.hash); } catch (e) {}
     keyBad = false;
   }
