@@ -1797,10 +1797,11 @@ async function ghRaw(src, path, t){
 // Detect chapters from the configured LaTeX source repo: read the entry .tex, resolve its \include/\input
 // files, then parse. Two-pass so parseLatexChapters gets a synchronous resolver.
 async function detectFromRepo(src, entry, t){
-  const main = await ghRaw(src, entry, t);
+  const sp = _CFG.srcPrefix || '';   // workspace mode: source lives under <id>/source/
+  const main = await ghRaw(src, sp + entry, t);
   const includes = [...main.matchAll(/\\(?:include|input)\s*\{([^}]+)\}/g)].map(m => m[1].trim().replace(/\.tex$/, ''));
   const map = {};
-  await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${p}.tex`, t); } catch { map[p] = null; } }));
+  await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${sp}${p}.tex`, t); } catch { map[p] = null; } }));
   return parseLatexChapters(main, p => map[p] ?? null);
 }
 async function saveChapters(chs, t){
