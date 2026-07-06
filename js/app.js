@@ -2763,7 +2763,7 @@ function renderSettingsAgents(pane, t) {
   const box = pane.querySelector('#set-agent-catalog');
   (async () => {
     try {
-      const catalog = await loadAgentCatalog(t);
+      const catalog = await loadAgentCatalog(t, _CFG);
       box.innerHTML = agentCatalogHtml(agentCatalogView(catalog, _CFG.reviewAgents || []), { editable });
     } catch(e){ box.textContent = 'Could not load the agent catalog: ' + e.message; }
   })();

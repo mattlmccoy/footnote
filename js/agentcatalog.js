@@ -3,7 +3,7 @@
 // an injectable fetchImpl. This surface is owner-only and gated on assistantOn(); advisor.js never
 // imports it (the reviewer surface stays AI-free).
 
-import { getConfig, dataRepoParts } from './config.js?v=702f965';
+import { dataRepoParts } from './config.js?v=702f965';
 
 const esc = (s) => String(s == null ? '' : s)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -51,13 +51,13 @@ export function agentCatalogHtml(rows, { editable = false } = {}) {
 // includes any user-authored overlay agents), falling back to the app's shipped ./data-template/agents.json
 // (the builtin mirror) when there is no token or the repo has none yet. Returns [] on total failure.
 // fetchImpl + base are injectable for tests.
-export async function loadAgentCatalog(token, fetchImpl, base) {
+export async function loadAgentCatalog(token, cfg, fetchImpl, base) {
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return [];
   const asArray = (data) => (Array.isArray(data) ? data : (data && data.agents) || []);
-  if (token) {
+  if (token && cfg && cfg.dataRepo) {
     try {
-      const { owner, repo } = dataRepoParts(getConfig());
+      const { owner, repo } = dataRepoParts(cfg);
       const url = `https://api.github.com/repos/${owner}/${repo}/contents/agents.json?t=${Date.now()}`;
       const res = await f(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
       if (res && res.ok) {

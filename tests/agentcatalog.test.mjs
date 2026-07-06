@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { agentCatalogView, agentCatalogHtml, loadAgentCatalog } from '../js/agentcatalog.js';
-import { normalizeConfig, setConfig, _resetConfigCache } from '../js/config.js';
+import { normalizeConfig } from '../js/config.js';
 
 const CAT = [
   { id: 'rigor', displayName: 'Rigor Critic', description: 'Red-teams claims.', category: 'critic', defaultOn: true, builtin: true },
@@ -47,12 +47,12 @@ test('agentCatalogHtml shows an empty-state when the catalog is empty', () => {
   assert.match(agentCatalogHtml([], { editable: true }), /no agents/i);
 });
 
+const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/data' });
+
 test('loadAgentCatalog reads the data-repo agents.json first (includes user overlay agents)', async () => {
-  _resetConfigCache();
-  setConfig(normalizeConfig({ owner: 'alice', dataRepo: 'alice/data' }));
   const arr = [{ id: 'rigor', displayName: 'Rigor' }, { id: 'heatr', builtin: false }];
   const b64 = Buffer.from(JSON.stringify(arr)).toString('base64');
-  const got = await loadAgentCatalog('tok', async (url) => {
+  const got = await loadAgentCatalog('tok', CFG, async (url) => {
     if (url.includes('/contents/agents.json')) return { ok: true, json: async () => ({ content: b64 }) };
     throw new Error('must not hit the fallback when the repo has agents.json');
   });
@@ -60,10 +60,8 @@ test('loadAgentCatalog reads the data-repo agents.json first (includes user over
 });
 
 test('loadAgentCatalog falls back to the shipped mirror without a token or on 404', async () => {
-  _resetConfigCache();
-  setConfig(normalizeConfig({ owner: 'alice', dataRepo: 'alice/data' }));
   const builtins = [{ id: 'clarity' }];
-  const got = await loadAgentCatalog('', async (url) => {
+  const got = await loadAgentCatalog('', CFG, async (url) => {
     if (url.includes('data-template/agents.json')) return { ok: true, json: async () => builtins };
     return { ok: false, status: 404 };
   }, 'http://x/');
