@@ -11,7 +11,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml } from './agentcat
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=a911dab';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=a911dab';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=a911dab';
-import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus } from './owneradmin.js?v=a911dab';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=a911dab';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=a911dab';
 import { startWatch as startNetWatch } from './netstatus.js?v=a911dab';
 import { settingsSections, resolveSection } from './settings.js?v=a911dab';
@@ -3326,20 +3326,32 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       // what's missing). Any permission block ('workflow-scope' etc.) bubbles to the catch → onScopeError.
       await ensureInvitePipeline(DATA_REPO, etok);
       stat.textContent = 'Sending a test email…';
+      let _beforeTestTs = ''; try { const { json } = await getJson(tok(), 'advisors.json'); _beforeTestTs = json?.email_test?.ts || ''; } catch(e){}
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);
       // Poll with etok (the capable token) — the saved login may lack Actions:read, which used to
       // 403 here AFTER a successful dispatch and mislead with "Actions not enabled".
-      const deadline = Date.now() + 90000; let run = null;
+      const deadline = Date.now() + 180000; let run = null;   // GitHub can queue a cold runner for a minute+
       while (Date.now() < deadline){
         await new Promise(r => setTimeout(r, 4000));
         run = await latestRun(etok);
         if (run && run.id !== before && run.status === 'completed') break;
+        if (run && run.id !== before) stat.textContent = 'Sending… GitHub is running the send (this can take a minute).';
       }
       if (!run || run.status !== 'completed'){ stat.innerHTML = 'Saved, but the test run didn\'t finish in time. Check back in a minute and reopen.'; return; }
-      const { json } = await getJson(tok(), 'advisors.json').catch(() => ({ json:null }));
-      if (json){ advReg.email_configured = json.email_configured; }
-      if (run.conclusion === 'success' && json?.email_test?.ok){
+      // The run finished — but the workflow's email_test result (written to advisors.json) can lag the run's
+      // "completed" status by a few seconds (commit propagation + raw-content CDN). Poll for a FRESH result so
+      // a green run is never misreported as a failure (the "run concluded: success" bug).
+      let et = null;
+      for (let i = 0; i < 8; i++){
+        const { json } = await getJson(tok(), 'advisors.json').catch(() => ({ json:null }));
+        if (json){ advReg.email_configured = json.email_configured; if (json.email_test) et = json.email_test; }
+        if (et && (et.ts || '') !== _beforeTestTs) break;   // a fresh result arrived
+        await new Promise(r => setTimeout(r, 2500));
+      }
+      const _outcome = emailTestOutcome({ conclusion: run.conclusion, emailTest: et, beforeTs: _beforeTestTs });
+      if (!_outcome.failed){
+        advReg.email_configured = true;
         flash('✅ Email connected — test sent.');
         // The mail server ACCEPTED it; the recipient's spam filter may still hold it. Say so plainly
         // (a persistent panel, not a toast) so the owner knows to check spam, not assume failure.
@@ -3352,8 +3364,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
         renderAdvList();
         return;
       } else {
-        const err = json?.email_test?.error || ('run concluded: ' + run.conclusion);
-        stat.innerHTML = 'Test send failed: <code>' + escapeHtml(err) + '</code><br>' + authHint(S.provider, err);
+        stat.innerHTML = 'Test send failed: <code>' + escapeHtml(_outcome.error) + '</code><br>' + authHint(S.provider, _outcome.error);
       }
     } catch(e){
       if (isScopeError(e) || (e && e.message === 'workflow-scope')) onScopeError(e);

@@ -59,6 +59,18 @@ export function renderBuiltStatus({ allUnitIds = [], releasedUnitIds = [], built
   return basis.every(id => built.has(id));
 }
 
+// Decide the email-test outcome after the send workflow runs. A run that CONCLUDED SUCCESS must NEVER be
+// reported as "failed" just because the workflow's email_test result (written to advisors.json) hasn't
+// propagated yet — that stale read is what showed users "Test send failed: run concluded: success".
+// Failure = the workflow run itself failed, OR a FRESH email_test result (ts changed since dispatch)
+// explicitly says ok:false. A green run whose result we can't yet re-read is treated as sent, not failed.
+export function emailTestOutcome({ conclusion, emailTest, beforeTs } = {}) {
+  if (conclusion !== 'success') return { failed: true, error: 'send workflow ' + (conclusion || 'did not complete') };
+  const fresh = !!(emailTest && (emailTest.ts || '') !== (beforeTs || ''));
+  if (fresh && emailTest.ok === false) return { failed: true, error: emailTest.error || 'the email didn’t send' };
+  return { failed: false, confirmed: !!(fresh && emailTest.ok) };
+}
+
 // ---- 3. Reviewer status board --------------------------------------------
 // Per reviewer: how many units they can see, how many comments they've submitted, when they were last
 // active, and the invite-email state. Only fields we can actually derive — no invented "opened the link".

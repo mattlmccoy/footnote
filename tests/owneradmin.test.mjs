@@ -9,7 +9,26 @@ import {
   reviewerStatus,
   restoreAdvisorPlan,
   renderBuiltStatus,
+  emailTestOutcome,
 } from '../js/owneradmin.js';
+
+// ---- emailTestOutcome: a green run must never read as "failed" on a stale email_test read ----
+test('emailTestOutcome never reports a successful run as failed while the result is stale (the bug)', () => {
+  // fresh result, ok → success confirmed
+  assert.deepEqual(emailTestOutcome({ conclusion:'success', emailTest:{ ok:true, ts:'T2' }, beforeTs:'T1' }),
+    { failed:false, confirmed:true });
+  // run succeeded but email_test hasn't propagated (ts unchanged) → NOT failed (was the "run concluded: success" bug)
+  assert.equal(emailTestOutcome({ conclusion:'success', emailTest:{ ok:false, ts:'T1' }, beforeTs:'T1' }).failed, false);
+  // run succeeded, no email_test at all yet → NOT failed
+  assert.equal(emailTestOutcome({ conclusion:'success', emailTest:null, beforeTs:'T1' }).failed, false);
+});
+test('emailTestOutcome reports a real failure only on a failed run or a FRESH ok:false result', () => {
+  // fresh result explicitly failed → failed with its error
+  assert.deepEqual(emailTestOutcome({ conclusion:'success', emailTest:{ ok:false, ts:'T2', error:'535 auth' }, beforeTs:'T1' }),
+    { failed:true, error:'535 auth' });
+  // the workflow run itself failed → failed
+  assert.equal(emailTestOutcome({ conclusion:'failure', emailTest:null, beforeTs:'' }).failed, true);
+});
 
 // ---- renderBuiltStatus: preflight "reading view built" must require EVERY released unit ----
 test('renderBuiltStatus is green only when every released unit is built (no partial false-green)', () => {
