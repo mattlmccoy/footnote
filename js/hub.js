@@ -65,6 +65,8 @@ const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;',
 // repo + workflow: seeding a new project writes .github/workflows/*.yml (invite/notify/convert), which
 // GitHub blocks without the workflow scope. (The email wizard requests the same scopes separately.)
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
+// Fine-grained equivalent (least-privilege): All repositories + Contents, Administration, Workflows = Read/write.
+const FG_URL = 'https://github.com/settings/personal-access-tokens/new';
 
 async function hubSha(hub, t) {
   try { const r = await fetch(`${API}/repos/${hub}/contents/projects.json?t=${Date.now()}`, { headers: hdr(t), cache: 'no-store' });
@@ -116,7 +118,7 @@ function attachRepoPicker(input, t) {
     // Live footer: shows the ACTUAL result so token/scope problems are visible, not silent.
     let foot;
     if (data.error) foot = `<div class="fn-ac-hint">Couldn't list your repos — <b>${esc(data.error)}</b>. The token may be wrong or lack access.</div>`;
-    else if (data.priv === 0) foot = `<div class="fn-ac-hint">${data.count} repos found, <b>0 private</b>. Your token can't see private repos — <a href="${TOKEN_URL}" target="_blank" rel="noopener">make one with <code>repo</code> scope</a>, then Disconnect &amp; reconnect.</div>`;
+    else if (data.priv === 0) foot = `<div class="fn-ac-hint">${data.count} repos found, <b>0 private</b>. Your token can't see private repos — make a <a href="${FG_URL}" target="_blank" rel="noopener">fine-grained token</a> with <b>All repositories</b>, or a <a href="${TOKEN_URL}" target="_blank" rel="noopener">classic token</a> with <code>repo</code> scope, then Disconnect &amp; reconnect.</div>`;
     else foot = `<div class="fn-ac-diag">${data.count} repos · ${data.priv} private</div>`;
     menu.innerHTML = m.map(r => `<div class="fn-ac-item">${esc(r)}</div>`).join('') + foot;
     menu.style.display = 'block';
@@ -209,7 +211,8 @@ export async function launch() {
           <div class="fn-card">
             <div class="fn-step">Connect GitHub</div>
             <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><span class="fn-term"><span class="fn-termsig">❯</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></span></label>
-            <p class="fn-hint"><a href="${TOKEN_URL}" target="_blank" rel="noopener">Generate a token →</a> — the link pre-selects the <code>repo</code> + <code>workflow</code> scopes (full read/write, private included; workflow lets Footnote set up your background email/convert Actions). If you use a fine-grained token instead, set <b>Repository access → All repositories</b>. Stored only in this browser.</p>
+            <p class="fn-hint">Footnote reads the source you point it at and creates one private repo for your review data — nothing else. It runs in your browser against your own GitHub; the token is stored only here and sent only to GitHub, never to us.<br>
+              <b>Recommended:</b> a <a href="${FG_URL}" target="_blank" rel="noopener">fine-grained token →</a> with <b>Repository access: All repositories</b> and <b>Contents</b>, <b>Administration</b>, <b>Workflows</b> set to <b>Read and write</b> — that scopes Footnote to exactly what it needs. Or, one click: a <a href="${TOKEN_URL}" target="_blank" rel="noopener">classic token</a> with <code>repo</code> + <code>workflow</code> (broader — all your repos). <a href="tutorials/setup.html" target="_blank" rel="noopener">What is this? →</a></p>
             <div class="fn-err" id="fn-err"></div>
             <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
           </div>

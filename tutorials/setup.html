@@ -149,6 +149,7 @@ const MARK = `<svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect 
 const OVERLEAF = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#138a07"/><path d="M13 13h13M13 20h20M13 27h13M13 33h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 const GITHUB = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#24292f"/><circle cx="16" cy="15" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="16" cy="31" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="30" cy="18" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M16 18v10M16 25c0-4 3.5-6.5 10-7" fill="none" stroke="#fff" stroke-width="2.2"/></svg>`;
 
+const FG_URL = 'https://github.com/settings/personal-access-tokens/new';
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
 
 // a copyable command / link row
@@ -188,18 +189,47 @@ const STEPS = [
 
 { nav:'Access token', eyebrow:'Step 2', title:'Create a GitHub access token',
   body:`
-  <p class="lead">Footnote talks to GitHub on your behalf using a personal access token. Think of it as an app-specific password that you can revoke at any time. It never leaves your browser.</p>
-  <ol class="acts">
-    <li>Open the pre-filled token page (it already selects the right scopes):
-      ${copyRow(TOKEN_URL,'Copy link')}
-      <div class="note info" style="margin-top:10px"><span class="ic">◆</span><div>The link pre-selects the <code>repo</code> and <code>workflow</code> scopes. <b>repo</b> lets Footnote read your source and store comments in your private repos; <b>workflow</b> lets it set up the optional background email/convert Actions later.</div></div>
-    </li>
-    <li>Set <b>Expiration</b> to something comfortable (90 days, or longer for a long project). When it expires you'll simply generate a new one.</li>
-    <li>Scroll down and click <b>Generate token</b>. Copy the value — it starts with <code>ghp_</code> and GitHub only shows it once.</li>
-  </ol>
-  <div class="note warn"><span class="ic">⚠</span><div><b>Keep it private.</b> This token can read and write your repositories. Don't paste it into chats, issues, or commits. If it ever leaks, delete it on GitHub and generate a new one — that instantly invalidates the old one.</div></div>
-  <div class="note ok"><span class="ic">🔒</span><div>Footnote stores the token only in <b>this browser</b> (in <code>localStorage</code>). It is never uploaded to any Footnote server — there isn't one.</div></div>
-  <p style="margin-top:6px;font-size:13px;color:var(--ink-2)">Prefer a fine-grained token? That works too — just set <b>Repository access → All repositories</b> so Footnote can see the private repos it needs.</p>` },
+  <p class="lead">Footnote works directly against <b>your own</b> GitHub — there is no Footnote server. It uses a personal access token, like an app-specific password, that stays in your browser and that you can revoke at any time.</p>
+
+  <h2>Exactly what Footnote does with it</h2>
+  <div class="note info"><span class="ic">◆</span><div><b>It can:</b> read the LaTeX source repo you point it at (<b>read-only</b> — it never edits your source); create <b>one</b> private repo for your review data and write to it (your project list, reviewer comments, release state, staged edits); and add a few GitHub Actions to that repo for optional email invites and export conversion.</div></div>
+  <div class="note ok"><span class="ic">🔒</span><div><b>It can't:</b> reach anything you don't grant. There's no server — the token is stored only in <b>this browser</b> and sent only to <b>GitHub's</b> API, never to us. It touches no other repos, emails no one until you ask, and you can <b>revoke it on GitHub anytime</b> to cut off access instantly.</div></div>
+
+  <h2>Create the token</h2>
+  <div class="seg" id="seg">
+    <button class="on" data-pane="FG">Fine-grained (recommended)</button>
+    <button data-pane="CL">Classic (one click)</button>
+  </div>
+
+  <div class="pane on" data-pane="FG">
+    <p>A fine-grained token lets you grant Footnote <b>exactly</b> the access above and nothing more — the least-privilege choice.</p>
+    <ol class="acts">
+      <li>Open the fine-grained token page:${copyRow(FG_URL,'Copy link')}</li>
+      <li>Set <b>Repository access → All repositories</b>. Footnote needs this to create your private review-data repo and to see your private source.</li>
+      <li>Under <b>Permissions → Repository</b>, set:
+        <ul>
+          <li><b>Contents → Read and write</b> — read your source, store your review data.</li>
+          <li><b>Administration → Read and write</b> — create your private review-data repo.</li>
+          <li><b>Workflows → Read and write</b> — add the background Actions Footnote sets up.</li>
+          <li><b>Metadata → Read-only</b> — added automatically.</li>
+        </ul>
+      </li>
+      <li>Pick an <b>expiration</b>, click <b>Generate token</b>, and copy the value (starts with <code>github_pat_</code>).</li>
+    </ol>
+    <div class="note info"><span class="ic">◆</span><div>Want to avoid the Administration permission entirely? Create your review-data repo yourself on GitHub first, then a token with only <b>Contents</b> and <b>Workflows</b> (Read and write) is enough — just pick “use an existing repo” in Footnote.</div></div>
+  </div>
+
+  <div class="pane" data-pane="CL">
+    <p>A classic token is one click, but broader: the <code>repo</code> scope grants read/write to <b>all</b> your repositories, not just the ones Footnote uses.</p>
+    <ol class="acts">
+      <li>Open the pre-filled token page (scopes already selected):${copyRow(TOKEN_URL,'Copy link')}</li>
+      <li>It pre-selects <code>repo</code> (read/write your repos) and <code>workflow</code> (add the background Actions). Set an <b>expiration</b>.</li>
+      <li>Click <b>Generate token</b> and copy the value (starts with <code>ghp_</code>).</li>
+    </ol>
+    <div class="note warn"><span class="ic">⚠</span><div>Because <code>repo</code> covers every repository you own, prefer the fine-grained token if you'd rather scope Footnote down.</div></div>
+  </div>
+
+  <div class="note warn"><span class="ic">⚠</span><div><b>Keep it private.</b> Don't paste it into chats, issues, or commits. GitHub shows it once. If it ever leaks, delete it on GitHub and make a new one — that instantly invalidates the old.</div></div>` },
 
 { nav:'Connect Footnote', eyebrow:'Step 3', title:'Connect Footnote to GitHub',
   body:`
