@@ -1,16 +1,16 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=3621419';
-import { anchorFromSelection } from './anchor.js?v=3621419';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=3621419';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=3621419';
-import { ensureRenderPipeline } from './seed.js?v=3621419';
-import { sealToBase64 } from './vendor/seal.js?v=3621419';
-import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=3621419';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=3621419';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=3621419';
-import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=3621419';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=3621419';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=3621419';
-import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=3621419';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=495746b';
+import { anchorFromSelection } from './anchor.js?v=495746b';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=495746b';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=495746b';
+import { ensureRenderPipeline } from './seed.js?v=495746b';
+import { sealToBase64 } from './vendor/seal.js?v=495746b';
+import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=495746b';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=495746b';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl } from './config.js?v=495746b';
+import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=495746b';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=495746b';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=495746b';
+import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=495746b';
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
