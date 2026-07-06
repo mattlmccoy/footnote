@@ -425,7 +425,18 @@ async function loadChapter(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
   try { renderDoc(await _rawText(t, `content/${ch}.html`)); }
   catch(e){ if (is401(e)) return showKeyExpired();
-    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
+    const c = classifyGitHubError(e);
+    if (c.status === 404){                       // the rendered HTML isn't in the data repo yet — reading view not built
+      read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">The author has released this ${escapeHtml(UNIT)}, but its reading view is still being prepared. Check back shortly — it'll appear here automatically once it's ready.</div></div>`;
+      return; }
+    if (c.rateLimited){                          // shared-budget exhaustion — don't read like a broken link
+      read.innerHTML = `<div class="empty"><i class="ti ti-cloud-off" style="font-size:24px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reconnecting…</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">GitHub is briefly rate-limiting this review. Give it a moment, then reopen this ${escapeHtml(UNIT)}.</div></div>`;
+      return; }
+    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${escapeHtml(e.message)}). Check your access link.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
