@@ -211,12 +211,20 @@ export async function launch() {
           <div class="fn-card">
             <div class="fn-step">Connect GitHub</div>
             <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><span class="fn-term"><span class="fn-termsig">❯</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></span></label>
-            <p class="fn-hint">Footnote reads the source you point it at and creates one private repo for your review data — nothing else. It runs in your browser against your own GitHub; the token is stored only here and sent only to GitHub, never to us.<br>
-              <b>Recommended:</b> a <a href="${FG_URL}" target="_blank" rel="noopener">fine-grained token →</a> with <b>Repository access: All repositories</b> and <b>Contents</b>, <b>Administration</b>, <b>Workflows</b> set to <b>Read and write</b> — that scopes Footnote to exactly what it needs. Or, one click: a <a href="${TOKEN_URL}" target="_blank" rel="noopener">classic token</a> with <code>repo</code> + <code>workflow</code> (broader — all your repos). <a href="tutorials/setup.html" target="_blank" rel="noopener">What is this? →</a></p>
+            <p class="fn-hint fn-trust">Runs in your browser against your own GitHub — the token is stored only here and sent only to GitHub, never to us.</p>
+            <details class="fn-help">
+              <summary>How do I get a token?</summary>
+              <div class="fn-help-body">
+                <p><a href="${FG_URL}" target="_blank" rel="noopener">Fine-grained token →</a> <span class="fn-help-tag">recommended</span><br>
+                  <span class="fn-sub"><b>Repository access: All repositories</b>, and <b>Contents</b>, <b>Administration</b>, <b>Workflows</b> set to <b>Read and write</b> — scopes Footnote to exactly what it needs.</span></p>
+                <p><a href="${TOKEN_URL}" target="_blank" rel="noopener">Classic token →</a> <span class="fn-help-tag">one click</span><br>
+                  <span class="fn-sub"><code>repo</code> + <code>workflow</code> scopes — broader, covers all your repos.</span></p>
+                <p class="fn-sub">New to wiring up Overleaf, GitHub, and Footnote? <a href="tutorials/setup.html" target="_blank" rel="noopener">Step-by-step setup guide →</a></p>
+              </div>
+            </details>
             <div class="fn-err" id="fn-err"></div>
             <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
           </div>
-          <p class="fn-hint" style="margin-top:12px">New to wiring up Overleaf, GitHub, and Footnote? <a href="tutorials/setup.html" target="_blank" rel="noopener">Follow the step-by-step setup guide →</a></p>
         </div>
         <div class="fn-vid-col">
           <a class="fn-vid" href="tutorials/walkthrough.html" title="Watch the full walkthrough">
