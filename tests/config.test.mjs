@@ -18,6 +18,7 @@ test('normalizeConfig applies defaults for optional keys', () => {
   assert.equal(c.brand.logo, 'brand/footnote-mark.png');
   assert.equal(c.doc.noun, 'document');
   assert.equal(c.doc.unitNoun, 'chapter');
+  assert.equal(c.doc.field, '');   // optional subject area for the domain critic (B1 seam)
   assert.equal(c.storagePrefix, 'footnote');
   assert.equal(c.advisorPortalFile, 'advisor.html');
   assert.equal(c.inviteWorkflow, 'invite.yml');

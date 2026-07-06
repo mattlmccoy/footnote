@@ -31,6 +31,12 @@ test('SEED_FILES includes the Claude round-trip apply engine (shared core + driv
   assert.equal(byDest['.github/workflows/apply.yml'], 'workflows/apply.yml');
 });
 
+test('SEED_FILES includes the agent catalog (engine module + JSON mirror for the client)', () => {
+  const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
+  assert.equal(byDest['ci_agents.py'], 'ci_agents.py');   // the engine catalog + resolver
+  assert.equal(byDest['agents.json'], 'agents.json');     // the seeded mirror (client display + B4 user agents)
+});
+
 test('seedJsonFiles returns the initial config files (empty/honest)', () => {
   const byPath = Object.fromEntries(seedJsonFiles().map(f => [f.path, f.json]));
   assert.deepEqual(byPath['advisors.json'], { advisors: [], email_configured: false });
@@ -116,6 +122,8 @@ test('APPLY_FILES is the apply-engine subset (ci_review_common, ci_apply, apply.
   const dests = APPLY_FILES.map(f => f.dest);
   assert.ok(dests.includes('ci_review_common.py'));
   assert.ok(dests.includes('ci_apply.py'));
+  assert.ok(dests.includes('ci_agents.py'));            // resolver must exist for run-agents to carry real prompts
+  assert.ok(dests.includes('agents.json'));             // the catalog the engine reads for user agents
   assert.ok(dests.includes('.github/workflows/apply.yml'));
   // repo-level engine only — NOT the render or invite/notify CI
   assert.ok(!dests.includes('.github/workflows/render.yml'));

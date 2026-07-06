@@ -29,6 +29,12 @@ export const SEED_FILES = [
   { src: 'ci_review_common.py',    dest: 'ci_review_common.py' },
   { src: 'ci_apply.py',            dest: 'ci_apply.py' },
   { src: 'workflows/apply.yml',    dest: '.github/workflows/apply.yml' },
+  // Agent network B1 — the shipped agent catalog. ci_agents.py holds the engine-owned builtin
+  // critics + the pure directive resolver run-agents uses; agents.json is the JSON mirror seeded for
+  // the client to display and for user-authored (builtin:false) agents to live in (B4). Both are
+  // repo-level, like the rest of the engine.
+  { src: 'ci_agents.py',           dest: 'ci_agents.py' },
+  { src: 'agents.json',            dest: 'agents.json' },
 ];
 
 // Initial config files created fresh (honest empty state — email_configured stays false until a real send).
@@ -56,7 +62,8 @@ export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
 // ensured on demand (self-heal) so an EXISTING data repo created before the engine — or one where the
 // first seed failed — gets it once, WITHOUT re-importing. Repo-level, so one seal covers every paper.
 export const APPLY_FILES = SEED_FILES.filter(({ dest }) =>
-  dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === '.github/workflows/apply.yml');
+  dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === 'ci_agents.py' ||
+  dest === 'agents.json' || dest === '.github/workflows/apply.yml');
 
 // The email/invite pipeline subset: the invite + notify CI and their workflows. A workspace data repo
 // seeded render-only has render.yml but not invite.yml, so the email wizard 404s on the invite workflow
