@@ -50,6 +50,28 @@ test('buildWorklist: chapter with no review is skipped', () => {
   assert.deepEqual(wl.map(g => g.file), ['chapters/results.tex']);
 });
 
+// Legacy comments (older app versions) stored created_ts as an epoch-ms NUMBER, not an
+// ISO string. buildWorklist must not crash on them (number has no .localeCompare) and must
+// still surface a YYYY-MM-DD date, sorting numerically-chronologically.
+test('buildWorklist: tolerates numeric (legacy epoch) created_ts', () => {
+  const early = Date.parse('2026-07-01T00:00:00Z');   // smaller epoch
+  const late  = Date.parse('2026-07-04T00:00:00Z');   // larger epoch
+  const reviews = { ch_results: rev([
+    cmt({ id: 'late',  section: '§1', created_ts: late }),
+    cmt({ id: 'early', section: '§1', created_ts: early }),
+  ]) };
+  let wl;
+  assert.doesNotThrow(() => { wl = buildWorklist(CH, reviews, CFG); });
+  const items = wl[0].items;
+  assert.deepEqual(items.map(i => i.id), ['early', 'late']);            // chronological within a section
+  assert.equal(items.find(i => i.id === 'early').ts.slice(0, 10), '2026-07-01');   // displayable date
+});
+
+test('buildWorklist: blank/missing created_ts stays empty (no date)', () => {
+  const wl = buildWorklist(CH, { ch_results: rev([cmt({ created_ts: undefined })]) }, CFG);
+  assert.equal(wl[0].items[0].ts, '');
+});
+
 const META = { docTitle: 'My Thesis', generatedTs: '2026-07-03T12:00:00Z' };
 
 test('worklistToMarkdown: empty worklist yields the caught-up line', () => {

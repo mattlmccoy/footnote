@@ -32,6 +32,18 @@ function locatorOf(c) {
 
 const sectionOf = c => (c.anchor && (c.anchor.section || c.anchor.figure)) || '';
 
+// created_ts may be an ISO string (current writers) or a legacy epoch-ms NUMBER written by
+// older app versions. Normalize to a sortable + displayable ISO string; unusable → ''. This
+// keeps the downstream .localeCompare sort and .slice(0,10) date rendering string-safe.
+export function normTs(ts) {
+  if (ts == null || ts === '') return '';
+  if (typeof ts === 'number') {
+    const d = new Date(ts);
+    return Number.isNaN(d.getTime()) ? '' : d.toISOString();
+  }
+  return String(ts);
+}
+
 export function buildWorklist(chapters, reviews, config) {
   const groups = [];
   for (const ch of (chapters || [])) {
@@ -45,7 +57,7 @@ export function buildWorklist(chapters, reviews, config) {
           id: c.id, chapterId: ch.id,
           section: sectionOf(c),
           reviewerName: reviewerName(c.author, config),
-          ts: c.created_ts || '',
+          ts: normTs(c.created_ts),
           kind: c.kind || 'text',
           locator: locatorOf(c),
           comment: c.body || '',
@@ -104,7 +116,7 @@ export function worklistToMarkdown(worklist, meta) {
   const totalOpen = (worklist || []).reduce((n, g) => n + (g.open || 0), 0);
   const head = [
     `# Review worklist — ${m.docTitle || 'document'}`,
-    `Generated ${(m.generatedTs || '').slice(0, 10)} · ${totalOpen} open item${totalOpen === 1 ? '' : 's'}`,
+    `Generated ${normTs(m.generatedTs).slice(0, 10)} · ${totalOpen} open item${totalOpen === 1 ? '' : 's'}`,
     '',
   ];
   if (!worklist || !worklist.length) {
