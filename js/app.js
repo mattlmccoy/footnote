@@ -1525,8 +1525,6 @@ function markFigure(doc, c){
   const figs = [...doc.querySelectorAll('figure')];
   const q = (c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30);
   const fig = figs.find(f => f.textContent.replace(/\s+/g,' ').includes(q)) || figs.find(f => f.querySelector('img')?.src.endsWith(c.anchor.figure||' '));
-import { startWatch as startNetWatch } from './netstatus.js?v=94173a2';
-startNetWatch();
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
