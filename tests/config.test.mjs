@@ -6,6 +6,7 @@ import {
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
   writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl,
+  sendMenuActions,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -227,6 +228,19 @@ test('assistantEnabled is off by default, on via the local flag or a configured 
   assert.equal(assistantEnabled({ reviewAgents: [] }, '1'), true);        // user enabled it in Settings
   assert.equal(assistantEnabled({ reviewAgents: ['adversary'] }, null), true);  // instance ships agents
   assert.equal(assistantEnabled({}, null), false);                        // no reviewAgents key
+});
+
+test('sendMenuActions gates the Claude surface behind the master switch', () => {
+  // AI OFF: only the deterministic Export action — no Claude-dependent rows at all.
+  assert.deepEqual(sendMenuActions(false, ['adversary']), ['export']);
+  assert.deepEqual(sendMenuActions(false, []), ['export']);
+  // AI ON, no agents configured: apply-edits (Claude) + export, but NO run-agents row.
+  assert.deepEqual(sendMenuActions(true, []), ['apply-edits', 'export']);
+  // AI ON, agents configured: apply-edits + run-agents + export, in that order.
+  assert.deepEqual(sendMenuActions(true, ['adversary', 'critic']), ['apply-edits', 'run-agents', 'export']);
+  // Defensive: missing reviewAgents behaves like empty.
+  assert.deepEqual(sendMenuActions(true, null), ['apply-edits', 'export']);
+  assert.deepEqual(sendMenuActions(true, undefined), ['apply-edits', 'export']);
 });
 
 // ---- workspace consolidation: one repo, projects as subfolders via a dataPrefix ----
