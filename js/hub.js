@@ -5,7 +5,7 @@
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=17b5049';
 import { seedDataRepo } from './seed.js?v=17b5049';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, migrateProjectToWorkspace } from './importdoc.js?v=17b5049';
-import { parseLatexChapters } from './docparse.js?v=17b5049';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=17b5049';
 
 // ---- pure helpers (unit-tested) ----
 
@@ -436,8 +436,10 @@ export async function launch() {
       if (mode !== 'local' && !externalSrc) return q('#np-err').textContent = 'Pick the repo where your LaTeX lives.';
       try {
         // Workspace project: DATA (and, for uploads, source) live under <wsRepo>/<id>/…; external repos
-        // (github/overleaf) stay the source, comments still go in the workspace.
-        const next = addProject(list, { id, name, dataRepo: wsRepo, sourceRepo: externalSrc, workspace: true, doc: { noun, unitNoun: 'chapter' } });
+        // (github/overleaf) stay the source, comments still go in the workspace. Detect the unit level from
+        // the uploaded .tex so a journal article gets unitNoun 'section', not the 'chapter' default.
+        const unitNoun = pendingTex ? resolveUnitNoun('chapter', detectUnitLevel(pendingTex.text, () => null)) : 'chapter';
+        const next = addProject(list, { id, name, dataRepo: wsRepo, sourceRepo: externalSrc, workspace: true, doc: { noun, unitNoun } });
         q('#np-save').disabled = true;
         q('#np-err').textContent = `Preparing ${wsRepo}…`;
         await createRepo(tok(), wsRepo);   // create the ONE workspace repo if needed (422 = already there)

@@ -113,12 +113,9 @@ export function parseDocxChapters(documentXml) {
   return finalizeChapters(raw);
 }
 
-// Parse the reading units from a LaTeX document. resolveFile(path) → the content of an \include/\input'd
-// file (path as written, without .tex), or null. The unit is \chapter when the assembled document has any
-// \chapter (books, dissertations), else \section (journal articles: elsarticle, IEEEtran, article — which
-// have no \chapter). Order follows the includes; a single-file doc parses its own commands. Ids are deduped.
-export function parseLatexChapters(mainTex, resolveFile = () => null) {
-  const clean = stripComments(mainTex);
+// Resolve a main file's \include/\input'd files into [{ path, content }] (content stripped of comments,
+// or null when the resolver has no file). `clean` is the already-comment-stripped main text.
+function resolveIncludes(clean, resolveFile) {
   const includeRe = /\\(?:include|input)\s*\{([^}]+)\}/g;
   const includes = [];
   let m;
@@ -127,9 +124,49 @@ export function parseLatexChapters(mainTex, resolveFile = () => null) {
     const content = resolveFile(path);
     includes.push({ path, content: content == null ? null : stripComments(content) });
   }
-  // Pick the unit level once, from the whole assembled document, so a mixed / article doc is consistent.
-  const hasChapter = /\\chapter\b/.test(clean) || includes.some(i => i.content && /\\chapter\b/.test(i.content));
-  const level = hasChapter ? 'chapter' : 'section';
+  return includes;
+}
+
+// Pick the unit level once, from the whole assembled document, so a mixed / article doc is consistent:
+// 'chapter' when the main file or any resolved include has a \chapter, else 'section'.
+function pickLevel(clean, includeContents) {
+  const hasChapter = /\\chapter\b/.test(clean) || includeContents.some(c => c && /\\chapter\b/.test(c));
+  return hasChapter ? 'chapter' : 'section';
+}
+
+// Detect the reading-unit level of a LaTeX document WITHOUT building the chapter manifest, so the import
+// flow can set the project's doc.unitNoun. Same rule as parseLatexChapters: 'chapter' when the assembled
+// document (main + \include/\input'd files) has any \chapter (books, dissertations), else 'section'
+// (journal articles: elsarticle, IEEEtran, article — no \chapter). resolveFile(path) → include content
+// (path as written, without .tex) or null. Pure + testable.
+export function detectUnitLevel(mainTex, resolveFile = () => null) {
+  const clean = stripComments(mainTex);
+  const includes = resolveIncludes(clean, resolveFile);
+  return pickLevel(clean, includes.map(i => i.content));
+}
+
+// The two levels Footnote auto-manages from the document. An adopter who sets doc.unitNoun to anything
+// else (e.g. 'part', 'essay') has explicitly overridden the noun, and detection must not touch it.
+const AUTO_NOUNS = new Set(['chapter', 'section']);
+
+// Decide the doc.unitNoun to use after an import: adopt the detected level, but only when the current
+// noun is still an auto-managed default ('chapter'/'section'). A custom noun is an explicit override and
+// is left untouched; a null/empty detected level (e.g. a Word import, or a parse that found nothing) also
+// leaves the current noun as-is. Pure + testable — the import flow calls this instead of inlining the guard.
+export function resolveUnitNoun(currentNoun, detectedLevel) {
+  if (!detectedLevel) return currentNoun;
+  if (!AUTO_NOUNS.has(currentNoun)) return currentNoun;
+  return detectedLevel;
+}
+
+// Parse the reading units from a LaTeX document. resolveFile(path) → the content of an \include/\input'd
+// file (path as written, without .tex), or null. The unit is \chapter when the assembled document has any
+// \chapter (books, dissertations), else \section (journal articles: elsarticle, IEEEtran, article — which
+// have no \chapter). Order follows the includes; a single-file doc parses its own commands. Ids are deduped.
+export function parseLatexChapters(mainTex, resolveFile = () => null) {
+  const clean = stripComments(mainTex);
+  const includes = resolveIncludes(clean, resolveFile);
+  const level = pickLevel(clean, includes.map(i => i.content));
   const raw = [];
   for (const inc of includes) {
     if (inc.content == null) continue;
