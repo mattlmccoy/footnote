@@ -29,8 +29,14 @@ test('ok with no samples yet (fresh load)', () => {
   assert.equal(netHealth({ online: true, recent: [] }), 'ok');
 });
 
-test('repeated network failures read as offline even if navigator says online', () => {
-  assert.equal(netHealth({ online: true, recent: [{ ok: false, ms: 3000 }, { ok: false, ms: 3000 }] }), 'offline');
+test('repeated network failures while navigator=online read as UNREACHABLE (blocker/DNS), not plain offline', () => {
+  // ad-blocker blocks api.github.com → fetch throws while the browser still thinks it's online.
+  // This must be its own state so we can tell the user to disable blockers, not "you're offline".
+  assert.equal(netHealth({ online: true, recent: [{ ok: false, ms: 3000 }, { ok: false, ms: 3000 }] }), 'unreachable');
+});
+
+test('repeated network failures while navigator=offline stay plain offline', () => {
+  assert.equal(netHealth({ online: false, recent: [{ ok: false, ms: 3000 }, { ok: false, ms: 3000 }] }), 'offline');
 });
 
 test('a single recent failure is slow (degraded), not offline', () => {
@@ -49,4 +55,10 @@ test('bannerText is empty when ok (no banner shown)', () => {
 test('bannerText warns clearly for offline and slow', () => {
   assert.match(bannerText('offline'), /offline/i);
   assert.match(bannerText('slow'), /slow|delay/i);
+});
+
+test('bannerText for unreachable points at GitHub + blockers (actionable), not "you are offline"', () => {
+  const t = bannerText('unreachable');
+  assert.match(t, /GitHub/);
+  assert.match(t, /block|extension|ad.?block/i);
 });

@@ -12,14 +12,16 @@ export function pushSample(recent, sample, max = 6) {
 const SLOW_MS = 4000;   // a successful request slower than this counts as "slow"
 
 // Decide the banner state from the browser online flag + recent samples.
-//   'offline' — navigator offline, OR repeated network failures (fetch rejections) despite navigator=online
-//   'slow'    — one recent failure, or several slow-but-successful requests
-//   'ok'      — healthy (no banner)
+//   'offline'     — navigator reports offline (no connection at all)
+//   'unreachable' — navigator says ONLINE but requests keep failing → api.github.com is blocked
+//                   (ad-blocker / privacy extension / DNS / corporate firewall), not a dead link
+//   'slow'        — one recent failure, or several slow-but-successful requests
+//   'ok'          — healthy (no banner)
 export function netHealth({ online, recent } = {}) {
   if (online === false) return 'offline';
   const r = recent || [];
   const fails = r.filter(s => s && !s.ok).length;
-  if (fails >= 2) return 'offline';
+  if (fails >= 2) return 'unreachable';   // online per the browser, yet GitHub won't respond → something is blocking it
   const slow = r.filter(s => s && s.ok && s.ms > SLOW_MS).length;
   if (fails >= 1 || slow >= 2) return 'slow';
   return 'ok';
@@ -28,6 +30,7 @@ export function netHealth({ online, recent } = {}) {
 // Honest per-state copy. Empty string means "show nothing".
 export function bannerText(state) {
   if (state === 'offline') return 'You’re offline — Footnote can’t reach GitHub. Pages and comments can’t load or save until your connection is back.';
+  if (state === 'unreachable') return 'Can’t reach GitHub — an ad-blocker or privacy extension may be blocking api.github.com. Disable blockers for this site (or try another browser), then reload.';
   if (state === 'slow') return 'Slow connection — loading and saving may be delayed.';
   return '';
 }
@@ -55,7 +58,7 @@ function paint(state) {
   const el = ensureBanner();
   const txt = bannerText(state);
   if (!txt) { el.style.display = 'none'; return; }
-  el.style.background = state === 'offline' ? '#b3261e' : '#8a6a00';   // red / amber
+  el.style.background = (state === 'offline' || state === 'unreachable') ? '#b3261e' : '#8a6a00';   // red / amber
   el.textContent = txt;
   el.style.display = 'block';
 }

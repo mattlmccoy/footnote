@@ -4,7 +4,7 @@
 import { anchorFromSelection } from './anchor.js?v=399f800';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=399f800';
 import { wordDiff } from './textdiff.js?v=399f800';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=399f800';   // instance config + chapter manifest; assistant-free by construction
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=399f800';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=399f800';   // magic-link: key in the invite URL
 import { makeSafeStore } from './safestore.js?v=399f800';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR } from './onboarding.js?v=399f800';   // pure onboarding logic (header/state routing/key validation/first-run guide)
@@ -263,6 +263,27 @@ function showRevoked(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">This review link is no longer active</div>
     <div style="font-size:13px;line-height:1.6;color:var(--text-3)">Access for this reviewer has been removed by the author. If you think this is a mistake, please contact them for a new invitation.</div></div>`;
 }
+// F7 — the invite link is missing its project (&p=). The data repo is a workspace holding several
+// projects under subfolders, but this link didn't say which one, so it points at the empty repo root.
+// Tell the reviewer the truth (the link is broken) with a concrete next step, not a silent "nothing shared".
+function showLinkBroken(){
+  document.getElementById('nav').style.display = 'none';
+  document.getElementById('comments').style.display = 'none';
+  document.getElementById('topbar').innerHTML = `<strong style="font-size:16px;font-weight:600">${DOCC} review</strong>`;
+  read.innerHTML = `<div class="empty" style="max-width:460px;margin:12vh auto;text-align:center"><i class="ti ti-link-off" style="font-size:26px;color:var(--text-3)"></i>
+    <div style="font-size:17px;font-weight:500;margin:10px 0 6px">This invite link is missing its project</div>
+    <div style="font-size:13px;line-height:1.6;color:var(--text-3)">Your link opened the right workspace but didn't say which document to review, so there's nothing to show. Please ask the author to resend your invitation — the new link will take you straight to it.</div></div>`;
+}
+// One tree read to tell "broken invite" (workspace has projects) apart from "genuinely fresh repo" (empty).
+// Cheap and only runs on the no-&p=, no-root-chapters cold path — never on the happy path.
+async function _repoTreePaths(t){
+  try {
+    const r = await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/git/trees/main?recursive=1&t=${Date.now()}`, { headers:_hdr(t), cache:'no-store' });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return (d.tree||[]).filter(x => x.type==='blob').map(x => x.path);
+  } catch(e){ return []; }
+}
 const reviewPath = ch => `advisor/${effId()}/${ch}.json`;
 const localKey = ch => `adv:${effId()}:${ch}`;
 const loadLocal = ch => JSON.parse(localStorage.getItem(localKey(ch)) || 'null') || newReview(ch, '');
@@ -404,7 +425,18 @@ async function loadChapter(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
   try { renderDoc(await _rawText(t, `content/${ch}.html`)); }
   catch(e){ if (is401(e)) return showKeyExpired();
-    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${e.message}). Check your access link.</div>`; }
+    const c = classifyGitHubError(e);
+    if (c.status === 404){                       // the rendered HTML isn't in the data repo yet — reading view not built
+      read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">The author has released this ${escapeHtml(UNIT)}, but its reading view is still being prepared. Check back shortly — it'll appear here automatically once it's ready.</div></div>`;
+      return; }
+    if (c.rateLimited){                          // shared-budget exhaustion — don't read like a broken link
+      read.innerHTML = `<div class="empty"><i class="ti ti-cloud-off" style="font-size:24px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reconnecting…</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">GitHub is briefly rate-limiting this review. Give it a moment, then reopen this ${escapeHtml(UNIT)}.</div></div>`;
+      return; }
+    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${escapeHtml(e.message)}). Check your access link.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -1508,6 +1540,10 @@ async function boot(){
   DATA_REPO = _eff.dataRepo;
   DOC = _eff.doc.noun; UNIT = _eff.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1); UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);
   CHAPTERS = await loadChapters(tok());   // parsed manifest from the (project's) data repo, not shipped in config
+  // F7: a workspace invite that lost its &p= reads the empty repo root. Before falling through to the
+  // misleading "nothing shared" state, probe the tree once — if the repo IS a workspace with projects,
+  // the link is broken, so say so. Only on the cold no-&p=, no-root-chapters path (never the happy one).
+  if (tok() && !_pid && !CHAPTERS.length && workspaceInviteBroken(_pid, CHAPTERS, await _repoTreePaths(tok()))){ showLinkBroken(); return; }
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
