@@ -1,15 +1,15 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=a911dab';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=a911dab';
-import { wordDiff } from './textdiff.js?v=a911dab';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=a911dab';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=a911dab';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=a911dab';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=a911dab';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=a911dab';
-import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a911dab';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
+import { anchorFromSelection } from './anchor.js?v=c59d0e6';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=c59d0e6';
+import { wordDiff } from './textdiff.js?v=c59d0e6';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=c59d0e6';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=c59d0e6';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=c59d0e6';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=c59d0e6';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=c59d0e6';
+import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=c59d0e6';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
