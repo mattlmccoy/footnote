@@ -55,12 +55,12 @@ const dpath = p => dataPath(_CFG, p);
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
 const OWNER_TOUR = [
-  { sel:'#btn-token', title:'Add your access token', body:'The reviewer reads your private data with a GitHub token that stays only in this browser. Paste a fine-grained token with Contents read/write on your data repo here first.' },
+  { sel:'#btn-settings-h', title:'Settings & your access token', body:'Your GitHub token — which lets Footnote read your private data — now lives here in Settings, along with email and notifications.' },
   { sel:'.chcard', title:`Your ${UNIT}s`, body:`Each card opens a ${UNIT} to read and to work through your reviewers' comments. The bar shows how far along you are.` },
   { sel:'#inbox-panel', title:'Needs you', body:`Your triage center. Across every ${UNIT} it gathers comments waiting on you, edits staged to approve, and finished jobs. Click any count to jump straight there.` },
   { sel:'#btn-releases', title:`Invite reviewers and release ${UNIT}s`, body:`Add reviewers, connect email so invites send on their own, and choose which ${UNIT}s each reviewer can see.` },
   { sel:'#btn-outline', title:'Share your outline early', body:`Post your planned structure so reviewers can comment on it before the full ${UNIT}s are ready.` },
-  { sel:'#btn-export', title:'Show reviewers how you responded', body:'Generate a printable summary of how you addressed each reviewer\'s comments. This is a response summary, not a document export.' },
+  { sel:'#btn-export-menu', title:'Export your review work', body:'When you\'re ready, take your reviewers\' comments to Overleaf as an edit worklist, or generate a point-by-point response letter.' },
   { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word or Markdown with comments and tracked changes included.` },
   { sel:'#btn-tour', title:'Replay anytime', body:`Reopen this tour or turn auto-show off from here. Open any ${UNIT}, then use the More menu for the reviewing walkthrough.` },
 ];
@@ -267,6 +267,25 @@ function openChapterMenu(){
     d.onclick = () => { menu.remove(); selectChapter(d.dataset.ch); }; });
   document.body.appendChild(menu);
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click', h); } }), 0);
+}
+// Export ▾ menu (home topbar): the two things you do WITH your reviewers' comments — take them to Overleaf
+// as an edit worklist, or generate a point-by-point response letter. Modeled on openChapterMenu.
+function openExportMenu(){
+  const old = document.getElementById('export-menu'); if (old){ old.remove(); return; }   // toggle off
+  const btn = document.getElementById('btn-export-menu'); if (!btn) return;
+  const r = btn.getBoundingClientRect();
+  const menu = document.createElement('div'); menu.id = 'export-menu';
+  menu.style.cssText = `position:fixed;top:${r.bottom+6}px;left:${r.left}px;z-index:9999;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md,10px);box-shadow:0 10px 34px rgba(0,0,0,.16);padding:6px;min-width:250px`;
+  const item = (act, icon, title, sub) => `<div data-act="${act}" style="padding:9px 11px;border-radius:7px;cursor:pointer"><div style="font-size:13px;font-weight:500"><i class="ti ti-${icon}" style="margin-right:8px;color:var(--text-3)"></i>${title}</div><div style="font-size:11px;color:var(--text-3);margin:2px 0 0 25px">${sub}</div></div>`;
+  menu.innerHTML = item('overleaf', 'file-symlink', 'Overleaf edit worklist', 'Where to change your .tex for each comment') +
+                   item('response', 'file-text', 'Response letter', 'Point-by-point summary for your reviewers');
+  document.body.appendChild(menu);
+  menu.querySelectorAll('[data-act]').forEach(d => {
+    d.onmouseenter = () => d.style.background = 'var(--bg-3)';
+    d.onmouseleave = () => d.style.background = 'transparent';
+    d.onclick = () => { menu.remove(); if (d.dataset.act === 'overleaf') openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message)); else exportAdvisorResponse(); };
+  });
+  setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && !e.target.closest('#btn-export-menu')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
 function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
@@ -1885,10 +1904,8 @@ function enterHome(){
   document.getElementById('topbar').innerHTML =
     `<a href="./index.html" title="Your projects" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 52 52" style="flex:0 0 auto"><rect x="3" y="3" width="46" height="46" rx="12" fill="${_CFG.brand.accent}"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg><strong style="font-size:16px;font-weight:600">${escapeHtml(_CFG.brand.name)}</strong></a>
      ${_CFG.deadline ? `<span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>${escapeHtml(_CFG.deadline.label || 'deadline')} in ${daysToDefense()} days</span>` : ''}
-     <button class="btn" id="btn-token" style="padding:6px 12px${_CFG.deadline?'':';margin-left:auto'}${tok()?'':';color:var(--warn);border-color:var(--warn)'}" title="Your GitHub access token"><i class="ti ti-key"></i>${tok()?'Token':'Add token'}</button>
-     <button class="btn" id="btn-outline" style="padding:6px 12px" title="Proposed outline (what reviewers see)"><i class="ti ti-list-tree"></i>Outline</button>
-     <button class="btn" id="btn-export" style="padding:6px 12px" title="Printable response to reviewer comments"><i class="ti ti-file-text"></i>Response</button>
-     <button class="btn" id="btn-overleaf" style="padding:6px 12px" title="Take reviewer feedback back to Overleaf"><i class="ti ti-file-symlink"></i>To Overleaf</button>
+     <button class="btn" id="btn-outline" style="padding:6px 12px${_CFG.deadline?'':';margin-left:auto'}" title="Proposed outline (what reviewers see)"><i class="ti ti-list-tree"></i>Outline</button>
+     <button class="btn" id="btn-export-menu" style="padding:6px 12px" title="Take your reviewers' comments to Overleaf, or into a response letter"><i class="ti ti-file-export"></i>Export<i class="ti ti-chevron-down" style="margin-left:3px;font-size:13px;color:var(--text-3)"></i></button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
      <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
@@ -1897,10 +1914,8 @@ function enterHome(){
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-releases').onclick = openReleasePanel;
   document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
-  document.getElementById('btn-export').onclick = exportAdvisorResponse;
-  document.getElementById('btn-overleaf').onclick = () => openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message));
+  document.getElementById('btn-export-menu').onclick = openExportMenu;
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
-  document.getElementById('btn-token').onclick = () => openSettingsPage('access');
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
