@@ -96,7 +96,7 @@ const newReview = chapter => ({ chapter, cursor:null, comments:[] });
 const addComment = (r, c) => ({ ...r, comments:[...r.comments, {
   id:nid(), kind:c.kind||'text',
   anchor:{ quote:c.anchor?.quote||'', rects:c.anchor?.rects||[], section:c.anchor?.section||'', figure:c.anchor?.figure||null, confirmed:!!c.anchor?.confirmed },
-  tag:c.tag||'other', body:c.body||'', status:'open', author:c.author||null, edit:c.edit||null, created_ts:new Date().toISOString() }] });
+  tag:c.tag||'other', body:c.body||'', status:c.status||'submitted', author:c.author||null, edit:c.edit||null, created_ts:new Date().toISOString() }] });   // 'submitted' = shared with the author (no submit step); 'open' would be hidden as a draft. Explicit status wins.
 const updateComment = (r, id, patch) => ({ ...r, comments:r.comments.map(c => c.id===id ? { ...c, ...patch } : c) });
 const deleteComment = (r, id) => ({ ...r, comments:r.comments.filter(c => c.id!==id), deleted:[...new Set([...(r.deleted||[]), id])] });
 // --- data-repo I/O (self-contained) ---
