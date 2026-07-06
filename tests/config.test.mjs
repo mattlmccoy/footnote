@@ -5,7 +5,7 @@ import {
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
   getConfig, _resetConfigCache, loadChapters,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
-  writeProjectPatch, assistantEnabled,
+  writeProjectPatch, assistantEnabled, dataPath,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -227,4 +227,30 @@ test('assistantEnabled is off by default, on via the local flag or a configured 
   assert.equal(assistantEnabled({ reviewAgents: [] }, '1'), true);        // user enabled it in Settings
   assert.equal(assistantEnabled({ reviewAgents: ['adversary'] }, null), true);  // instance ships agents
   assert.equal(assistantEnabled({}, null), false);                        // no reviewAgents key
+});
+
+// ---- workspace consolidation: one repo, projects as subfolders via a dataPrefix ----
+test('dataPath prepends the dataPrefix (empty = legacy passthrough)', () => {
+  assert.equal(dataPath({ dataPrefix: '' }, 'reviews/ch1.json'), 'reviews/ch1.json');
+  assert.equal(dataPath({}, 'chapters.json'), 'chapters.json');
+  assert.equal(dataPath({ dataPrefix: 'metrology/' }, 'reviews/ch1.json'), 'metrology/reviews/ch1.json');
+});
+
+test('resolveProject uses the workspace repo + id prefixes when project.workspace is set', () => {
+  const app = normalizeConfig({ owner: 'alice', dataRepo: 'alice/data', hubRepo: 'alice/footnote-workspace', workspaceRepo: 'alice/footnote-workspace' });
+  const projects = [normalizeProject({ id: 'metro', name: 'Metrology', dataRepo: 'alice/footnote-workspace', workspace: true, sourceRepo: 'alice/footnote-workspace' })];
+  const eff = resolveProject(app, projects, 'metro');
+  assert.equal(eff.dataRepo, 'alice/footnote-workspace');
+  assert.equal(eff.dataPrefix, 'metro/');
+  assert.equal(eff.sourceRepo, 'alice/footnote-workspace');
+  assert.equal(eff.srcPrefix, 'metro/source/');
+});
+
+test('resolveProject leaves prefixes empty for legacy per-project repos', () => {
+  const app = normalizeConfig({ owner: 'alice', dataRepo: 'alice/data', hubRepo: 'alice/footnote-projects' });
+  const projects = [normalizeProject({ id: 'a', name: 'A', dataRepo: 'alice/a-data', sourceRepo: 'alice/a-source' })];
+  const eff = resolveProject(app, projects, 'a');
+  assert.equal(eff.dataRepo, 'alice/a-data');
+  assert.equal(eff.dataPrefix, '');
+  assert.equal(eff.srcPrefix, '');
 });

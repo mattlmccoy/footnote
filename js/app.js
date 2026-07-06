@@ -5,7 +5,7 @@ import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable
 import { sealToBase64 } from './vendor/seal.js?v=ef73fa1';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=ef73fa1';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=ef73fa1';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled } from './config.js?v=ef73fa1';
+import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, dataPath } from './config.js?v=ef73fa1';
 import { parseLatexChapters, parseDocxChapters, docxToXml } from './docparse.js?v=ef73fa1';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=ef73fa1';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=ef73fa1';
@@ -40,6 +40,8 @@ const UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // "Chapter"/"Sect
 // approve→merge flow is core. Toggled per-user in ⋯ menu (localStorage) or shipped on via reviewAgents.
 const ASSIST_KEY = 'footnote:assistant';
 const assistantOn = () => assistantEnabled(_CFG, localStorage.getItem(ASSIST_KEY));
+// Prefix a data-repo path for this project ('' legacy → passthrough; '<id>/' in the consolidated workspace).
+const dpath = p => dataPath(_CFG, p);
 
 // Guided owner tour — points only at elements that are reliably present on the home view, so nothing
 // is mis-highlighted. The engine skips any step whose element is absent.
@@ -257,7 +259,7 @@ async function loadChapter(ch){
   const t = tok();
   if (!t){ renderConnect(); return; }
   try {
-    const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.html`,
+    const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+ch+'.html')}`,
       { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
     if (!r.ok) throw new Error('HTTP '+r.status);
     renderDoc(await r.text());
@@ -309,7 +311,7 @@ async function loadSrcmapPencils(ch){
       const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
       let json = null;
       if (dev){ const r = await fetch(`./content/${ch}.srcmap.json`); if (r.ok) json = await r.json(); }
-      else { const t = tok(); if (!t) return; const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/content/${ch}.srcmap.json?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) json = await r.json(); }
+      else { const t = tok(); if (!t) return; const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+ch+'.srcmap.json')}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) json = await r.json(); }
       _srcmap[ch] = {}; for (const e of (json?.paragraphs||[])) _srcmap[ch][_normHead(e.head)] = e.source_text;
     }
     const map = _srcmap[ch]; if (!map || !Object.keys(map).length) return;
@@ -1292,7 +1294,7 @@ async function togglePreview(ch){
   try {
     let html = null;
     if (dev){ const r = await fetch('./preview/'+ch+'.html'); if (r.ok) html = await r.text(); }
-    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/preview/${ch}.html?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
+    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('preview/'+ch+'.html')}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
     if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }
     previewing = true; renderDoc(html);
   } catch(e){ flash('Preview failed: '+e.message); }
@@ -1502,7 +1504,7 @@ async function downloadArtifact(path){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   flash('Fetching…');
   let blob;
-  try { const url = `https://api.github.com/repos/${DATA_REPO}/contents/${path}?t=${Date.now()}`;
+  try { const url = `https://api.github.com/repos/${DATA_REPO}/contents/${dpath(path)}?t=${Date.now()}`;
     const r = await fetch(url, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
     if (!r.ok) throw new Error('GitHub '+r.status);
     blob = await r.blob();
@@ -1907,20 +1909,21 @@ function importDocument(){
       if (pendingFiles || pendingTex) {
         const repo = $('#imp-src').value.trim();
         if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) throw new Error('Enter a source repo as owner/name.');
+        const sp = p => (_CFG.srcPrefix || '') + p;   // workspace mode nests source under <id>/source/
         status(`Preparing ${repo}…`);        await ensureRepo(t, repo);
-        if (await repoFileSha(repo, 'main.tex', t).catch(() => null)) {
-          if (!confirm(`main.tex already exists in ${repo}. Overwrite it with this upload?`)) { status('Cancelled.'); $('#imp-save').disabled = false; return; }
+        if (await repoFileSha(repo, sp('main.tex'), t).catch(() => null)) {
+          if (!confirm(`main.tex already exists in ${repo}${_CFG.srcPrefix ? '/' + _CFG.srcPrefix : ''}. Overwrite it with this upload?`)) { status('Cancelled.'); $('#imp-save').disabled = false; return; }
         }
         if (pendingFiles) {   // whole folder: commit every file preserving structure
           let i = 0;
           for (const f of pendingFiles) {
             status(`Committing ${++i}/${pendingFiles.length} · ${f.path}…`);
-            if (f.isText) await commitSourceFile(repo, f.path, f.text, t, `Footnote import: ${f.path}`);
-            else await commitSourceBinary(repo, f.path, f.base64, t, `Footnote import: ${f.path}`);
+            if (f.isText) await commitSourceFile(repo, sp(f.path), f.text, t, `Footnote import: ${sp(f.path)}`);
+            else await commitSourceBinary(repo, sp(f.path), f.base64, t, `Footnote import: ${sp(f.path)}`);
           }
         } else {              // single .tex
           status(`Committing main.tex to ${repo}…`);
-          await commitSourceFile(repo, 'main.tex', pendingTex.text, t, 'Footnote import: main.tex');
+          await commitSourceFile(repo, sp('main.tex'), pendingTex.text, t, 'Footnote import: main.tex');
         }
         // Persist the source repo on the project (multi-project mode writes projects.json).
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { sourceRepo: repo }, t); } catch (e) { console.warn('sourceRepo persist:', e.message); } }
@@ -2072,7 +2075,7 @@ async function loadIndex(){
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if (dev){ try { const r = await fetch('./search_index.json'); if (r.ok){ searchIndex = await r.json(); return searchIndex; } } catch(e){} }
   const t = tok(); if (!t) return null;
-  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/search_index.json`,
+  try { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('search_index.json')}`,
       { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
     searchIndex = await r.json(); return searchIndex; } catch(e){ return null; }
 }

@@ -24,6 +24,9 @@ const DEFAULTS = {
   chapters: [],   // fallback only; the live list is loadChapters() from the data repo
   deadline: null,
   hubRepo: '',    // multi-project registry repo (owner/footnote-projects); projects.json lives there
+  workspaceRepo: '',   // consolidated mode: ONE repo holds every project as a subfolder <id>/…
+  dataPrefix: '',      // path prefix into the data repo for this project ('' = legacy root; '<id>/' = workspace)
+  srcPrefix: '',       // path prefix into the source repo for this project ('' = legacy root; '<id>/source/')
 };
 
 // Validate required keys and apply defaults for every optional key. Nested brand/doc merge
@@ -125,6 +128,7 @@ const PROJECT_DEFAULTS = {
   reviewAgents: [],
   deadline: null,
   sourceRepo: '',
+  workspace: false,   // true = this project lives under <workspaceRepo>/<id>/ (consolidated); false = own repos (legacy)
 };
 
 // Validate + default one project entry from projects.json.
@@ -147,10 +151,21 @@ export function normalizeProject(raw) {
 export function resolveProject(appCfg, projects, projectId) {
   const p = (projects || []).find(x => x.id === projectId);
   if (!p) throw new ConfigError(`unknown project: ${projectId}`);
+  // Consolidated (workspace) mode: this project's DATA lives under <workspaceRepo>/<id>/ so one repo holds
+  // every project (kills per-paper repo bloat). The workspace repo is the hub repo unless overridden. Source
+  // is in the workspace too (<id>/source/) for uploads, OR an external repo the user points at (github mode).
+  // Legacy mode: the project's own dataRepo/sourceRepo at the repo root (prefixes stay '').
+  const wsRepo = appCfg.workspaceRepo || appCfg.hubRepo;
+  const workspace = !!p.workspace && !!wsRepo;
+  const sourceInWs = workspace && (!p.sourceRepo || p.sourceRepo === wsRepo);
+  const dataRepo = workspace ? wsRepo : p.dataRepo;
+  const sourceRepo = sourceInWs ? wsRepo : (p.sourceRepo || appCfg.sourceRepo);
   return normalizeConfig({
     ...appCfg,
-    dataRepo: p.dataRepo,
-    sourceRepo: p.sourceRepo || appCfg.sourceRepo,
+    dataRepo,
+    sourceRepo,
+    dataPrefix: workspace ? `${p.id}/` : '',
+    srcPrefix: sourceInWs ? `${p.id}/source/` : '',
     doc: { ...appCfg.doc, ...p.doc },
     deadline: p.deadline || null,
     advisors: p.advisors || [],
@@ -158,6 +173,11 @@ export function resolveProject(appCfg, projects, projectId) {
     projectId: p.id,
     projectName: p.name,
   });
+}
+
+// Prepend the project's data-repo prefix to a path ('' for legacy → passthrough; '<id>/' for workspace).
+export function dataPath(cfg, path) {
+  return `${(cfg && cfg.dataPrefix) || ''}${path}`;
 }
 
 // Fetch + normalize the projects list from the hub repo. [] with no token / no hubRepo / 404.
@@ -211,8 +231,9 @@ export async function loadChapters(token, fetchImpl) {
   if (!token) return [];
   const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
   if (!f) return [];
-  const { owner, repo } = dataRepoParts(getConfig());
-  const url = `https://api.github.com/repos/${owner}/${repo}/contents/chapters.json?t=${Date.now()}`;
+  const cfg = getConfig();
+  const { owner, repo } = dataRepoParts(cfg);
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${dataPath(cfg, 'chapters.json')}?t=${Date.now()}`;
   let res;
   try {
     res = await f(url, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
