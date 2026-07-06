@@ -10,6 +10,7 @@ import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, 
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=6648fbb';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=6648fbb';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=6648fbb';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan } from './owneradmin.js?v=6648fbb';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=6648fbb';
 import { startWatch as startNetWatch } from './netstatus.js?v=6648fbb';
 startNetWatch();
@@ -1686,6 +1687,18 @@ async function sendJob(type){
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;
   t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2)';
   document.body.appendChild(t); setTimeout(() => t.remove(), 2600); }
+// Like flash, but with an Undo action that stays up longer so an accidental removal is recoverable.
+function undoToast(msg, onUndo){
+  document.getElementById('undo-toast')?.remove();
+  const t = document.createElement('div'); t.id = 'undo-toast';
+  t.style.cssText = 'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--text);color:var(--bg);padding:9px 10px 9px 16px;border-radius:20px;font-size:13px;z-index:60;box-shadow:0 6px 20px rgba(0,0,0,.2);display:flex;align-items:center;gap:10px';
+  const label = document.createElement('span'); label.textContent = msg;
+  const btn = document.createElement('button'); btn.textContent = 'Undo';
+  btn.style.cssText = 'background:none;border:none;color:var(--bg);font:inherit;font-weight:600;text-decoration:underline;cursor:pointer;padding:2px 6px';
+  btn.onclick = () => { t.remove(); onUndo(); };
+  t.append(label, btn); document.body.appendChild(t);
+  setTimeout(() => t.remove(), 8000);
+}
 // ---------- export: chapter / document -> Word · Markdown, with comments ----------
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
@@ -2742,16 +2755,18 @@ async function openReleasePanel(){
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
+    <div id="rel-preflight" style="margin-bottom:22px"></div>
     <div class="rel-sec">Reviewers</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released ${UNIT}s and write only review comments; keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-email" type="email" placeholder="Email (to send the invite)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
       <input id="adv-title" placeholder="Title (optional)" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
-      <button class="btn btn-primary" id="adv-add"><i class="ti ti-user-plus"></i>Add</button>
+      <button class="btn btn-primary" id="adv-add"><i class="ti ti-user-plus"></i>Add &amp; invite</button>
     </div>
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
+    <div id="rel-board"></div>
     <div class="rel-sec">Which ${UNIT}s each reviewer can see</div>
     <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
@@ -3268,29 +3283,41 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     await putJson(t, 'advisors.json', reg, sha, msg);   // sha refetched each call, so no cached advSha to update
     advReg.advisors = reg.advisors;
   };
+  // One-click "invite a reviewer" (Lane D): name (+ optional email) → add to advisors.json → register
+  // in release.json → the push-triggered invite workflow sends the magic-link email. Model A: the link
+  // carries the SHARED access key; there is NO per-reviewer GitHub grant. inviteReadiness (pure, TDD'd)
+  // validates + supplies the exact copy; ensureInvitePipeline self-heals a workspace/legacy repo whose
+  // invite.yml was never seeded so the send actually fires; permissionFromError names any scope gap.
   const addAdvisor = async () => {
     const name = document.getElementById('adv-name').value.trim();
     const email = document.getElementById('adv-email').value.trim();
     const title = document.getElementById('adv-title').value.trim();
     const stat = document.getElementById('adv-stat');
-    if (!name){ stat.textContent = 'Name is required.'; return; }
+    const ready = inviteReadiness({ name, email, emailConfigured: emailConfigured() });
+    if (!ready.ok){ stat.textContent = ready.message; return; }
     const id = `${slugify(name)}-${rand4()}`;
     const entry = { id, name, email, title, added_ts:new Date().toISOString(), invited:false, invited_ts:null, invite_error:null };
-    stat.textContent = 'Saving…';
+    const btn = document.getElementById('adv-add'); if (btn) btn.disabled = true;
+    stat.textContent = ready.willSend ? 'Adding reviewer and queuing their invite…' : 'Adding reviewer…';
     try {
       await mutateAdvisors(reg => reg.advisors.push(entry), `advisors: add ${name}`);
       const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
       relNow[id] = { name, released: [], responses_released: false };
       await putJson(t, 'release.json', relNow, relSha, `release: register ${name}`);
+      // Guarantee invite.yml exists before relying on the push trigger to email them. Idempotent; a
+      // missing workflow/contents scope throws here and is named below instead of silently not sending.
+      if (ready.willSend){ try { await ensureInvitePipeline(DATA_REPO, t); } catch(e){ ready._pipeErr = e; } }
       const link = `<code>${escapeHtml(advisorUrl(id, name))}</code>`;
-      stat.innerHTML = !email
-        ? `Added (no email given — share this portal link yourself): ${link}`
-        : emailConfigured()
-          ? `Added. Invite email will send shortly. Portal: ${link}`
-          : `Added, but email sending isn't set up — <b>no invite was sent</b>. Copy this portal link and send it to them, or set up email invites above: ${link}`;
+      const scope = ready._pipeErr ? permissionFromError(ready._pipeErr.message) : null;
+      stat.innerHTML = scope
+        ? `Added, but the invite couldn’t be queued — your token is missing <b>${escapeHtml(scope)}</b> access. Copy this portal link and send it yourself for now: ${link}`
+        : `${escapeHtml(ready.message)} ${link}`;
       document.getElementById('adv-name').value = document.getElementById('adv-email').value = document.getElementById('adv-title').value = '';
       renderAdvList();
-    } catch(e){ stat.textContent = 'Failed: ' + e.message; }
+    } catch(e){
+      const scope = permissionFromError(e.message);
+      stat.textContent = scope ? `Failed — your token is missing ${scope} access.` : 'Failed: ' + e.message;
+    } finally { if (btn) btn.disabled = false; }
   };
   const resendInvite = async (id) => {
     try { await mutateAdvisors(reg => { const a = reg.advisors.find(x=>x.id===id); if (a){ a.invited=false; a.invited_ts=null; a.invite_error=null; } }, `advisors: resend invite ${id}`);
@@ -3299,21 +3326,84 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   };
   // intentionally high-friction: must type the advisor's exact name. Removes them from the list +
   // release gate (their portal stops showing chapters); their already-submitted comments are kept.
+  // Soft-delete: capture a tombstone (advisor entry + their release gate) so an accidental removal is
+  // recoverable via an undo toast (restoreAdvisorPlan, pure + TDD'd). Non-destructive to comments.
+  const restoreAdvisor = async (tomb) => {
+    try {
+      await mutateAdvisors(reg => { const p = restoreAdvisorPlan(tomb, reg, {}); reg.advisors = p.advisors; }, `advisors: restore ${tomb.advisor.name}`);
+      const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
+      const plan = restoreAdvisorPlan(tomb, { advisors: [] }, relNow || {});
+      await putJson(t, 'release.json', plan.release, relSha, `release: restore ${tomb.advisor.name}`);
+      flash(`Restored ${tomb.advisor.name}.`); openReleasePanel();
+    } catch(e){ flash('Restore failed: ' + e.message); }
+  };
   const removeAdvisor = async (id) => {
     const a = advReg.advisors.find(x => x.id === id); if (!a) return;
     const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their ${UNIT} access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
     if (typed === null) return;
     if (typed.trim() !== a.name.trim()){ flash('Name did not match — reviewer not removed.'); return; }
+    let relEntry = null;
     try {
       await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
       try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
-        if (relNow && relNow[id]){ delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
-      flash(`Removed ${a.name}.`); renderAdvList();
+        if (relNow && relNow[id]){ relEntry = relNow[id]; delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
+      const tomb = { advisor: a, release: relEntry || { name: a.name, released: [], responses_released: false } };
+      undoToast(`Removed ${a.name}.`, () => restoreAdvisor(tomb));
+      renderAdvList();
     } catch(e){ flash('Failed: ' + e.message); }
   };
   document.getElementById('adv-add').onclick = addAdvisor;
   { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
   renderAdvList();
+
+  // ---- Reviewer status board (Lane D feature 3) — per reviewer: units released, comments submitted,
+  // last activity, invite state. Purely from data we already loaded (advReg/rel/inbox/pres); no invented
+  // "opened the link" signal. reviewerStatus is pure + TDD'd.
+  const renderStatusBoard = () => {
+    const box = document.getElementById('rel-board'); if (!box) return;
+    const named = new Set(advReg.advisors.map(a => a.id));
+    const rows = reviewerStatus({ advisors: advReg.advisors, release: rel, inbox, presence: pres });
+    if (!rows.length){ box.innerHTML = ''; return; }
+    const chip = (bg, fg, txt) => `<span class="chip" style="background:var(--${bg});color:var(--${fg})">${txt}</span>`;
+    const inviteChip = s => s === 'invited' ? chip('success-bg','success','invited')
+      : s === 'failed' ? chip('warn-bg','warn','invite failed')
+      : s === 'pending' ? chip('warn-bg','warn','invite pending')
+      : chip('bg-3','text-3','no email');
+    box.innerHTML = `<div class="rel-sec" style="margin-top:22px">Reviewer status</div>
+      <table class="rel-tbl" style="margin-top:2px"><thead><tr>
+        <th style="text-align:left">Reviewer</th><th>${UNITC}s shared</th><th>Comments</th><th>Last active</th><th>Invite</th></tr></thead><tbody>${
+      rows.map(r => `<tr>
+        <td style="text-align:left"><b>${escapeHtml(r.name)}</b>${r.email?`<div style="font-weight:400;font-size:10.5px;color:var(--text-3)">${escapeHtml(r.email)}</div>`:''}</td>
+        <td style="text-align:center">${r.releasedCount}${r.responsesReleased?' <span title="responses released" style="color:var(--success)">✓</span>':''}</td>
+        <td style="text-align:center">${r.commentCount}${r.draftCount?` <span style="color:var(--text-3)" title="unsubmitted drafts">(+${r.draftCount})</span>`:''}</td>
+        <td style="text-align:center;font-size:11.5px;color:var(--text-3)">${r.lastActive?escapeHtml(relTime(r.lastActive)):'—'}</td>
+        <td style="text-align:center">${inviteChip(r.inviteStatus)}</td></tr>`).join('') }</tbody></table>`;
+  };
+  renderStatusBoard();
+
+  // ---- Configuration health check / preflight (Lane D feature 2) — one at-a-glance green/amber panel.
+  // Signals that need a live probe (render-built, token-write) are fetched async; the rest come from
+  // state we already have. healthSignals is pure + TDD'd; each amber row names the exact next step.
+  (async () => {
+    const box = document.getElementById('rel-preflight'); if (!box) return;
+    let renderBuilt = false, tokenCanWrite = null;
+    try { const paths = await ghTree(t); renderBuilt = CHAPTERS.some(c => paths.includes(dpath('content/'+c.id+'.html'))); } catch(e){}
+    try { await checkActionsAccess(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }
+    const anyReleased = Object.keys(rel).some(k => k !== '_comment' && (rel[k].released||[]).length > 0);
+    const signals = healthSignals({
+      keySet: !!advisorKey(), emailConfigured: emailConfigured(),
+      renderBuilt, anyReleased, tokenCanWrite, unitNoun: UNIT,
+    });
+    const greens = signals.filter(s => s.status === 'green').length;
+    const allGreen = greens === signals.length;
+    box.innerHTML = `<div style="border:.5px solid var(--border);border-radius:11px;padding:14px 16px;background:var(--bg-2)">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <i class="ti ti-${allGreen?'circle-check':'alert-triangle'}" style="font-size:16px;color:var(--${allGreen?'success':'warn'})"></i>
+        <b style="font-size:13.5px">${allGreen?'Ready to share with reviewers':`Deploy checklist — ${greens}/${signals.length} ready`}</b></div>
+      ${signals.map(s => `<div style="display:flex;align-items:flex-start;gap:9px;padding:4px 0;font-size:12.5px">
+        <i class="ti ti-${s.status==='green'?'circle-check':'circle'}" style="font-size:14px;margin-top:1px;color:var(--${s.status==='green'?'success':'warn'})"></i>
+        <div><span style="color:var(--text)">${escapeHtml(s.label)}</span>${s.status==='amber'?`<div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${escapeHtml(s.next)}</div>`:''}</div></div>`).join('')}</div>`;
+  })();
   // Notify-me-at: stored in notify_config.json (data repo) — written with the everyday token,
   // read by the notify workflow. No elevated scope needed (unlike Actions variables).
   (async () => {
