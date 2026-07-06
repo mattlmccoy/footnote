@@ -71,6 +71,39 @@ def test_doers_are_registered_but_not_run_by_run_agents():
     assert C.is_runnable("some-legacy-agent", cat) is True
 
 
+# --------------------------------------------------------------- CI vs local execution (B5 seam)
+def test_execution_defaults_to_ci_and_local_is_flagged():
+    cat = C.builtin_catalog()
+    assert C.agent_execution(cat["rigor"]) == "ci"          # every shipped builtin runs in CI
+    assert C.agent_execution({"execution": "local"}) == "local"
+    assert C.agent_execution({}) == "ci"
+
+
+def _with_local(cat):
+    # simulate a user overlay: a local tool-using doer + a local critic (builtin:false)
+    cat = dict(cat)
+    cat["heatr"] = {"id": "heatr", "category": "doer", "execution": "local", "systemPrompt": "p", "builtin": False}
+    cat["adv"] = {"id": "adv", "category": "critic", "execution": "local", "systemPrompt": "p", "builtin": False}
+    return cat
+
+
+def test_ci_runs_read_only_builtins_not_local_agents():
+    cat = _with_local(C.builtin_catalog())
+    assert C.runnable_in_ci("rigor", cat) is True           # read-only builtin critic
+    assert C.runnable_in_ci("writer", cat) is False         # doer never runs in the read-only lane
+    assert C.runnable_in_ci("heatr", cat) is False          # local agent can't run in CI
+    assert C.runnable_in_ci("adv", cat) is False            # even a local critic is CI-excluded
+    assert C.runnable_in_ci("legacy-name", cat) is True     # unknown → legacy CI critic (back-compat)
+
+
+def test_local_runner_runs_local_agents_critic_or_doer():
+    cat = _with_local(C.builtin_catalog())
+    assert C.runnable_local("heatr", cat) is True           # local doer runs on the machine (has tools)
+    assert C.runnable_local("adv", cat) is True             # local critic too
+    assert C.runnable_local("rigor", cat) is False          # a CI builtin is not the local runner's job
+    assert C.runnable_local("legacy-name", cat) is False    # unknown is a CI legacy critic, not local
+
+
 def test_no_builtin_prompt_leaks_domain_specific_terms():
     # document-agnostic hard constraint: no RFAM / dissertation / Matt-specific hardcoding
     banned = ("rfam", "heatr", "dissertation", "phd-dissertation", "overleaf")

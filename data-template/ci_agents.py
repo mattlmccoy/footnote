@@ -431,6 +431,30 @@ def is_runnable(agent_ref, catalog=None):
     return not (entry and entry.get("category") == "doer")
 
 
+def agent_execution(entry):
+    """Where an agent runs: ``"ci"`` (default — the data repo's GitHub Actions, document only) or
+    ``"local"`` (the operator's own machine, with tools + a working directory). Only tool-using /
+    path-bound agents (a user overlay, B4/B5) mark ``execution: "local"``; every shipped builtin is
+    ``"ci"``."""
+    return (entry or {}).get("execution", "ci") if isinstance(entry, dict) else "ci"
+
+
+def runnable_in_ci(agent_ref, catalog=None):
+    """Whether the CI run-agents lane may execute this agent: a runnable (non-doer) agent that is NOT
+    marked ``local``. Unknown/legacy names run in CI (legacy fallback). Local agents are the local
+    runner's job (they need tools CI does not have)."""
+    cat = catalog if catalog is not None else builtin_catalog()
+    return is_runnable(agent_ref, cat) and agent_execution(cat.get(agent_ref)) != "local"
+
+
+def runnable_local(agent_ref, catalog=None):
+    """Whether the LOCAL runner (ci_local) handles this agent: an ``execution: "local"`` catalog entry
+    (critic OR doer — local execution has tools). A CI builtin or an unknown/legacy name is not the
+    local runner's job."""
+    cat = catalog if catalog is not None else builtin_catalog()
+    return agent_execution(cat.get(agent_ref)) == "local"
+
+
 def cap_findings(findings, limit=DEFAULT_MAX_FINDINGS):
     """Truncate one agent's finding list to ``limit`` (Q4 volume guard). Pure; input not mutated."""
     return list(findings or [])[:max(0, limit)]

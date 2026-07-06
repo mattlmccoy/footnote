@@ -384,14 +384,21 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
+            # A job carrying any LOCAL agent (tool-using, machine-bound) belongs to the local runner
+            # (ci_local) — CI can't run it, so leave the whole job queued for the operator's local drain.
+            agents = job.get("agents") or []
+            if any(ci_agents.runnable_local(a, catalog) for a in agents):
+                print(f"[apply] {prefix}{ch}: run-agents has local agent(s) — leaving for the local "
+                      f"runner (ci_local) — skipping", file=sys.stderr)
+                continue
             task = R.build_apply_task(job, review, R.author_source(files))
             # Resolve each selected agent's real system prompt via the catalog (legacy fallback for
             # unknown names). doc.field for the domain critic arrives on the job (client-supplied).
             field = job.get("field") or os.environ.get("DOC_FIELD") or ""
             resolver = agent_fn or (lambda aid, t: run_agent_cli(aid, t, catalog=catalog, field=field))
-            # run-agents is READ-ONLY: skip any catalogued doer (writer/responder/…) so it can't run as
-            # a critic. Unknown/legacy names stay runnable (legacy fallback prompt).
-            selected = [a for a in (job.get("agents") or []) if ci_agents.is_runnable(a, catalog)]
+            # run-agents is READ-ONLY: skip any catalogued doer (writer/responder/…) and any local
+            # agent so it can't run as a CI critic. Unknown/legacy names stay runnable (legacy prompt).
+            selected = [a for a in agents if ci_agents.runnable_in_ci(a, catalog)]
             outputs = {a: (resolver(a, task) or []) for a in selected}
             jid = job.get("id")
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
