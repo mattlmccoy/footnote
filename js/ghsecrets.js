@@ -93,6 +93,23 @@ export async function dispatchInvite(tok, testEmail){
   if (!r.ok) throw new Error('dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
 }
 
+// Build the reading view: fire the render workflow for one project (or all if projectId is falsy).
+// Needs actions:write / workflow scope. Call seed.ensureRenderPipeline first so render.yml exists.
+export async function dispatchRender(tok, projectId){
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/render.yml/dispatches`, {
+    method:'POST', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
+    body: JSON.stringify({ ref:'main', inputs: projectId ? { project: projectId } : {} }) });
+  if (!r.ok) throw new Error('render dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
+}
+
+// Newest render run id/status/conclusion, so the UI can show progress and reload when it finishes.
+export async function renderRun(tok){
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/render.yml/runs?per_page=1`, { headers:hdr(tok), cache:'no-store' });
+  if (!r.ok) throw new Error('render runs ' + r.status);
+  const d = await r.json(); const run = (d.workflow_runs||[])[0];
+  return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
+}
+
 // Newest workflow_dispatch run id/status/conclusion for the invite workflow.
 export async function latestRun(tok){
   const r = await fetch(`${API}/repos/${slug()}/actions/workflows/${inviteWorkflow()}/runs?event=workflow_dispatch&per_page=1`, { headers:hdr(tok), cache:'no-store' });

@@ -35,6 +35,42 @@ export function seedJsonFiles() {
 }
 
 const b64 = s => btoa(unescape(encodeURIComponent(s)));
+const API = 'https://api.github.com';
+
+// The render subset of SEED_FILES — the pipeline that must exist in the data repo for the reading view
+// to build (LaTeX → HTML on the user's own Actions). Seeded on New Project, but ALSO ensured on demand
+// (self-heal) because a first seed can fail (missing workflow scope, transient error, stale bundle) and
+// must be recoverable without re-importing the whole document.
+export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
+  dest.startsWith('export/') || dest === 'ci_render.py' || dest === '.github/workflows/render.yml');
+
+// Ensure the render pipeline exists in the data repo, PUTting ONLY the files that are missing (idempotent —
+// safe to call on every "Build reading view"). Returns { seeded:[], already:[] }. Throws Error('workflow-scope')
+// when GitHub blocks a .github/workflows/ write with 403 — the token lacks the `workflow` scope — so the caller
+// can tell the user exactly how to fix it (regenerate the token via the repo,workflow link) instead of failing
+// silently. Requires a token with write access to the data repo.
+export async function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) throw new Error('no fetch available to build the reading view');
+  const root = (base || (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : './'));
+  const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+  const out = { seeded: [], already: [] };
+  for (const { src, dest } of RENDER_FILES) {
+    const head = await f(`${API}/repos/${dataRepo}/contents/${dest}`, { headers: h });
+    if (head && head.ok) { out.already.push(dest); continue; }        // already present — leave it
+    const res = await f(`${root}data-template/${src}`);
+    if (!res || !res.ok) throw new Error(`couldn’t read template ${src}`);
+    const put = await f(`${API}/repos/${dataRepo}/contents/${dest}`, {
+      method: 'PUT',
+      headers: { ...h, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ message: `seed: render pipeline — ${dest}`, content: b64(await res.text()) }),
+    });
+    if (put && put.ok) { out.seeded.push(dest); continue; }
+    if (put && put.status === 403 && dest.startsWith('.github/workflows/')) throw new Error('workflow-scope');
+    throw new Error(`seed ${dest}: ${put ? put.status : 'no response'}`);
+  }
+  return out;
+}
 
 // Seed a data repo. base is where data-template/ is served from (default the current page). `prefix` (e.g.
 // "<id>/") namespaces the per-project CONFIG (advisors.json etc.) for a consolidated workspace repo, while

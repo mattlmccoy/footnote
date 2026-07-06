@@ -1,7 +1,8 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=55d4584';
 import { anchorFromSelection } from './anchor.js?v=55d4584';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=55d4584';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=55d4584';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=55d4584';
+import { ensureRenderPipeline } from './seed.js?v=55d4584';
 import { sealToBase64 } from './vendor/seal.js?v=55d4584';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=55d4584';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=55d4584';
@@ -276,7 +277,11 @@ async function loadChapter(ch){
     if (/\b404\b/.test(e.message)){   // source is imported but this unit's reading HTML hasn't been built yet
       read.innerHTML = `<div class="empty"><i class="ti ti-file-code" style="font-size:24px;color:var(--text-3)"></i>
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reading view not built yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">Your LaTeX source is in place, but Footnote hasn't rendered ${escapeHtml(UNIT)} ${chMeta(ch).n} to readable HTML yet. That build step (LaTeX → HTML) is coming — your comments and structure are safe in the meantime.</div></div>`;
+        <div style="font-size:13px;line-height:1.6;max-width:440px;margin:0 auto 14px">Your LaTeX source is in place. Build it to a clean reading view — this runs on your own GitHub Actions and takes a couple of minutes.</div>
+        <button class="btn btn-primary" id="buildrv">Build reading view</button>
+        <div id="buildrv-status" style="font-size:12.5px;color:var(--text-3);margin-top:12px;line-height:1.6;max-width:440px;margin-left:auto;margin-right:auto"></div></div>`;
+      const build = document.getElementById('buildrv');
+      if (build) build.onclick = () => buildReadingView(build, ch);
       return; }
     read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(UNIT)} ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
 }
@@ -286,6 +291,45 @@ function renderConnect(){
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read) — stored only in this browser.</div>
     <button class="btn" id="connect">Add access token</button></div>`;
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
+}
+
+// Self-heal + build: ensure the render pipeline exists in the data repo (idempotent — recovers a project
+// whose first seed failed), fire the render workflow for this project, poll it, and load the result. On a
+// missing workflow scope it tells the user exactly how to fix their token instead of failing silently.
+async function buildReadingView(btn, ch){
+  const t = tok(); if (!t){ renderConnect(); return; }
+  const st = document.getElementById('buildrv-status');
+  const say = m => { if (st) st.textContent = m; };
+  const wait = ms => new Promise(r => setTimeout(r, ms));
+  btn.disabled = true;
+  try {
+    say('Setting up the build pipeline on your repo…');
+    const res = await ensureRenderPipeline(DATA_REPO, t);
+    if (res.seeded.includes('.github/workflows/render.yml')) await wait(4000);   // let GitHub register the new workflow
+    say('Starting the build…');
+    let dispatched = false;
+    for (let a = 0; a < 3 && !dispatched; a++){
+      try { await dispatchRender(t, _projectId); dispatched = true; }
+      catch (err){ if (a === 2) throw err; await wait(3000); }                    // workflow may still be registering
+    }
+    say('Building your reading view — this takes a couple of minutes…');
+    let ok = false;
+    for (let i = 0; i < 48; i++){                                                 // up to ~4 min
+      await wait(5000);
+      const run = await renderRun(t).catch(() => null);
+      if (run && run.status === 'completed'){ ok = run.conclusion === 'success'; break; }
+      if (run && run.status) say(`Building… (${run.status})`);
+    }
+    if (ok){ say('Done — loading your reading view…'); loadChapter(ch); }
+    else say('The build finished but didn’t succeed. Open the Actions tab on your data repo to see why, then try again.');
+  } catch (e){
+    btn.disabled = false;
+    if (/workflow-scope/.test(e.message)){
+      st.innerHTML = `Your token is missing the <b>workflow</b> permission, so Footnote can’t set up the build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then try again.`;
+    } else {
+      say('Couldn’t build the reading view: ' + e.message);
+    }
+  }
 }
 
 function renderDoc(fragment){
