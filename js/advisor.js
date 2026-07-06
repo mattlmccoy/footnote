@@ -6,6 +6,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=803cf70';
 import { wordDiff } from './textdiff.js?v=803cf70';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=803cf70';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=803cf70';   // magic-link: key in the invite URL
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=803cf70';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { startWatch as startNetWatch } from './netstatus.js?v=803cf70';
 startNetWatch();
 
