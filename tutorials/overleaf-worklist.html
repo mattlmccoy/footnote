@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footnote — Take feedback back to Overleaf</title>
+<link rel="icon" type="image/svg+xml" href="../brand/footnote-mark.svg">
+<style>
+:root{
+  --accent:#2c64c4; --accent-2:#4f86e0; --ink:#1f1e1c; --ink-2:#605e58; --ink-3:#8f8d84;
+  --card:#ffffff; --line:rgba(0,0,0,.09); --box:#f4f6f8; --ok:#0f6e56; --ok-bg:#e1f5ee;
+  --warn:#8a5a00; --warn-bg:#fbf1d9; --warn-line:#e7cf93;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1200px 700px at 50% -10%,#20264a 0%,#141830 45%,#0c0f1e 100%);
+  color:var(--ink);min-height:100%;display:flex;align-items:center;justify-content:center;padding:26px 20px}
+.wrap{width:1000px;max-width:96vw;height:min(680px,88vh);background:var(--card);color:var(--ink);
+  border-radius:18px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 40px 120px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04)}
+.tb{height:56px;flex:0 0 56px;display:flex;align-items:center;gap:11px;padding:0 20px;border-bottom:1px solid var(--line);background:#fafafa}
+.tb .logo{width:24px;height:24px;border-radius:7px}.tb .brand{font-weight:600;font-size:16px}.tb .ctx{font-size:13px;color:var(--ink-2)}
+.tb .learn{margin-left:auto;font-size:12.5px;color:var(--accent);text-decoration:none;display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:6px 11px;background:#fff;transition:.15s}
+.tb .learn:hover{background:#eaf1fb}
+.tb .prog{font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums;margin-left:14px}
+#bar{height:3px;background:var(--accent);width:0;transition:width .4s cubic-bezier(.2,.7,.2,1);box-shadow:0 0 12px var(--accent)}
+.main{flex:1;display:flex;min-height:0}
+.rail{width:250px;flex:0 0 250px;border-right:1px solid var(--line);background:#fcfcfb;padding:18px 12px;overflow-y:auto}
+.rail .rh{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin:4px 8px 12px}
+.st{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:9px;margin-bottom:2px;cursor:pointer;transition:.15s;color:var(--ink-2)}
+.st:hover{background:#f1f3f6}.st.on{background:#eaf1fb;color:var(--ink);font-weight:600}
+.st .num{width:22px;height:22px;flex:0 0 22px;border-radius:50%;border:1.5px solid var(--ink-3);display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--ink-3);background:#fff;transition:.15s}
+.st.on .num{border-color:var(--accent);background:var(--accent);color:#fff}
+.st.done .num{border-color:var(--ok);background:var(--ok);color:#fff}
+.st.done .num span{display:none}.st.done .num::after{content:"✓";font-size:12px}
+.st .lb{font-size:13px;line-height:1.25}
+.content{flex:1;display:flex;flex-direction:column;min-height:0}
+.scroll{flex:1;overflow-y:auto;padding:30px 40px 20px}
+.eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:9px}
+h1{font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.2;margin-bottom:8px}
+.lead{font-size:15px;color:var(--ink-2);line-height:1.6;margin-bottom:22px;max-width:60ch}
+h2{font-size:14px;font-weight:600;margin:22px 0 10px}
+p{font-size:14px;line-height:1.68;color:#33322e;margin-bottom:12px;max-width:64ch}
+ul{margin:0 0 14px 20px}li{font-size:14px;line-height:1.7;color:#33322e;margin-bottom:7px;max-width:62ch}
+b{font-weight:600;color:var(--ink)}
+code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:12.5px;background:var(--box);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink)}
+.acts{list-style:none;margin:6px 0 8px;padding:0;counter-reset:a}
+.acts>li{position:relative;padding:2px 0 14px 40px;margin:0;counter-increment:a;max-width:64ch}
+.acts>li::before{content:counter(a);position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;background:#eaf1fb;color:var(--accent);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.acts>li:not(:last-child)::after{content:"";position:absolute;left:13px;top:28px;bottom:2px;width:1.5px;background:var(--line)}
+.note{border-radius:11px;padding:12px 15px;margin:14px 0;font-size:13px;line-height:1.6;display:flex;gap:11px;align-items:flex-start;max-width:64ch}
+.note .ic{flex:0 0 auto;font-size:15px;line-height:1.4}
+.note.info{background:#eef4fd;border:1px solid #cfe0f9;color:#2a3b57}
+.note.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn)}
+.note.ok{background:var(--ok-bg);border:1px solid #bfe6d6;color:#0d5b46}
+.note b{color:inherit}
+/* worklist mockup */
+.wl{border:1px solid var(--line);border-radius:12px;background:#fff;box-shadow:0 12px 30px -18px rgba(0,0,0,.3);padding:16px;margin:16px 0;max-width:64ch;font-size:13px}
+.wl .wh{font:600 12.5px ui-monospace,Menlo,monospace;color:var(--ink-2);display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.wl .item{border-top:1px solid var(--line);padding:11px 0 4px;line-height:1.7;color:var(--ink-2)}
+.wl .who{color:var(--ink);font-weight:500}
+.wl .chip{background:var(--box);border:1px solid var(--line);color:var(--ink);border-radius:5px;padding:2px 7px;font-family:ui-monospace,Menlo,monospace;font-size:12px}
+.wl .ba{color:var(--ink)}.wl .del{color:#a3312c;text-decoration:line-through}.wl .ins{color:var(--ok)}
+.foot{flex:0 0 auto;border-top:1px solid var(--line);padding:14px 40px;display:flex;align-items:center;gap:12px;background:#fafafa}
+.nav{font-size:13.5px;font-weight:500;border:1px solid var(--line);border-radius:9px;padding:9px 18px;background:#fff;color:var(--ink);cursor:pointer;transition:.15s}
+.nav:hover{background:#f1f3f6}.nav:disabled{opacity:.4;cursor:not-allowed}
+.nav.p{background:var(--accent);color:#fff;border-color:var(--accent)}.nav.p:hover{background:#2757ab}
+.foot .sp{margin-left:auto}.foot .hint{font-size:12px;color:var(--ink-3)}
+@media(max-width:720px){body{padding:0}.wrap{height:100vh;max-width:100vw;border-radius:0}.rail{display:none}.scroll{padding:22px 20px}.foot{padding:12px 20px}h1{font-size:22px}.tb .ctx,.tb .prog{display:none}}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="tb">
+      <img class="logo" src="../brand/footnote-mark.svg" alt="">
+      <span class="brand">Footnote</span><span class="ctx">· Guide</span>
+      <a class="learn" href="index.html"><i class="ti ti-arrow-left" style="font-size:14px"></i>All guides</a>
+      <span class="prog" id="prog"></span>
+    </div>
+    <div id="bar"></div>
+    <div class="main">
+      <nav class="rail"><div class="rh">Steps</div><div id="steps"></div></nav>
+      <div class="content">
+        <div class="scroll" id="scroll"></div>
+        <div class="foot">
+          <button class="nav" id="back">← Back</button>
+          <button class="nav p" id="next">Next →</button>
+          <span class="sp"></span><span class="hint" id="hint"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+const STEPS = [
+{ nav:'Overview', eyebrow:'Back to Overleaf', title:'Review in Footnote, edit in Overleaf',
+  body:`
+  <p class="lead">You gather and resolve comments in Footnote, but you write in Overleaf. The <b>Take to Overleaf</b> worklist bridges the two: it turns every open comment into a checklist you clear in Overleaf in minutes.</p>
+  <h2>Why it works with zero setup</h2>
+  <p>Each item quotes the exact text to search for, so you find the spot in Overleaf instantly — no SyncTeX, no line numbers, no plugins. The quoted text is the locator.</p>
+  <div class="note info"><span class="ic">◆</span><div>You never have to hunt through comments and your document side by side. The worklist is grouped by source <code>.tex</code> file and ordered so you can work top to bottom.</div></div>` },
+
+{ nav:'Open the worklist', eyebrow:'Step 1', title:'Open “Take to Overleaf”',
+  body:`
+  <p class="lead">When you're ready to act on feedback, generate the worklist from your project.</p>
+  <ol class="acts">
+    <li>In the owner portal, click <b>Take to Overleaf</b>.</li>
+    <li>Footnote collects every <b>open</b> comment and suggested edit and groups them by the <code>.tex</code> file they belong to.</li>
+  </ol>
+  <div class="note info"><span class="ic">◆</span><div>Resolved and declined comments are left out — the worklist is only what still needs doing.</div></div>` },
+
+{ nav:'Read an item', eyebrow:'Step 2', title:'Read a worklist item',
+  body:`
+  <p class="lead">Every item gives you three things: where to look, what the reviewer said, and (for suggested edits) the exact wording to use.</p>
+  <div class="wl">
+    <div class="wh"><i class="ti ti-file-text"></i> chapters/results.tex · 2 open</div>
+    <div class="item"><span class="who">§3.2 · Charles Babbage</span><br><span class="chip">search: "contrast was pronounced"</span><br><span class="ba">before <span class="del">pronounced</span> → after <span class="ins">measurable</span></span></div>
+    <div class="item"><span class="who">§3.4 · You</span><br><span class="chip">search: "the densification front"</span><br>Add a citation for the densification model.</div>
+  </div>
+  <ul>
+    <li><b>Search string</b> — paste it into Overleaf's find to jump straight to the spot.</li>
+    <li><b>Before → after</b> — for suggested edits, the literal old and new wording.</li>
+    <li><b>Comment</b> — the reviewer's note, when there's no specific edit.</li>
+  </ul>
+  <div class="note info"><span class="ic">◆</span><div>Copy the whole list as <b>Markdown</b>, download it as a <code>.md</code> checklist, or print it — then tick items off as you go.</div></div>` },
+
+{ nav:'Apply in Overleaf', eyebrow:'Step 3', title:'Clear each item in Overleaf',
+  body:`
+  <p class="lead">Now it's just find-and-fix in your editor.</p>
+  <ol class="acts">
+    <li>In Overleaf, open <b>Find</b> (<code>Ctrl/Cmd + F</code>) and paste the item's <b>search string</b>.</li>
+    <li>Make the edit — apply the suggested <b>after</b> wording, or address the comment in your own words.</li>
+    <li>Tick the item off your list and move to the next.</li>
+  </ol>
+  <div class="note ok"><span class="ic">✓</span><div>Because the locator is quoted text, it keeps working even after the document has shifted around — no stale line numbers.</div></div>` },
+
+{ nav:'Push back', eyebrow:'Step 4', title:'Push your edits back to GitHub',
+  body:`
+  <p class="lead">One last step closes the loop so reviewers see your updated text.</p>
+  <ol class="acts">
+    <li><b>Overleaf premium:</b> open <b>Menu → Integrations → GitHub</b> and click <b>Push Overleaf changes to GitHub</b>.</li>
+    <li><b>Free plan:</b> re-download the source (<b>Menu → Download → Source</b>) and push/upload it to your GitHub repo, or re-upload it in Footnote.</li>
+    <li>Re-import in Footnote to refresh the reading surface. Reviewers' existing comments stay put; your new text shows up.</li>
+  </ol>
+  <div class="note ok"><span class="ic">✓</span><div>That's the full cycle — comment in Footnote, clear the worklist in Overleaf, push back, repeat. See also <b><a href="export.html" style="color:inherit">Export your document with comments →</a></b></div></div>` },
+];
+
+const scroll=document.getElementById('scroll'),stepsEl=document.getElementById('steps'),backB=document.getElementById('back'),nextB=document.getElementById('next'),bar=document.getElementById('bar'),progEl=document.getElementById('prog'),hintEl=document.getElementById('hint');
+const KEY='footnote-guide-worklist'; let seen=new Set(JSON.parse(localStorage.getItem(KEY)||'[]')); let i=0;
+STEPS.forEach((s,n)=>{const el=document.createElement('div');el.className='st';el.innerHTML=`<span class="num"><span>${n+1}</span></span><span class="lb">${s.nav}</span>`;el.onclick=()=>go(n);stepsEl.appendChild(el);});
+function paintRail(){[...stepsEl.children].forEach((el,n)=>{el.classList.toggle('on',n===i);el.classList.toggle('done',n!==i&&seen.has(n));});}
+function render(){const s=STEPS[i];scroll.innerHTML=`<div class="eyebrow">${s.eyebrow}</div><h1>${s.title}</h1>${s.body}`;scroll.scrollTop=0;bar.style.width=((i+1)/STEPS.length*100)+'%';progEl.textContent=`Step ${i+1} of ${STEPS.length}`;backB.disabled=i===0;nextB.textContent=i===STEPS.length-1?'Done ✓':'Next →';hintEl.textContent=i===STEPS.length-1?'Revisit anytime from All guides.':'';paintRail();}
+function go(n){seen.add(i);localStorage.setItem(KEY,JSON.stringify([...seen]));i=Math.max(0,Math.min(STEPS.length-1,n));render();}
+backB.onclick=()=>go(i-1);
+nextB.onclick=()=>{if(i<STEPS.length-1)go(i+1);else{seen.add(i);localStorage.setItem(KEY,JSON.stringify([...seen]));paintRail();}};
+document.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA')return;if(e.key==='ArrowRight')nextB.click();if(e.key==='ArrowLeft'&&i>0)go(i-1);});
+render();
+</script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+</body>
+</html>

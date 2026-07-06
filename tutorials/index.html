@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footnote — Learn</title>
+<link rel="icon" type="image/svg+xml" href="../brand/footnote-mark.svg">
+<style>
+:root{
+  --accent:#2c64c4; --accent-2:#4f86e0; --ink:#eef1f8; --ink-2:#aeb6d6; --ink-3:#7f88ad;
+  --card:#171c33; --card-2:#1c2340; --line:rgba(255,255,255,.10); --ok:#3ecf8e;
+  --ol:#138a07; --gh:#e7ecf3;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%}
+body{
+  font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1200px 700px at 50% -10%,#20264a 0%,#141830 45%,#0c0f1e 100%);
+  color:var(--ink);min-height:100vh;padding:0 22px 64px;
+}
+.wrap{max-width:960px;margin:0 auto}
+
+/* top bar */
+.top{display:flex;align-items:center;gap:11px;padding:22px 2px 0}
+.top .logo{width:26px;height:26px;border-radius:7px}
+.top .brand{font-weight:600;font-size:16px}
+.top .ctx{font-size:13px;color:var(--ink-3)}
+.top .back{margin-left:auto;font-size:13px;color:var(--ink-2);text-decoration:none;border:1px solid var(--line);border-radius:9px;padding:8px 14px;transition:.15s;display:inline-flex;align-items:center;gap:7px}
+.top .back:hover{background:rgba(255,255,255,.06);color:#fff}
+
+/* hero */
+.hero{padding:52px 2px 34px;max-width:680px}
+.hero .eyebrow{font-size:12px;letter-spacing:.2em;text-transform:uppercase;color:var(--accent-2);font-weight:600;margin-bottom:14px}
+.hero h1{font-size:44px;font-weight:600;letter-spacing:-1.2px;line-height:1.08}
+.hero p{font-size:17px;color:var(--ink-2);line-height:1.6;margin-top:14px}
+
+/* section */
+.sec{margin-top:14px}
+.sec-h{font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);font-weight:600;margin:30px 2px 14px;display:flex;align-items:center;gap:10px}
+.sec-h::after{content:"";flex:1;height:1px;background:var(--line)}
+
+/* card grid */
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.grid.feat{grid-template-columns:1fr 1fr}
+.card{display:flex;flex-direction:column;gap:0;background:linear-gradient(180deg,var(--card) 0%,var(--card-2) 100%);
+  border:1px solid var(--line);border-radius:16px;padding:22px 22px 20px;text-decoration:none;color:inherit;
+  transition:transform .18s cubic-bezier(.2,.7,.2,1),border-color .18s,box-shadow .18s;position:relative;overflow:hidden}
+.card:hover{transform:translateY(-3px);border-color:rgba(79,134,224,.5);box-shadow:0 24px 60px -26px rgba(44,100,196,.6)}
+.card .ic{width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+.card .ic svg{width:46px;height:46px;border-radius:12px}
+.card .ic.blue{background:rgba(44,100,196,.16)}
+.card .ic.blue i{color:var(--accent-2)}
+.card i.big{font-size:24px}
+.card .t{font-size:18px;font-weight:600;letter-spacing:-.3px}
+.card .d{font-size:13.5px;color:var(--ink-2);line-height:1.55;margin-top:7px;flex:1}
+.card .meta{display:flex;align-items:center;gap:8px;margin-top:16px;font-size:11.5px;color:var(--ink-3)}
+.card .tag{background:rgba(255,255,255,.06);border:1px solid var(--line);border-radius:20px;padding:3px 10px;font-weight:500;letter-spacing:.02em}
+.card .go{margin-left:auto;color:var(--accent-2);font-weight:600;font-size:13px;transition:transform .18s}
+.card:hover .go{transform:translateX(3px)}
+
+/* feature (start-here) cards are a touch bigger */
+.card.big{padding:26px}
+.card.big .t{font-size:21px}
+.card.big .d{font-size:14.5px}
+
+.foot{margin-top:44px;padding-top:22px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3);text-align:center;line-height:1.7}
+.foot a{color:var(--ink-2);text-decoration:none;border-bottom:1px solid var(--line)}
+.foot a:hover{color:#fff}
+
+@media(max-width:680px){
+  .grid,.grid.feat{grid-template-columns:1fr}
+  .hero{padding:38px 2px 26px}
+  .hero h1{font-size:34px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <img class="logo" src="../brand/footnote-mark.svg" alt="">
+    <span class="brand">Footnote</span><span class="ctx">· Learn</span>
+    <a class="back" href="#" id="back"><i class="ti ti-arrow-left" style="font-size:15px"></i>Back to app</a>
+  </div>
+
+  <div class="hero">
+    <div class="eyebrow">Learn Footnote</div>
+    <h1>Guides for running a review.</h1>
+    <p>Short, practical walkthroughs — from wiring up Overleaf and GitHub to clearing reviewer feedback and exporting. Start with the tour, then dip into whatever you need.</p>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">Start here</div>
+    <div class="grid feat" id="start"></div>
+  </div>
+
+  <div class="sec">
+    <div class="sec-h">Guides</div>
+    <div class="grid" id="guides"></div>
+  </div>
+
+  <div class="foot">
+    Everything runs on your own GitHub — no server, no AI required.<br>
+    New to Footnote? Begin with the <a href="setup.html">setup guide</a> or watch the <a href="walkthrough.html">90-second walkthrough</a>.
+  </div>
+</div>
+
+<!-- Tabler icons: loaded if available (in-app pages already ship it); cards degrade to the emoji fallback otherwise -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.7.0/dist/tabler-icons.min.css">
+<script>
+const OVERLEAF = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="12" fill="#138a07"/><path d="M13 13h13M13 20h20M13 27h13M13 33h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+const MARK = `<svg viewBox="0 0 52 52"><rect x="0" y="0" width="52" height="52" rx="12" fill="#2c64c4"/><line x1="18" y1="13" x2="18" y2="39" stroke="#fff" stroke-width="3.2" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3.2" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3.2" stroke-linecap="round" opacity=".5"/><circle cx="18" cy="26" r="4.8" fill="#fff"/></svg>`;
+
+const START = [
+  { href:'walkthrough.html', svg:MARK, t:'Product walkthrough', d:'See the whole review workflow end to end — read, comment, resolve, and take feedback back to Overleaf.', tag:'Watch', time:'90 sec' },
+  { href:'setup.html', svg:OVERLEAF, t:'Set up Overleaf + GitHub', d:'Wire your three tools together, once. Covers the premium GitHub sync and the free fallbacks.', tag:'Setup', time:'~10 min' },
+];
+const GUIDES = [
+  { href:'invite-reviewers.html', icon:'ti-user-plus', t:'Invite reviewers & release chapters', d:'Add reviewers by email, then choose which chapters each one sees — on your own schedule.', tag:'How-to' },
+  { href:'overleaf-worklist.html', icon:'ti-list-check', t:'Take feedback back to Overleaf', d:'Turn every open comment into a worklist with exact search strings and before → after edits.', tag:'How-to' },
+  { href:'export.html', icon:'ti-file-export', t:'Export your document with comments', d:'Download the document as Word or Markdown, and share exactly how you addressed each comment.', tag:'How-to' },
+];
+
+function startCard(c){
+  return `<a class="card big" href="${c.href}">
+    <div class="ic">${c.svg}</div>
+    <div class="t">${c.t}</div>
+    <div class="d">${c.d}</div>
+    <div class="meta"><span class="tag">${c.tag}</span><span>${c.time}</span><span class="go">Open →</span></div>
+  </a>`;
+}
+function guideCard(c){
+  return `<a class="card" href="${c.href}">
+    <div class="ic blue"><i class="ti ${c.icon} big"></i></div>
+    <div class="t">${c.t}</div>
+    <div class="d">${c.d}</div>
+    <div class="meta"><span class="tag">${c.tag}</span><span class="go">Open →</span></div>
+  </a>`;
+}
+document.getElementById('start').innerHTML = START.map(startCard).join('');
+document.getElementById('guides').innerHTML = GUIDES.map(guideCard).join('');
+
+// "Back to app": prefer real history, else fall back to the launcher.
+document.getElementById('back').addEventListener('click', e => {
+  e.preventDefault();
+  if (document.referrer && new URL(document.referrer).origin === location.origin) history.back();
+  else location.href = '../index.html';
+});
+</script>
+</body>
+</html>
