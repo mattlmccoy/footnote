@@ -90,6 +90,23 @@ def test_process_prefix_runs_local_job_writes_comments_and_removes_job(tmp_path,
     assert json.loads((tmp_path / "jobs.json").read_text()) == []       # job removed after handling
 
 
+def test_process_prefix_handles_an_author_agent_job(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    import json
+    (tmp_path / "agents.json").write_text(json.dumps([{"id": "rigor", "builtin": True}]), encoding="utf-8")
+    (tmp_path / "jobs.json").write_text(json.dumps([
+        {"id": "jA", "type": "author-agent", "name": "Jargon Buster", "brief": "flag undefined jargon"},
+    ]), encoding="utf-8")
+    gen = lambda j: {"displayName": j["name"], "category": "critic", "execution": "ci",
+                     "systemPrompt": "flag " + j["brief"], "tools": []}
+    n = L.process_prefix("", C.builtin_catalog(), agent_fn=lambda a, t: [], generate_fn=gen)
+    assert n == 1
+    agents = json.loads((tmp_path / "agents.json").read_text())
+    entry = next(a for a in agents if a["id"] == "jargon-buster")
+    assert entry["status"] == "draft" and entry["builtin"] is False and entry["source"] == "authored"
+    assert json.loads((tmp_path / "jobs.json").read_text()) == []       # job removed
+
+
 def test_process_prefix_leaves_a_pure_ci_job_untouched(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "reviews").mkdir()

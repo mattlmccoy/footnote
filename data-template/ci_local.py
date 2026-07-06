@@ -28,6 +28,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_review_common as R  # noqa: E402
 import ci_agents  # noqa: E402
+import ci_authoring  # noqa: E402
 
 
 def _now_iso():
@@ -102,19 +103,43 @@ def _write_json(path, obj):
         json.dump(obj, f, indent=2, ensure_ascii=False)
 
 
-def process_prefix(prefix, catalog, agent_fn=None):
-    """Drain the LOCAL run-agents work for one project prefix against the working tree: for each
-    run-agents job that carries a local agent, run its local agents, write the review back, and remove
-    the job from the queue. A job with only CI agents is left untouched for the CI drain. Returns the
-    number of jobs handled. ``agent_fn`` is the injectable local-Claude boundary (default: the live
-    tool-enabled CLI)."""
+def run_author_local_cli(job):
+    """Generate an agent definition locally from the owner's brief (the live Claude boundary for the
+    author-agent job). Returns the raw generated definition (str) or None."""
+    import ci_apply  # lazy — reuse the shared headless-Claude runner
+    return ci_apply._run_claude(ci_authoring.AUTHOR_DIRECTIVE, ci_authoring.author_context(job),
+                                None, "author-agent")
+
+
+def process_prefix(prefix, catalog, agent_fn=None, generate_fn=None):
+    """Drain the LOCAL run-agents + author-agent work for one project prefix against the working tree.
+
+    run-agents: for each job that carries a local agent, run its local agents, write the review back,
+    remove the job (a job with only CI agents is left for the CI drain). author-agent: generate the
+    described agent, merge it into agents.json as a DRAFT, remove the job. Returns the number of jobs
+    handled. ``agent_fn`` / ``generate_fn`` are the injectable Claude boundaries."""
     if agent_fn is None:
         agent_fn = lambda aid, task, c=catalog: run_local_agent_cli(aid, task, catalog=c)
+    if generate_fn is None:
+        generate_fn = run_author_local_cli
     jobs = R.load_json(R.jobs_path(prefix), [])
     if not isinstance(jobs, list):
         return 0
     done = 0
-    for job in [j for j in jobs if j.get("type") == "run-agents"]:
+    for job in [j for j in jobs if j.get("type") in ("run-agents", "author-agent")]:
+        if job.get("type") == "author-agent":
+            agents_list = R.load_json("agents.json", [])
+            if not isinstance(agents_list, list):
+                agents_list = []
+            new_list, entry, err = ci_authoring.author_agent(job, agents_list, generate_fn)
+            if entry is not None:
+                _write_json("agents.json", new_list)
+                print(f"[local] authored draft '{entry['id']}' — review it in Settings before it runs")
+            else:
+                print(f"[local] author-agent failed: {err}", file=sys.stderr)
+            jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
         agents = job.get("agents") or []
         if not any(ci_agents.runnable_local(a, catalog) for a in agents):
             continue                                        # no local agent — CI's job, leave it

@@ -421,14 +421,28 @@ def default_on_ids(catalog=None):
     return [i for i, a in cat.items() if a.get("defaultOn")]
 
 
+def agent_status(entry):
+    """An agent's lifecycle status: ``"active"`` (default — runnable) or ``"draft"`` (a user-authored
+    agent awaiting the owner's review; never runs). Missing status = active, so builtins and the
+    existing personal overlay are unaffected."""
+    return (entry or {}).get("status", "active") if isinstance(entry, dict) else "active"
+
+
+def is_active(entry):
+    """True unless the entry is an unapproved draft (B4 review gate)."""
+    return agent_status(entry) == "active"
+
+
 def is_runnable(agent_ref, catalog=None):
     """Whether run-agents may execute this agent. B1's run-agents lane is READ-ONLY (agents only add
     comments), so a catalogued ``doer`` (writer, responder, …) must NOT run as if it were a critic —
-    it acts through the editing lanes in later slices. An unknown/legacy name stays runnable (it falls
-    back to the legacy critic prompt), preserving back-compat."""
+    it acts through the editing lanes. A draft (B4) never runs until approved. An unknown/legacy name
+    stays runnable (it falls back to the legacy critic prompt), preserving back-compat."""
     cat = catalog if catalog is not None else builtin_catalog()
     entry = cat.get(agent_ref)
-    return not (entry and entry.get("category") == "doer")
+    if entry and entry.get("category") == "doer":
+        return False
+    return is_active(entry)
 
 
 def agent_execution(entry):
@@ -448,11 +462,12 @@ def runnable_in_ci(agent_ref, catalog=None):
 
 
 def runnable_local(agent_ref, catalog=None):
-    """Whether the LOCAL runner (ci_local) handles this agent: an ``execution: "local"`` catalog entry
-    (critic OR doer — local execution has tools). A CI builtin or an unknown/legacy name is not the
-    local runner's job."""
+    """Whether the LOCAL runner (ci_local) handles this agent: an active ``execution: "local"`` catalog
+    entry (critic OR doer — local execution has tools). A CI builtin, an unknown/legacy name, or an
+    unapproved draft is not the local runner's job."""
     cat = catalog if catalog is not None else builtin_catalog()
-    return agent_execution(cat.get(agent_ref)) == "local"
+    entry = cat.get(agent_ref)
+    return agent_execution(entry) == "local" and is_active(entry)
 
 
 def cap_findings(findings, limit=DEFAULT_MAX_FINDINGS):

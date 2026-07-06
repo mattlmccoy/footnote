@@ -36,6 +36,7 @@ test('SEED_FILES includes the agent catalog (engine module + JSON mirror for the
   assert.equal(byDest['ci_agents.py'], 'ci_agents.py');   // the engine catalog + resolver
   assert.equal(byDest['agents.json'], 'agents.json');     // the seeded mirror (client display + B4 user agents)
   assert.equal(byDest['ci_local.py'], 'ci_local.py');     // the B5 local runner (execution:"local" agents)
+  assert.equal(byDest['ci_authoring.py'], 'ci_authoring.py'); // the B4 authoring engine (describe → draft)
 });
 
 test('seedJsonFiles returns the initial config files (empty/honest)', () => {
@@ -126,6 +127,7 @@ test('APPLY_FILES is the apply-engine subset (ci_review_common, ci_apply, apply.
   assert.ok(dests.includes('ci_agents.py'));            // resolver must exist for run-agents to carry real prompts
   assert.ok(dests.includes('agents.json'));             // the catalog the engine reads for user agents
   assert.ok(dests.includes('ci_local.py'));             // the local runner for execution:"local" agents
+  assert.ok(dests.includes('ci_authoring.py'));         // the authoring engine (user-described agents)
   assert.ok(dests.includes('.github/workflows/apply.yml'));
   // repo-level engine only — NOT the render or invite/notify CI
   assert.ok(!dests.includes('.github/workflows/render.yml'));

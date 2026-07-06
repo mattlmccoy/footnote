@@ -39,6 +39,9 @@ export const SEED_FILES = [
   // machine-bound user agents) on the operator's own machine instead of CI. Generic + document-
   // agnostic; the operator runs it locally (`python ci_local.py`). Shipped so it's available in-repo.
   { src: 'ci_local.py',            dest: 'ci_local.py' },
+  // B4 — user-authored agents: the engine turns an owner's plain-language brief into a draft agent
+  // in agents.json (reviewed before it runs). Used by both ci_apply (CI) and ci_local (local).
+  { src: 'ci_authoring.py',        dest: 'ci_authoring.py' },
 ];
 
 // Initial config files created fresh (honest empty state — email_configured stays false until a real send).
@@ -67,7 +70,8 @@ export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
 // first seed failed — gets it once, WITHOUT re-importing. Repo-level, so one seal covers every paper.
 export const APPLY_FILES = SEED_FILES.filter(({ dest }) =>
   dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === 'ci_agents.py' ||
-  dest === 'agents.json' || dest === 'ci_local.py' || dest === '.github/workflows/apply.yml');
+  dest === 'agents.json' || dest === 'ci_local.py' || dest === 'ci_authoring.py' ||
+  dest === '.github/workflows/apply.yml');
 
 // The email/invite pipeline subset: the invite + notify CI and their workflows. A workspace data repo
 // seeded render-only has render.yml but not invite.yml, so the email wizard 404s on the invite workflow
