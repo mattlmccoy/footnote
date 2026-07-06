@@ -228,3 +228,12 @@ def test_notify_advisors_honors_reviewer_released_off(_ws, monkeypatch):
     _w("metro/advisor/A/prefs.json", {"email": {"released": False}})   # reviewer opted out
     NAd.main()
     assert sent == []           # reviewer turned chapter-released emails off
+
+
+def test_portal_url_embeds_key_as_magic_link():
+    # the invite email's link carries the access key so the reviewer just clicks — no paste
+    url = ci_invite.portal_url("https://x/", {"id": "CJS", "name": "C"}, "metro/", key="ghp_abc")
+    assert "&k=ghp_abc" in url
+    assert "&p=metro" in url
+    # no key passed → no k param leaks
+    assert "&k=" not in ci_invite.portal_url("https://x/", {"id": "CJS"}, "")

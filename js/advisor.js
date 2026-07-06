@@ -5,6 +5,7 @@ import { anchorFromSelection } from './anchor.js?v=b1dc822';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=b1dc822';
 import { wordDiff } from './textdiff.js?v=b1dc822';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=b1dc822';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=b1dc822';   // magic-link: key in the invite URL
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour
@@ -1168,6 +1169,15 @@ function setupMobileSheet(){
 }
 // ---------- boot ----------
 async function boot(){
+  // Magic link: the invite email's URL carries the access key as ?k=<key>. Store it (it wins over any stale
+  // key so a fresh invite always works), then scrub it from the address bar so the token isn't left in
+  // history or shared by copying the URL. Reviewers just click — no token to paste.
+  const _mk = keyFromSearch(location.search);
+  if (_mk) {
+    localStorage.setItem('ghpat', _mk);
+    try { history.replaceState(null, '', location.pathname + searchWithoutKey(location.search) + location.hash); } catch (e) {}
+    keyBad = false;
+  }
   // Load the instance config FIRST. Advisors are invited PER-PROJECT: their link carries the project's data
   // repo as ?data=owner/repo (they have no hub access). Resolve it, push it into the shared config cache so
   // loadChapters/loadRelease/getJson all read the right project's data repo.

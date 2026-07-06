@@ -18,7 +18,7 @@ def load(p):
 def save(p, o):
     json.dump(o, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
 
-def portal_url(base, a, prefix=""):
+def portal_url(base, a, prefix="", key=""):
     base = (base or "").rstrip("/") + "/"
     # Carry this data repo so the advisor (who has no hub access) lands in the right project.
     data = os.environ.get("GITHUB_REPOSITORY", "")
@@ -27,12 +27,14 @@ def portal_url(base, a, prefix=""):
         url += f"&data={quote(data)}"
     if prefix:   # consolidated workspace: tell the reviewer bundle which project subfolder to read
         url += f"&p={quote(prefix.rstrip('/'))}"
+    if key:      # magic link: embed the access key so the reviewer just clicks — no token to paste
+        url += f"&k={quote(key)}"
     return url
 
 def build_message(a, frm, frm_name, key, author, base, prefix=""):
     to = a["email"]
     name = a.get("name", "")
-    url = portal_url(base, a, prefix)
+    url = portal_url(base, a, prefix, key)   # magic link — key embedded so the reviewer just clicks
     noun = C.doc_noun(prefix)
     whose = f"{author}'s" if author else "a"
     subject = f"You're invited to review {author}'s {noun}" if author else f"You're invited to review a {noun}"
