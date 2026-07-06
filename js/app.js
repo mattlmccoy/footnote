@@ -1,7 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=03d6c59';
 import { anchorFromSelection } from './anchor.js?v=03d6c59';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=03d6c59';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=03d6c59';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, prefillFromGitHub, isScopeError } from './ghsecrets.js?v=03d6c59';
 import { ensureRenderPipeline } from './seed.js?v=03d6c59';
 import { sealToBase64 } from './vendor/seal.js?v=03d6c59';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=03d6c59';
@@ -2448,16 +2448,33 @@ function aiSettingHtml(){
   const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
   const agents = shipped ? escapeHtml(_CFG.reviewAgents.join(', '))
     : '<span style="color:var(--text-3)">none configured — “Run review agents” stays hidden</span>';
+  const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
   const setup = on ? `
     <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
-      <div style="margin-bottom:8px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> Claude credentials. A queued edit just waits until these are set — nothing runs, and nothing is sent anywhere else.</div>
-      <div style="display:grid;gap:6px">
-        <div>1. Install the <b>Claude Code GitHub App</b> on your source and data repositories.</div>
-        <div>2. Add <code>ANTHROPIC_API_KEY</code> and <code>SOURCE_TOKEN</code> as Actions secrets in <a href="https://github.com/${escapeHtml(DATA_REPO)}/settings/secrets/actions" target="_blank" rel="noopener">Settings → Secrets → Actions</a>.</div>
-        <div>3. Review agents: ${agents}.</div>
+      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. A queued edit just waits until these are set.</div>
+      <div style="margin-bottom:4px"><b>1. Install the Claude Code GitHub App</b> on your source and data repositories — <a href="https://github.com/apps/claude" target="_blank" rel="noopener">github.com/apps/claude</a>.</div>
+      <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
+      <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
+        <label for="ai-key">Anthropic API key</label>
+        <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
+        <label for="ai-srctok">Source repo token</label>
+        <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
+        <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+      </div>
+      <div style="margin:10px 0 4px"><b>3. Review agents</b> (comma-separated ids; blank = no agents):</div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
+        <input id="ai-agents" placeholder="e.g. adversary, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" style="flex:1;${inp}" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>
+        <button class="btn" id="ai-save-agents" style="padding:5px 12px">Save</button>
+        <span id="ai-agents-stat" style="font-size:11.5px;color:var(--text-3)"></span>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+        <button class="btn" id="ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
+        <span id="ai-run-stat" style="font-size:11.5px;color:var(--text-3)">Drains any queued jobs — or the queue drains automatically when you send.</span>
       </div>
       <div style="margin-top:8px;color:var(--text-3)"><i class="ti ti-git-branch" style="margin-right:4px"></i>Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to preview and approve — nothing reaches your document without your say-so.</div>
-      <div style="margin-top:6px;color:var(--warn)"><i class="ti ti-alert-triangle" style="margin-right:4px"></i>Status: not verified from here (GitHub keeps secrets write-only). The backend that runs Claude lands next.</div>
     </div>` : '';
   return `<div id="ai-setting" style="margin:0 0 16px;padding:12px 14px;border:.5px solid var(--border);border-radius:9px;background:var(--bg-2)">
       <div style="display:flex;align-items:center;gap:10px">
@@ -2468,6 +2485,49 @@ function aiSettingHtml(){
         </div>
         <button class="btn${on?' btn-primary':''}" id="ai-toggle" ${shipped?'disabled title="This project ships an agent list in its config — edit the config to change this."':''} style="padding:6px 16px">${on?'On':'Off'}</button>
       </div>${setup}</div>`;
+}
+// Wire the AI setup panel: seal credentials, save the agent list, and manually run the queue. All I/O
+// runs on the owner's OWN data repo via their token; secrets are sealed client-side and never stored
+// by the app. No-ops when the panel isn't shown (assistant off).
+function wireAiSetup(t){
+  const saveSec = document.getElementById('ai-save-secrets');
+  if (saveSec) saveSec.onclick = async () => {
+    const stat = document.getElementById('ai-secrets-stat');
+    const values = { anthropicKey: document.getElementById('ai-key').value,
+                     sourceToken: document.getElementById('ai-srctok').value };
+    saveSec.disabled = true; stat.textContent = 'Sealing…'; stat.style.color = 'var(--text-3)';
+    try {
+      const names = await setAiSecrets(t, sealToBase64, values);
+      if (!names.length){ stat.textContent = 'Nothing to save — enter at least one credential.'; }
+      else { stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.';
+             document.getElementById('ai-key').value = ''; document.getElementById('ai-srctok').value = ''; }
+    } catch(e){ stat.style.color = 'var(--warn)';
+      stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
+    finally { saveSec.disabled = false; }
+  };
+  const saveAg = document.getElementById('ai-save-agents');
+  if (saveAg && !document.getElementById('ai-agents').disabled) saveAg.onclick = async () => {
+    const stat = document.getElementById('ai-agents-stat');
+    const list = document.getElementById('ai-agents').value.split(',').map(s => s.trim()).filter(Boolean);
+    saveAg.disabled = true; stat.textContent = 'Saving…'; stat.style.color = 'var(--text-3)';
+    try {
+      await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t);
+      _CFG = { ..._CFG, reviewAgents: list };                 // reflect immediately for the gate + menu
+      stat.style.color = 'var(--success)'; stat.textContent = list.length ? 'Saved ' + list.length + ' agent(s).' : 'Cleared agents.';
+      if (document.getElementById('btn-send')) renderTopbar();
+    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
+    finally { saveAg.disabled = false; }
+  };
+  const run = document.getElementById('ai-run');
+  if (run) run.onclick = async () => {
+    const stat = document.getElementById('ai-run-stat');
+    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Dispatching…';
+    try { await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
+      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.'; }
+    catch(e){ stat.style.color = 'var(--warn)';
+      stat.textContent = isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
+    finally { run.disabled = false; }
+  };
 }
 // Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
@@ -2593,6 +2653,7 @@ async function openReleasePanel(){
   // re-open the panel so the setup checklist appears/disappears. Disabled when the instance ships agents.
   const aiToggle = document.getElementById('ai-toggle');
   if (aiToggle && !aiToggle.disabled) aiToggle.onclick = () => { toggleAssistant(); openReleasePanel(); };
+  wireAiSetup(t);
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;

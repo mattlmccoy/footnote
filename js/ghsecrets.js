@@ -102,6 +102,37 @@ export async function dispatchRender(tok, projectId){
   if (!r.ok) throw new Error('render dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
 }
 
+// ---- AI setup (Slice 7): seal the adopter's OWN Claude credentials, all on their own data repo ----
+
+// Which Actions secrets to write from the AI setup form: only non-empty fields, trimmed, under their
+// canonical names (the same names apply.yml/ci_apply read). Pure so the gating is unit-tested; blanks
+// are skipped so "Save" never clobbers an existing secret with an empty value.
+export function aiSecretsPlan({ anthropicKey, sourceToken } = {}){
+  const plan = [];
+  const push = (name, v) => { const t = (v || '').trim(); if (t) plan.push({ name, value: t }); };
+  push('ANTHROPIC_API_KEY', anthropicKey);
+  push('SOURCE_TOKEN', sourceToken);
+  return plan;
+}
+
+// Seal the AI secrets from the form (one public-key fetch, then a sealed PUT each). sealFn comes from
+// vendor/seal.js, exactly like the email flow. Returns the names actually written.
+export async function setAiSecrets(tok, sealFn, values){
+  const plan = aiSecretsPlan(values);
+  if (!plan.length) return [];
+  const pk = await getPublicKey(tok);
+  for (const { name, value } of plan) await putSecret(tok, pk, sealFn, name, value);
+  return plan.map(p => p.name);
+}
+
+// Fire the apply workflow (drain the review queue) as a test/manual run. Needs actions:write / workflow.
+export async function dispatchApply(tok, projectId){
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/apply.yml/dispatches`, {
+    method:'POST', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
+    body: JSON.stringify({ ref:'main', inputs: projectId ? { project: projectId } : {} }) });
+  if (!r.ok) throw new Error('apply dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
+}
+
 // Newest render run id/status/conclusion, so the UI can show progress and reload when it finishes.
 export async function renderRun(tok){
   const r = await fetch(`${API}/repos/${slug()}/actions/workflows/render.yml/runs?per_page=1`, { headers:hdr(tok), cache:'no-store' });
