@@ -3340,6 +3340,11 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       // seeded render-only has no invite.yml, which otherwise 404s the dispatch. Idempotent (writes only
       // what's missing). Any permission block ('workflow-scope' etc.) bubbles to the catch → onScopeError.
       await ensureInvitePipeline(DATA_REPO, etok);
+      // Email IS configured the moment the SMTP secrets are sealed — persist it NOW, reliably, instead of
+      // gating it on reading a flaky workflow result. The CI's own advisors.json write kept not landing
+      // (stale seed, timing, "no status change"), so email_configured kept reverting to unset. This app
+      // write is the source of truth; the test send below stays a separate delivery confidence check.
+      try { await mutateAdvisors(reg => { reg.email_configured = true; }, 'email: SMTP configured'); advReg.email_configured = true; } catch (e) {}
       stat.textContent = 'Sending a test email…';
       let _beforeTestTs = ''; try { const { json } = await getJson(tok(), 'advisors.json'); _beforeTestTs = json?.email_test?.ts || ''; } catch(e){}
       const before = (await latestRun(etok))?.id || 0;
