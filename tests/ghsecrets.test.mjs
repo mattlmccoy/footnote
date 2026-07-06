@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, permissionFromError } from '../js/ghsecrets.js';
 
 // The Settings panel can't read a secret's VALUE, but it can list the secret NAMES on the data repo and
 // tell the owner whether Claude is already connected for the whole workspace — so it's obvious the token
@@ -85,4 +85,19 @@ test('genKey is 32 base62 chars', () => {
   const k = genKey();
   assert.match(k, /^[0-9A-Za-z]{32}$/);
   assert.notStrictEqual(genKey(), genKey());
+});
+
+// permissionFromError: turn a failed-write error into the exact fine-grained repo permission the token
+// lacks, so the wizard names it instead of blanket "Actions". The write ops throw resource-tagged
+// messages (putSecret "secret X: 403", setVariable "variable X: 403", ensureFiles "seed <dest>: 403" /
+// "workflow-scope", dispatchInvite "dispatch 403").
+test('permissionFromError maps each write failure to its GitHub permission', () => {
+  assert.equal(permissionFromError('secret SMTP_USER: 403 Forbidden'), 'Secrets');
+  assert.equal(permissionFromError('variable AUTHOR_NAME: 403'), 'Variables');
+  assert.equal(permissionFromError('workflow-scope'), 'Workflows');
+  assert.equal(permissionFromError('seed .github/workflows/invite.yml: 403'), 'Workflows');
+  assert.equal(permissionFromError('seed ci_invite.py: 403'), 'Contents');
+  assert.equal(permissionFromError('dispatch 403 not allowed'), 'Actions');
+  assert.equal(permissionFromError('runs 403'), 'Actions');
+  assert.equal(permissionFromError('some network blip'), null);
 });

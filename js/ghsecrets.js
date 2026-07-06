@@ -56,6 +56,20 @@ export function isScopeError(e){
   return !!e && (e.code === 'NOSCOPE' || /\b40[34]\b/.test(e.message || ''));
 }
 
+// Map a failed-write error message to the exact fine-grained repo permission the token is missing, so the
+// wizard can name it instead of a blanket "Actions". Returns null for non-permission (transient) errors.
+// The write ops tag their throws: putSecret "secret X: <s>", setVariable "variable X: <s>", ensureFiles
+// "seed <dest>: <s>" / "workflow-scope", dispatchInvite "dispatch <s>", latestRun "runs <s>".
+export function permissionFromError(msg){
+  const m = String(msg || '');
+  if (m === 'workflow-scope' || /^seed \.github\/workflows\//.test(m)) return 'Workflows';
+  if (/^secret /.test(m))   return 'Secrets';
+  if (/^variable /.test(m)) return 'Variables';
+  if (/^seed /.test(m))     return 'Contents';
+  if (/^dispatch /.test(m) || /^runs /.test(m)) return 'Actions';
+  return null;
+}
+
 // Probe Actions access at the REPO level. Unlike latestRun (which targets a specific workflow file and
 // 404s when that file isn't seeded yet), this endpoint answers whether the token can read Actions at all —
 // so a not-yet-seeded invite.yml can't masquerade as "token missing Actions". 403/404 → NOSCOPE.

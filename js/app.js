@@ -1,7 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=8c5b449';
 import { anchorFromSelection } from './anchor.js?v=8c5b449';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=8c5b449';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess } from './ghsecrets.js?v=8c5b449';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=8c5b449';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=8c5b449';
 import { sealToBase64 } from './vendor/seal.js?v=8c5b449';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=8c5b449';
@@ -3064,11 +3064,31 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     if (!testTo){ stat.textContent = 'Enter an address to send the test to.'; return; }
     let etok = S.needToken ? (S.ghtoken || '').trim() : tok();
     if (S.needToken && !etok){ stat.textContent = 'Missing the GitHub token — go Back a step.'; return; }
+    // A read/write permission gap. If we're on the saved LOGIN token (which can read but often can't write
+    // secrets/variables/workflows), route to the one-time-token step so a capable token is actually used —
+    // that's the real unblock. If a pasted token still lacks a permission, name exactly which one to add.
+    const onScopeError = (e) => {
+      if (!S.needToken){
+        S.needToken = true; S.savedPk = null; S.step = 'token'; render();
+        const st = document.getElementById('ce-stat');
+        if (st) st.innerHTML = 'Your GitHub sign-in can read your repo but can\'t <b>save these settings</b>. Paste a one-time token below — use the <b>Generate token</b> link (keep <b>repo</b> and <b>workflow</b> checked). It\'s used once and never stored.';
+        return;
+      }
+      const perm = permissionFromError(e && e.message);
+      const repo = escapeHtml(dataRepoParts(_CFG).repo);
+      stat.innerHTML = perm
+        ? `That token is missing <b>${perm}: Read and write</b> on <code>${repo}</code>. Easiest fix: click <b>Generate token</b> (a classic <b>repo</b> + <b>workflow</b> token) — it covers Secrets, Variables, Actions, and Workflows in one.`
+        : 'That token was rejected: ' + escapeHtml((e && e.message) || 'unknown');
+    };
     stat.textContent = 'Checking access…';
     let pk;
     try { pk = (S.needToken || !S.savedPk) ? await checkAccess(etok) : S.savedPk; }
     catch(e){ stat.textContent = 'Access check failed: ' + e.message; return; }
-    if (!pk){ stat.innerHTML = 'That GitHub token is missing <b>Secrets</b> or <b>Actions</b> access — go Back and regenerate it with the <b>repo</b> box ticked.'; return; }
+    if (!pk){
+      if (!S.needToken){ onScopeError(new Error('login')); return; }   // login can't read → get a capable token
+      stat.innerHTML = `That token can't read <b>Secrets</b> or <b>Actions</b> on <code>${escapeHtml(dataRepoParts(_CFG).repo)}</code> — click <b>Generate token</b> (a classic <b>repo</b> + <b>workflow</b> token).`;
+      return;
+    }
     try {
       stat.textContent = 'Saving credentials…';
       // NOTE: do NOT touch ADVISOR_KEY here — that's the advisors' access token, a separate concern
@@ -3088,12 +3108,8 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       await setVariable(etok, 'DOC_NOUN', DOC);   // keeps the invite/notify emails document-agnostic (e.g. "paper", "proposal")
       // Ensure the invite/notify workflow exists in the data repo before dispatching it. A workspace repo
       // seeded render-only has no invite.yml, which otherwise 404s the dispatch. Idempotent (writes only
-      // what's missing); a workflow-scope block gets the same actionable token hint.
-      try { await ensureInvitePipeline(DATA_REPO, etok); }
-      catch(e){
-        if (e.message === 'workflow-scope'){ stat.innerHTML = 'Your GitHub token can\'t write Actions workflows — go Back and regenerate it with the <b>repo</b> and <b>workflow</b> boxes ticked.'; return; }
-        throw e;
-      }
+      // what's missing). Any permission block ('workflow-scope' etc.) bubbles to the catch → onScopeError.
+      await ensureInvitePipeline(DATA_REPO, etok);
       stat.textContent = 'Sending a test email…';
       const before = (await latestRun(etok))?.id || 0;
       await dispatchInvite(etok, testTo);
@@ -3125,7 +3141,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
         stat.innerHTML = 'Test send failed: <code>' + escapeHtml(err) + '</code><br>' + authHint(S.provider, err);
       }
     } catch(e){
-      if (isScopeError(e)) stat.innerHTML = 'Your GitHub token is missing <b>Actions</b> access — go Back and regenerate it with the <b>repo</b> box ticked.';
+      if (isScopeError(e) || (e && e.message === 'workflow-scope')) onScopeError(e);
       else stat.textContent = 'Failed: ' + e.message;
     }
   };
