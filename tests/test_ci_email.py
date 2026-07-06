@@ -128,6 +128,25 @@ def test_invite_main_processes_each_workspace_project(_ws, monkeypatch):
     assert _json.loads(_pl.Path("optics/advisors.json").read_text())["advisors"][0]["invited"] is True
 
 
+def test_invite_main_embeds_each_reviewers_own_key(_ws, monkeypatch):
+    # per-reviewer least-privilege: each reviewer's email carries THEIR OWN key (from ADVISOR_KEY_<ID>),
+    # not one shared key; a reviewer with no per-reviewer secret falls back to the shared ADVISOR_KEY.
+    _clear()
+    seen = {}   # to -> eml body
+    monkeypatch.setattr(ci_invite, "send", lambda frm, to, eml: seen.__setitem__(to, eml))
+    for k in ("SMTP_USER", "SMTP_PASS"):
+        monkeypatch.setenv(k, "x")
+    monkeypatch.setenv("ADVISOR_KEY", "SHARED")
+    monkeypatch.setenv("ADVISOR_KEY_A", "KEY_A_ONLY")   # reviewer A has their own token
+    _w("advisors.json", {"advisors": [
+        {"id": "A", "name": "A", "email": "a@x.com"},
+        {"id": "B", "name": "B", "email": "b@x.com"},   # no per-reviewer secret → shared fallback
+    ]})
+    ci_invite.main()
+    assert "KEY_A_ONLY" in seen["a@x.com"] and "SHARED" not in seen["a@x.com"]
+    assert "SHARED" in seen["b@x.com"] and "KEY_A_ONLY" not in seen["b@x.com"]
+
+
 def test_chapter_labels_reads_prefixed_chapters(_ws):
     _w("metro/chapters.json", [{"id": "intro", "n": 1, "title": "Introduction"}])
     labels = C.chapter_labels("metro/")
@@ -237,3 +256,29 @@ def test_portal_url_embeds_key_as_magic_link():
     assert "&p=metro" in url
     # no key passed → no k param leaks
     assert "&k=" not in ci_invite.portal_url("https://x/", {"id": "CJS"}, "")
+
+
+# ---- per-reviewer least-privilege tokens (Lane B) ----
+
+def test_secret_name_for_matches_client_derivation():
+    # ADVISOR_KEY_<UPPER_SLUG(id)>; must equal ghsecrets.reviewerKeySecretName
+    assert ci_invite.secret_name_for("chris-s-4f2a") == "ADVISOR_KEY_CHRIS_S_4F2A"
+    assert ci_invite.secret_name_for("CJS") == "ADVISOR_KEY_CJS"
+    assert ci_invite.secret_name_for("a.b-c d") == "ADVISOR_KEY_A_B_C_D"
+    assert ci_invite.secret_name_for("") == "ADVISOR_KEY"      # no id → shared/legacy name
+
+
+def test_reviewer_key_prefers_per_reviewer_secret():
+    # 1) a sealed per-reviewer secret ADVISOR_KEY_<ID> wins
+    env = {"ADVISOR_KEY_CJS": "perkey", "ADVISOR_KEY": "sharedkey"}
+    assert ci_invite.reviewer_key(env, {"id": "CJS"}) == "perkey"
+
+
+def test_reviewer_key_falls_back_to_entry_field_then_shared():
+    # 2) no secret, but the advisors.json entry carries access_key → use it
+    env = {"ADVISOR_KEY": "sharedkey"}
+    assert ci_invite.reviewer_key(env, {"id": "CJS", "access_key": "entrykey"}) == "entrykey"
+    # 3) neither → the legacy shared ADVISOR_KEY keeps live links working during migration
+    assert ci_invite.reviewer_key(env, {"id": "CJS"}) == "sharedkey"
+    # nothing configured at all → the placeholder default, never a crash
+    assert ci_invite.reviewer_key({}, {"id": "CJS"}) == "(access key not configured)"

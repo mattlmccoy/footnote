@@ -279,6 +279,20 @@ test('advisorInviteUrl builds a portal link; adds &p only for workspace projects
     'https://x/advisor.html?a=CJS&n=&data=alice%2Fdata');   // no name
 });
 
+test('advisorInviteUrl appends the per-reviewer access key as &k= (magic link) only when given', () => {
+  // per-reviewer token → carried as the magic-link key, url-encoded, at the end
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/data', accessKey: 'ghp_ab/cd+ef' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fdata&k=ghp_ab%2Fcd%2Bef');
+  // with a workspace project id, &k comes after &p
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', dataRepo: 'alice/ws', projectId: 'metro', accessKey: 'KEY1' }),
+    'https://x/advisor.html?a=CJS&n=&data=alice%2Fws&p=metro&k=KEY1');
+  // absent/blank key → link is byte-identical to today (no &k)
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/data' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fdata');
+  assert.equal(advisorInviteUrl('https://x/', { id: 'CJS', name: 'Chris S', dataRepo: 'alice/data', accessKey: '  ' }),
+    'https://x/advisor.html?a=CJS&n=Chris%20S&data=alice%2Fdata');
+});
+
 // ---- sourceLabel(): the setup-checklist "Source connected ·" detail ----
 // Bug: an uploaded workspace project has _CFG.sourceRepo = the workspace repo (source lives at
 // <id>/source/), so the checklist showed "Source connected · <owner>/footnote-projects" — reads

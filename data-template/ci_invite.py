@@ -7,11 +7,35 @@ SMTP_FROM_NAME, PORTAL_BASE (e.g. https://owner.github.io/repo/), AUTHOR_NAME.
 Usage: python3 ci_invite.py [--dry-run]
 """
 import json, os, sys, subprocess, datetime, tempfile, email.utils
+import re
 from urllib.parse import quote
 import ci_notify_common as C
 
 DRY = "--dry-run" in sys.argv
 REG = "advisors.json"
+
+
+def secret_name_for(reviewer_id):
+    """Actions-secret name holding ONE reviewer's own least-privilege key: ADVISOR_KEY_<UPPER_SLUG(id)>.
+    Mirrors ghsecrets.reviewerKeySecretName so the owner seals and CI reads the exact same name. Empty
+    id → the shared/legacy ADVISOR_KEY name."""
+    slug = re.sub(r"[^A-Z0-9]+", "_", (reviewer_id or "").strip().upper()).strip("_")
+    return f"ADVISOR_KEY_{slug}" if slug else "ADVISOR_KEY"
+
+
+def reviewer_key(env, advisor):
+    """Source THIS reviewer's magic-link key with least-privilege routing:
+      1) their own sealed Actions secret ADVISOR_KEY_<ID> (most secure — reviewers can't read it), else
+      2) an access_key on their advisors.json entry (enables the owner's instant client copy-link), else
+      3) the legacy shared ADVISOR_KEY (keeps live links working through migration).
+    Falls back to the placeholder default (never crashes) when nothing is configured."""
+    per = env.get(secret_name_for(advisor.get("id", "")))
+    if per:
+        return per
+    entry = (advisor.get("access_key") or "").strip()
+    if entry:
+        return entry
+    return env.get("ADVISOR_KEY", "(access key not configured)")
 
 def load(p):
     return json.load(open(p, encoding="utf-8")) if os.path.exists(p) else {"advisors": []}
@@ -83,7 +107,10 @@ def _send_invites(prefix, frm, frm_name, key, author, base):
     for a in reg.get("advisors", []):
         if a.get("invited") or not a.get("email"):
             continue
-        to, subj, eml = build_message(a, frm, frm_name, key, author, base, prefix)
+        # least-privilege: embed THIS reviewer's own key (their ADVISOR_KEY_<ID> secret or entry field),
+        # falling back to the shared `key` only during migration. Never one shared key for everyone.
+        rk = reviewer_key(os.environ, a) or key
+        to, subj, eml = build_message(a, frm, frm_name, rk, author, base, prefix)
         if DRY:
             print(f"--- DRY-RUN to {to} ({prefix or 'root'}) ---\n{eml}\n"); continue
         try:

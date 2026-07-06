@@ -43,6 +43,15 @@ export function detectProvider(email){
   return 'custom';
 }
 
+// The Actions-secret name that holds ONE reviewer's own least-privilege access key. The owner seals
+// the key under this name; ci_invite.secret_name_for reads the exact same name in CI. GitHub secret
+// names allow only [A-Z0-9_] and can't start with a digit — id is a slug so uppercasing + collapsing
+// any other char to _ is safe. Empty id → the shared/legacy ADVISOR_KEY name.
+export function reviewerKeySecretName(id){
+  const slug = (id || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return slug ? `ADVISOR_KEY_${slug}` : 'ADVISOR_KEY';
+}
+
 // 32-char base62 advisor access key.
 export function genKey(){
   const A = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';

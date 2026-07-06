@@ -194,10 +194,14 @@ export function sourceLabel(cfg, parsed) {
 // Build a reviewer (advisor) portal invite URL. Advisors have no hub access, so the link carries the data
 // repo (&data=) directly; for a consolidated workspace project it also carries the project id (&p=<id>) so
 // the advisor bundle prefixes all its data paths with <id>/. base is the site URL (…/, trailing slash).
-export function advisorInviteUrl(base, { id, name, dataRepo, projectId } = {}) {
+export function advisorInviteUrl(base, { id, name, dataRepo, projectId, accessKey } = {}) {
   const enc = encodeURIComponent;
   let url = `${base}advisor.html?a=${enc(id || '')}&n=${enc(name || '')}&data=${enc(dataRepo || '')}`;
   if (projectId) url += `&p=${enc(projectId)}`;
+  // magic link: carry THIS reviewer's own least-privilege access key so they just click — no paste.
+  // Omitted when no key is supplied, so the link stays byte-identical to the legacy form.
+  const k = (accessKey || '').trim();
+  if (k) url += `&k=${enc(k)}`;
   return url;
 }
 

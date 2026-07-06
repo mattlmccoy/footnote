@@ -1,6 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, reviewerKeySecretName } from '../js/ghsecrets.js';
+
+// Per-reviewer least-privilege tokens: the owner seals each reviewer's key as its OWN Actions secret
+// ADVISOR_KEY_<UPPER_SLUG(id)>, and ci_invite.py reads that exact name. The name derivation must match
+// on both sides — this is the pure client mirror of ci_invite.secret_name_for.
+test('reviewerKeySecretName derives ADVISOR_KEY_<UPPER_SLUG(id)> matching the CI reader', () => {
+  assert.equal(reviewerKeySecretName('chris-s-4f2a'), 'ADVISOR_KEY_CHRIS_S_4F2A');
+  assert.equal(reviewerKeySecretName('CJS'), 'ADVISOR_KEY_CJS');
+  // non [A-Z0-9_] chars collapse to _ (GitHub secret names allow only [A-Z0-9_], must not start with a digit)
+  assert.equal(reviewerKeySecretName('a.b-c d'), 'ADVISOR_KEY_A_B_C_D');
+  assert.equal(reviewerKeySecretName(''), 'ADVISOR_KEY');   // no id → the shared/legacy name
+});
 
 // The Settings panel can't read a secret's VALUE, but it can list the secret NAMES on the data repo and
 // tell the owner whether Claude is already connected for the whole workspace — so it's obvious the token
