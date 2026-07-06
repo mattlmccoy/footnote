@@ -2839,7 +2839,65 @@ function renderSettingsAccess(pane, t) {
   };
 }
 function renderSettingsAgents(p){ p.innerHTML = '<div class="set-card">Agents — TODO Task 7</div>'; }
-function renderSettingsAI(p){ p.innerHTML = '<div class="set-card">AI — TODO Task 6</div>'; }
+// Claude / AI section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
+// ON: status card (connected via <secret> / not connected) + Connect / Manage → dialog, + Run apply.
+async function renderSettingsAI(pane, t) {
+  const on = assistantOn();
+  const shipped = (_CFG.reviewAgents || []).length > 0;
+  if (!on) {
+    pane.innerHTML = `<div class="set-card">
+      <h4>AI assistant</h4>
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Off by default. The core review flow — comment → stage → approve → merge — works fully without AI. Turn on to send comments to Claude on your own GitHub Actions + credentials.</div>
+      <button class="btn" id="set-ai-toggle" style="padding:5px 14px">Turn on</button>
+    </div>`;
+    pane.querySelector('#set-ai-toggle').onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
+    return;
+  }
+  pane.innerHTML = `<div class="set-card"><div id="set-ai-conn" class="set-status">Checking…</div>
+      <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-primary" id="set-ai-connect" style="padding:5px 12px">Connect / manage Claude</button>
+        <button class="btn" id="set-ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
+        <span id="set-ai-run-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
+      </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
+      ${shipped?'':`<div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>`}
+    </div>`;
+  const conn = pane.querySelector('#set-ai-conn');
+  try { const s = claudeConnectionStatus(await listSecretNames(t));
+    conn.innerHTML = s.claude ? `<span class="ok">✓</span> Claude connected via <code>${s.via}</code> — every paper in ${escapeHtml(DATA_REPO)} is set.` : '<span class="warn">●</span> Not connected — add your Claude Code token.';
+  } catch(e){ conn.textContent = 'Couldn’t check connection: ' + e.message; }
+  pane.querySelector('#set-ai-connect').onclick = () => openClaudeDialog(t);
+  pane.querySelector('#set-ai-run').onclick = async () => {
+    const stat = pane.querySelector('#set-ai-run-stat'); stat.style.color='var(--text-3)'; stat.textContent='Ensuring engine…';
+    try { await ensureApplyEngine(DATA_REPO, t); stat.textContent='Dispatching…'; await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
+      stat.style.color='var(--success)'; stat.textContent='Apply run started — watch your repo’s Actions tab.'; }
+    catch(e){ stat.style.color='var(--warn)'; stat.textContent = e.message==='workflow-scope'?'Token lacks the workflow scope.':'Failed: '+e.message; }
+  };
+  const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
+}
+// Connect Claude dialog: primary = paste the `claude setup-token` value (CLAUDE_CODE_OAUTH_TOKEN);
+// Advanced = Anthropic API key fallback. Save seals via setAiSecrets + self-heals the engine.
+function openClaudeDialog(t) {
+  const box = document.createElement('div');
+  box.innerHTML = `
+    <div style="font-size:12.5px;margin-bottom:8px">On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints (recommended — no API bill; counts against your Claude plan).</div>
+    <input id="set-claude-tok" type="password" placeholder="CLAUDE_CODE_OAUTH_TOKEN" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
+    <details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key? (billed per token)</summary>
+      <input id="set-claude-key" type="password" placeholder="sk-ant-… (ANTHROPIC_API_KEY)" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:8px"></details>
+    <div id="set-claude-stat" style="font-size:11.5px;color:var(--text-3)"></div>`;
+  openModal('<i class="ti ti-robot-face" style="margin-right:7px"></i>Connect Claude', box, [
+    { label:'Save & connect', primary:true, onClick: async (close) => {
+      const stat = box.querySelector('#set-claude-stat');
+      const values = { claudeCodeToken: box.querySelector('#set-claude-tok').value, anthropicKey: box.querySelector('#set-claude-key')?.value || '' };
+      stat.style.color='var(--text-3)'; stat.textContent='Sealing…';
+      try { const names = await setAiSecrets(t, sealToBase64, values);
+        if (!names.length){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
+        try { await ensureApplyEngine(DATA_REPO, t); } catch {}
+        close(); flash('Saved ' + names.join(' + ') + ' to your data repo.'); openSettingsPage('ai');
+      } catch(e){ stat.style.color='var(--warn)'; stat.textContent = isScopeError(e)?'Token lacks Secrets write on the data repo.':'Failed: '+e.message; }
+    } },
+  ]);
+}
 // ---------- release gate: control which chapters each advisor's portal shows ----------
 async function openReleasePanel(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
