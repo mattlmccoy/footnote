@@ -301,7 +301,7 @@ async function loadChapter(ch){
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your ${DOC}</div>
-    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read) — stored only in this browser.</div>
+    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read), set <b>Expiration → No expiration</b> so it never needs replacing — stored only in this browser.</div>
     <button class="btn" id="connect">Add access token</button></div>`;
   document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
@@ -1582,7 +1582,7 @@ function openAccessKeySheet(ownerTok){
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   scrim.innerHTML = `<div class="sheet" style="max-width:520px">
     <div style="font-size:16px;font-weight:600;margin-bottom:4px">Reviewer access key</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">One shared token that every reviewer's link carries, so they click and they're in — no code to paste. Use a <b>least-privilege</b> token, <b>not</b> your account password. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>.</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">One shared token that every reviewer's link carries, so they click and they're in — no code to paste. Use a <b>least-privilege</b> token, <b>not</b> your account password. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>, and set <b>Expiration → No expiration</b> so your reviewers' links never stop working.</div>
     <input id="ak-input" type="password" placeholder="paste the reviewer access token" style="width:100%;box-sizing:border-box;padding:9px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
     <div id="ak-stat" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -2555,7 +2555,7 @@ function aiSettingHtml(){
         <label for="ai-srctok">Source repo token <span style="color:var(--text-3)">(only for external source)</span></label>
         <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
       </div>
-      <div style="font-size:11px;color:var(--text-3);margin:-2px 0 6px"><b>Source repo token</b> is only needed if this paper's LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). To make one: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">create a fine-grained PAT</a> → Resource owner = you → Repository access = <b>Only select repositories</b> → pick your source repo → Permissions → <b>Contents: Read and write</b> → Generate, then paste it above.</div>
+      <div style="font-size:11px;color:var(--text-3);margin:-2px 0 6px"><b>Source repo token</b> is only needed if this paper's LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). To make one: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">create a fine-grained PAT</a> → Resource owner = you → Repository access = <b>Only select repositories</b> → pick your source repo → Permissions → <b>Contents: Read and write</b> → <b>Expiration: No expiration</b> → Generate, then paste it above.</div>
       <details style="margin:0 0 8px">
         <summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key instead? (billed per token)</summary>
         <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
@@ -3108,7 +3108,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
            <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read ${UNIT}s + comment)</span>
-             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>. Leave blank to keep the current one.</div>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>, and set <b>Expiration → No expiration</b> so it never needs rotating. Leave blank to keep the current one.</div>
              <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the reviewer access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
