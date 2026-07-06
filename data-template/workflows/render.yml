@@ -5,6 +5,17 @@ name: render
 # Source LaTeX comes from the in-repo <id>/source/ (workspace) or an external sourceRepo cloned
 # read-only with SOURCE_TOKEN (the adopter's own least-privilege PAT — never anyone else's repo).
 on:
+  # Automatic: whenever a document's source or unit list changes (an import, a re-sync, an
+  # Overleaf→GitHub push), rebuild the reading view with no user action. content/ is NOT in
+  # the filter and render commits with [skip ci], so this never loops. Covers legacy root
+  # (source/**, chapters.json) and workspace projects (<id>/source/**, <id>/chapters.json).
+  push:
+    paths:
+      - 'chapters.json'
+      - '*/chapters.json'
+      - 'source/**'
+      - '*/source/**'
+  # Manual re-render (owner "Build reading view" button / gh workflow run) + programmatic.
   workflow_dispatch:
     inputs:
       project:
@@ -16,8 +27,10 @@ on:
 permissions:
   contents: write
 concurrency:
+  # One run rebuilds every project, so collapse a burst of source commits (a folder upload is
+  # many commits) to a single final render.
   group: render
-  cancel-in-progress: false
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-latest
