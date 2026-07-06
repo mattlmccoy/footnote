@@ -2552,136 +2552,6 @@ function openMoreMenu(){
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
-// First-class AI-assistant control for the Reviewers → Settings panel. This is the master switch's
-// home (the ⋯ menu just points here). OFF by default; when ON it reveals an honest setup checklist —
-// Claude runs on the adopter's OWN data-repo Actions + Claude credentials, and nothing runs until
-// those are configured. GitHub keeps Actions secrets write-only, so status is guidance, not a probe;
-// the live dispatch/verify + backend engine land in later slices.
-function aiSettingHtml(){
-  const on = assistantOn();
-  const shipped = (_CFG.reviewAgents || []).length > 0;   // instance ships agents → forced on
-  const agents = shipped ? escapeHtml(_CFG.reviewAgents.join(', '))
-    : '<span style="color:var(--text-3)">none configured — “Run review agents” stays hidden</span>';
-  const inp = 'font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);outline:none';
-  const setup = on ? `
-    <div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);font-size:12px;color:var(--text-2)">
-      <div id="ai-conn-status" style="margin-bottom:10px;padding:7px 9px;border-radius:7px;background:var(--bg-3);color:var(--text-3);font-size:11.5px">Checking whether Claude is connected for this workspace…</div>
-      <div style="margin-bottom:10px">Claude runs on <b>your own</b> ${escapeHtml(DATA_REPO)} GitHub Actions with <b>your own</b> credentials — nothing routes through anyone else. These are stored <b>once per data repo</b>, so <b>every paper in this workspace</b> uses them — you don't set this up per document.</div>
-      <div style="margin-bottom:4px"><b>1. Connect Claude Code with your subscription</b> (recommended — no API key, no extra bill; usage counts against your Claude Code plan). On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints below. <a href="https://code.claude.com/docs/en/github-actions" target="_blank" rel="noopener">How this works →</a></div>
-      <div style="margin:10px 0 4px"><b>2. Store your credentials</b> (sealed straight into your data repo's Actions secrets — the app never keeps them):</div>
-      <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
-        <label for="ai-claude-token">Claude Code token</label>
-        <input id="ai-claude-token" type="password" placeholder="from ‘claude setup-token’ (→ CLAUDE_CODE_OAUTH_TOKEN)" style="${inp}">
-        <label for="ai-srctok">Source repo token <span style="color:var(--text-3)">(only for external source)</span></label>
-        <input id="ai-srctok" type="password" placeholder="fine-grained PAT, contents:write (→ SOURCE_TOKEN)" style="${inp}">
-      </div>
-      <div style="font-size:11px;color:var(--text-3);margin:-2px 0 6px"><b>Source repo token</b> is only needed if this paper's LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). To make one: <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">create a fine-grained PAT</a> → Resource owner = you → Repository access = <b>Only select repositories</b> → pick your source repo → Permissions → <b>Contents: Read and write</b> → <b>Expiration: No expiration</b> → Generate, then paste it above.</div>
-      <details style="margin:0 0 8px">
-        <summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key instead? (billed per token)</summary>
-        <div style="display:grid;grid-template-columns:150px 1fr;gap:6px 8px;align-items:center;margin:6px 0">
-          <label for="ai-key">Anthropic API key</label>
-          <input id="ai-key" type="password" placeholder="sk-ant-… (→ ANTHROPIC_API_KEY)" style="${inp}">
-        </div>
-      </details>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <button class="btn btn-primary" id="ai-save-secrets" style="padding:5px 12px">Save credentials</button>
-        <span id="ai-secrets-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-      </div>
-      <div style="margin:10px 0 4px"><b>3. Review agents</b> (comma-separated ids; blank = no agents):</div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:10px">
-        <input id="ai-agents" placeholder="e.g. adversary, clarity" value="${escapeHtml((_CFG.reviewAgents||[]).join(', '))}" style="flex:1;${inp}" ${(!_projectId || !_CFG.hubRepo) ? 'disabled title="Agents are set in this instance\'s config"' : ''}>
-        <button class="btn" id="ai-save-agents" style="padding:5px 12px">Save</button>
-        <span id="ai-agents-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-      </div>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
-        <button class="btn" id="ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
-        <span id="ai-run-stat" style="font-size:11.5px;color:var(--text-3)">Drains any queued jobs — or the queue drains automatically when you send.</span>
-      </div>
-      <div style="margin-top:8px;color:var(--text-3)"><i class="ti ti-git-branch" style="margin-right:4px"></i>Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to preview and approve — nothing reaches your document without your say-so.</div>
-    </div>` : '';
-  return `<div id="ai-setting" style="margin:0 0 16px;padding:12px 14px;border:.5px solid var(--border);border-radius:9px;background:var(--bg-2)">
-      <div style="display:flex;align-items:center;gap:10px">
-        <i class="ti ti-robot-face" style="font-size:16px;color:var(--text-2)"></i>
-        <div style="flex:1">
-          <div style="font-weight:600;font-size:13px">AI assistant · Send to Claude</div>
-          <div style="font-size:11.5px;color:var(--text-3)">Off by default. The core review flow — comment → stage → approve → merge — always works without AI.</div>
-        </div>
-        <button class="btn${on?' btn-primary':''}" id="ai-toggle" ${shipped?'disabled title="This project ships an agent list in its config — edit the config to change this."':''} style="padding:6px 16px">${on?'On':'Off'}</button>
-      </div>${setup}</div>`;
-}
-// Wire the AI setup panel: seal credentials, save the agent list, and manually run the queue. All I/O
-// runs on the owner's OWN data repo via their token; secrets are sealed client-side and never stored
-// by the app. No-ops when the panel isn't shown (assistant off).
-function wireAiSetup(t){
-  // Connection status: secrets are REPO-LEVEL, so this reflects the whole workspace (every paper), not
-  // just this project. Values are unreadable; we read the NAMES and say whether Claude is connected.
-  const refreshConnStatus = async () => {
-    const box = document.getElementById('ai-conn-status'); if (!box) return;
-    try {
-      const s = claudeConnectionStatus(await listSecretNames(t));
-      if (s.claude){ box.style.color = 'var(--success)';
-        box.innerHTML = `<i class="ti ti-circle-check" style="margin-right:5px"></i>Claude connected for <b>${escapeHtml(DATA_REPO)}</b> via <code>${s.via}</code> — every paper in this workspace is set. ${s.source?'Source token present.':''}`; }
-      else { box.style.color = 'var(--warn)';
-        box.innerHTML = `<i class="ti ti-alert-circle" style="margin-right:5px"></i>Not connected yet — add your Claude Code token below (once per data repo).`; }
-    } catch(e){ box.style.color = 'var(--text-3)';
-      box.textContent = isScopeError(e) ? 'Can’t verify connection — your access token can’t read this repo’s secrets (needs admin/Secrets read).' : 'Couldn’t check connection: ' + e.message; }
-  };
-  refreshConnStatus();
-  const saveSec = document.getElementById('ai-save-secrets');
-  if (saveSec) saveSec.onclick = async () => {
-    const stat = document.getElementById('ai-secrets-stat');
-    const keyEl = document.getElementById('ai-key');   // API key is optional (Advanced disclosure)
-    const values = { claudeCodeToken: document.getElementById('ai-claude-token').value,
-                     anthropicKey: keyEl ? keyEl.value : '',
-                     sourceToken: document.getElementById('ai-srctok').value };
-    saveSec.disabled = true; stat.textContent = 'Sealing…'; stat.style.color = 'var(--text-3)';
-    try {
-      const names = await setAiSecrets(t, sealToBase64, values);
-      if (!names.length){ stat.textContent = 'Nothing to save — paste your Claude Code token (or an API key) first.'; }
-      else {
-        // Self-heal: make sure the apply engine actually exists in this data repo (repo-level, idempotent),
-        // so connecting for the first time — or on a repo created before the engine — Just Works.
-        let engineMsg = '';
-        try { const r = await ensureApplyEngine(DATA_REPO, t); if (r.seeded.length) engineMsg = ' Installed the apply engine.'; }
-        catch(e){ engineMsg = e.message === 'workflow-scope' ? ' (Engine not installed — your token lacks the workflow scope; regenerate it with repo+workflow.)' : ' (Engine check failed: ' + e.message + ')'; }
-        stat.style.color = 'var(--success)'; stat.textContent = 'Saved ' + names.join(' + ') + ' to your data repo secrets.' + engineMsg;
-        document.getElementById('ai-claude-token').value = ''; if (keyEl) keyEl.value = ''; document.getElementById('ai-srctok').value = '';
-        refreshConnStatus();
-      }
-    } catch(e){ stat.style.color = 'var(--warn)';
-      stat.textContent = isScopeError(e) ? 'Your token lacks Secrets write on the data repo — use a token with that scope.' : 'Failed: ' + e.message; }
-    finally { saveSec.disabled = false; }
-  };
-  const saveAg = document.getElementById('ai-save-agents');
-  if (saveAg && !document.getElementById('ai-agents').disabled) saveAg.onclick = async () => {
-    const stat = document.getElementById('ai-agents-stat');
-    const list = document.getElementById('ai-agents').value.split(',').map(s => s.trim()).filter(Boolean);
-    saveAg.disabled = true; stat.textContent = 'Saving…'; stat.style.color = 'var(--text-3)';
-    try {
-      await writeProjectPatch(_CFG, _projectId, { reviewAgents: list }, t);
-      _CFG = { ..._CFG, reviewAgents: list };                 // reflect immediately for the gate + menu
-      stat.style.color = 'var(--success)'; stat.textContent = list.length ? 'Saved ' + list.length + ' agent(s).' : 'Cleared agents.';
-      if (document.getElementById('btn-send')) renderTopbar();
-    } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
-    finally { saveAg.disabled = false; }
-  };
-  const run = document.getElementById('ai-run');
-  if (run) run.onclick = async () => {
-    const stat = document.getElementById('ai-run-stat');
-    run.disabled = true; stat.style.color = 'var(--text-3)'; stat.textContent = 'Ensuring engine…';
-    try {
-      // Self-heal before dispatch: an existing/legacy data repo may not have apply.yml yet.
-      await ensureApplyEngine(DATA_REPO, t);
-      stat.textContent = 'Dispatching…';
-      await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
-      stat.style.color = 'var(--success)'; stat.textContent = 'Apply run started — watch it in your repo\'s Actions tab.';
-    }
-    catch(e){ stat.style.color = 'var(--warn)';
-      stat.textContent = e.message === 'workflow-scope' ? 'Your token lacks the workflow scope — regenerate it with repo+workflow, then retry.'
-        : isScopeError(e) ? 'Your token lacks Actions (workflow) scope.' : 'Failed: ' + e.message; }
-    finally { run.disabled = false; }
-  };
-}
 // Toggle the optional AI assistant. OFF is the default and the deterministic review flow needs nothing.
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
 function toggleAssistant(){
@@ -2975,7 +2845,7 @@ async function openReleasePanel(){
   }).join('');
   document.getElementById('rel-body').innerHTML = `
     <div id="rel-preflight" style="margin-bottom:22px"></div>
-    <div class="rel-sec">Reviewers</div>
+    <div class="rel-sec">People</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released ${UNIT}s and write only review comments; keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -2985,8 +2855,14 @@ async function openReleasePanel(){
     </div>
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
+    <div id="adv-email-banner"></div>
+    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
+      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Reviewer access key</label>
+      <span id="adv-key-state" style="flex:1;font-size:12px;color:var(--text-3)">${advisorKey() ? 'Set — reviewer links sign reviewers in automatically.' : 'Not set — reviewer links will prompt for a code.'}</span>
+      <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
+    </div>
     <div id="rel-board"></div>
-    <div class="rel-sec">Which ${UNIT}s each reviewer can see</div>
+    <div class="rel-sec" style="margin-top:26px">Access — which ${UNIT}s each reviewer sees</div>
     <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
     <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
     <div class="rel-links">${advs.map(a => {
@@ -2998,34 +2874,8 @@ async function openReleasePanel(){
           : advisorUrl(a, rel[a].name);
         return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
       }).join('')}</div>
-    <div class="rel-sec" style="margin-top:26px">Comments received from reviewers</div>${inboxHtml}
-    <div class="rel-sec" style="margin-top:34px;padding-top:10px;border-top:1px solid var(--border)"><i class="ti ti-settings" style="margin-right:6px"></i>Settings</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Email, notifications, and access — how the reviewer system is configured, separate from managing reviewers. (Will move to its own page.)</div>
-    ${aiSettingHtml()}
-    <div id="adv-email-banner"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Reviewer access key</label>
-      <span id="adv-key-state" style="flex:1;font-size:12px;color:var(--text-3)">${advisorKey() ? 'Set — reviewer links sign reviewers in automatically.' : 'Not set — reviewer links will prompt for a code.'}</span>
-      <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
-    </div>
-    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Notify me at</label>
-      <input id="notify-email" type="email" placeholder="you@example.com — a digest of reviewer activity"
-        style="flex:1;font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
-      <select id="notify-freq" title="How often to email you a digest" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text)">
-        <option value="daily">Daily</option>
-        <option value="weekly">Weekly</option>
-        <option value="off">Off — no emails</option>
-      </select>
-      <button class="btn" id="notify-save" style="padding:6px 12px">Save</button>
-      <span id="notify-stat" style="font-size:11.5px;color:var(--text-3)"></span>
-    </div>`;
+    <div class="rel-sec" style="margin-top:26px">Inbox — comments received</div>${inboxHtml}`;
   const refresh = () => openReleasePanel();
-  // AI master switch (first-class home). toggleAssistant flips the flag + refreshes the top-bar; we
-  // re-open the panel so the setup checklist appears/disappears. Disabled when the instance ships agents.
-  const aiToggle = document.getElementById('ai-toggle');
-  if (aiToggle && !aiToggle.disabled) aiToggle.onclick = () => { toggleAssistant(); openReleasePanel(); };
-  wireAiSetup(t);
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`); if (!box) return;
@@ -3650,31 +3500,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
         <i class="ti ti-${s.status==='green'?'circle-check':'circle'}" style="font-size:14px;margin-top:1px;color:var(--${s.status==='green'?'success':'warn'})"></i>
         <div><span style="color:var(--text)">${escapeHtml(s.label)}</span>${s.status==='amber'?`<div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${escapeHtml(s.next)}</div>`:''}</div></div>`).join('')}</div>`;
   })();
-  // Notify-me-at: stored in notify_config.json (data repo) — written with the everyday token,
-  // read by the notify workflow. No elevated scope needed (unlike Actions variables).
-  (async () => {
-    const inp = document.getElementById('notify-email'); if (!inp) return;
-    const freq = document.getElementById('notify-freq');
-    try { const { json } = await getJson(t, 'notify_config.json');
-      if (json && json.author_email) inp.value = json.author_email;
-      if (freq && json && json.frequency) freq.value = json.frequency;
-    } catch(e){}
-    const stat = document.getElementById('notify-stat');
-    document.getElementById('notify-save').onclick = async () => {
-      const val = inp.value.trim();
-      const f = (freq && freq.value) || 'daily';
-      stat.textContent = 'Saving…';
-      try {
-        const { json, sha } = await getJson(t, 'notify_config.json').catch(() => ({ json:null, sha:null }));
-        const cfg = json && typeof json === 'object' ? json : {};
-        cfg.author_email = val; cfg.frequency = f;
-        await putJson(t, 'notify_config.json', cfg, sha, `notify: set author email + frequency`);
-        stat.textContent = !val ? 'Cleared — no digest emails.'
-          : f === 'off' ? 'Saved — digest emails are off.'
-          : `Saved — ${f} digest of reviewer activity.`;
-      } catch(e){ stat.textContent = 'Failed: ' + e.message; }
-    };
-  })();
+  // (Notify-me digest + AI setup moved to the dedicated Settings page.)
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
       rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });
