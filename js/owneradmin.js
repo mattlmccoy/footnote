@@ -48,6 +48,17 @@ export function healthSignals(state = {}) {
   ];
 }
 
+// "Reading view built" for the preflight: EVERY unit the reviewer could see must be rendered — a
+// partial render must NOT show a false green. Basis = released units when any are released, else all
+// units (so a fully-rendered-but-not-yet-released doc still reads as built). builtUnitIds = the unit
+// ids that have rendered HTML. Returns false when there's nothing to build.
+export function renderBuiltStatus({ allUnitIds = [], releasedUnitIds = [], builtUnitIds = [] } = {}) {
+  const built = new Set(builtUnitIds);
+  const basis = releasedUnitIds.length ? releasedUnitIds : allUnitIds;
+  if (!basis.length) return false;
+  return basis.every(id => built.has(id));
+}
+
 // ---- 3. Reviewer status board --------------------------------------------
 // Per reviewer: how many units they can see, how many comments they've submitted, when they were last
 // active, and the invite-email state. Only fields we can actually derive — no invented "opened the link".

@@ -8,7 +8,24 @@ import {
   healthSignals,
   reviewerStatus,
   restoreAdvisorPlan,
+  renderBuiltStatus,
 } from '../js/owneradmin.js';
+
+// ---- renderBuiltStatus: preflight "reading view built" must require EVERY released unit ----
+test('renderBuiltStatus is green only when every released unit is built (no partial false-green)', () => {
+  // all released units built → green
+  assert.equal(renderBuiltStatus({ allUnitIds:['a','b','c'], releasedUnitIds:['a','b'], builtUnitIds:['a','b'] }), true);
+  // one released unit NOT built → amber (this is the false-green the strictness fixes)
+  assert.equal(renderBuiltStatus({ allUnitIds:['a','b','c'], releasedUnitIds:['a','b'], builtUnitIds:['a'] }), false);
+});
+test('renderBuiltStatus falls back to all units when nothing is released yet', () => {
+  // nothing released, whole doc built → green (a rendered-but-not-yet-released doc still reads as built)
+  assert.equal(renderBuiltStatus({ allUnitIds:['a','b'], releasedUnitIds:[], builtUnitIds:['a','b'] }), true);
+  // nothing released, doc only partly built → amber
+  assert.equal(renderBuiltStatus({ allUnitIds:['a','b'], releasedUnitIds:[], builtUnitIds:['a'] }), false);
+  // no units at all → amber (nothing to be built)
+  assert.equal(renderBuiltStatus({ allUnitIds:[], releasedUnitIds:[], builtUnitIds:[] }), false);
+});
 
 // ---- 1. One-click invite readiness ---------------------------------------
 test('inviteReadiness: name required', () => {

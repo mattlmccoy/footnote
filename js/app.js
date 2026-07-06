@@ -10,7 +10,7 @@ import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, 
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=6648fbb';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=6648fbb';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=6648fbb';
-import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan } from './owneradmin.js?v=6648fbb';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus } from './owneradmin.js?v=6648fbb';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=6648fbb';
 import { startWatch as startNetWatch } from './netstatus.js?v=6648fbb';
 startNetWatch();
@@ -3337,20 +3337,42 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       flash(`Restored ${tomb.advisor.name}.`); openReleasePanel();
     } catch(e){ flash('Restore failed: ' + e.message); }
   };
-  const removeAdvisor = async (id) => {
+  // In-page confirm modal (replaces a native prompt()): the Remove button stays disabled until the
+  // typed name matches, so the confirm gate survives but the UX matches the rest of the owner panel.
+  const removeAdvisor = (id) => {
     const a = advReg.advisors.find(x => x.id === id); if (!a) return;
-    const typed = prompt(`Remove ${a.name}?\n\nThis takes them off your reviewer list and revokes their ${UNIT} access. Comments they already submitted are kept.\n\nTo confirm, type their full name exactly:`);
-    if (typed === null) return;
-    if (typed.trim() !== a.name.trim()){ flash('Name did not match — reviewer not removed.'); return; }
-    let relEntry = null;
-    try {
-      await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
-      try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
-        if (relNow && relNow[id]){ relEntry = relNow[id]; delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
-      const tomb = { advisor: a, release: relEntry || { name: a.name, released: [], responses_released: false } };
-      undoToast(`Removed ${a.name}.`, () => restoreAdvisor(tomb));
-      renderAdvList();
-    } catch(e){ flash('Failed: ' + e.message); }
+    const doRemove = async () => {
+      let relEntry = null;
+      try {
+        await mutateAdvisors(reg => { const i = reg.advisors.findIndex(x=>x.id===id); if (i>=0) reg.advisors.splice(i,1); }, `advisors: remove ${a.name}`);
+        try { const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
+          if (relNow && relNow[id]){ relEntry = relNow[id]; delete relNow[id]; await putJson(t, 'release.json', relNow, relSha, `release: remove ${a.name}`); } } catch(e){}
+        const tomb = { advisor: a, release: relEntry || { name: a.name, released: [], responses_released: false } };
+        undoToast(`Removed ${a.name}.`, () => restoreAdvisor(tomb));
+        renderAdvList();
+      } catch(e){ flash('Failed: ' + e.message); }
+    };
+    const scrim = document.createElement('div'); scrim.className = 'scrim';
+    scrim.innerHTML = `<div class="sheet" style="max-width:460px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:6px">Remove ${escapeHtml(a.name)}?</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px;line-height:1.55">This takes them off your reviewer list and revokes their ${escapeHtml(UNIT)} access. Comments they already submitted are kept — and you can undo right after.</div>
+      <label style="font-size:12px;color:var(--text-2)">Type their full name to confirm
+        <input id="rm-confirm" autocomplete="off" placeholder="${escapeHtml(a.name)}" style="width:100%;box-sizing:border-box;margin-top:5px;padding:8px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px"></label>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+        <button class="btn" id="rm-cancel">Cancel</button>
+        <button class="btn" id="rm-go" style="background:var(--danger,#c0362c);color:#fff;border-color:transparent" disabled>Remove</button>
+      </div></div>`;
+    document.body.appendChild(scrim);
+    const $ = s => scrim.querySelector(s);
+    const close = () => scrim.remove();
+    scrim.onclick = e => { if (e.target === scrim) close(); };
+    $('#rm-cancel').onclick = close;
+    const inp = $('#rm-confirm'), go = $('#rm-go');
+    const match = () => inp.value.trim() === a.name.trim();
+    inp.oninput = () => { go.disabled = !match(); };
+    inp.onkeydown = e => { if (e.key === 'Enter' && match()){ e.preventDefault(); go.click(); } };
+    go.onclick = () => { if (!match()) return; close(); doRemove(); };
+    setTimeout(() => inp.focus(), 30);
   };
   document.getElementById('adv-add').onclick = addAdvisor;
   { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
@@ -3387,7 +3409,12 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   (async () => {
     const box = document.getElementById('rel-preflight'); if (!box) return;
     let renderBuilt = false, tokenCanWrite = null;
-    try { const paths = await ghTree(t); renderBuilt = CHAPTERS.some(c => paths.includes(dpath('content/'+c.id+'.html'))); } catch(e){}
+    try {
+      const paths = await ghTree(t);
+      const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes(dpath('content/'+id+'.html')));
+      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => rel[k].released || []))];
+      renderBuilt = renderBuiltStatus({ allUnitIds: CHAPTERS.map(c => c.id), releasedUnitIds, builtUnitIds });
+    } catch(e){}
     try { await checkActionsAccess(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }
     const anyReleased = Object.keys(rel).some(k => k !== '_comment' && (rel[k].released||[]).length > 0);
     const signals = healthSignals({
