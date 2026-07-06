@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -154,6 +154,28 @@ test('stripTopFolder removes the selected-folder prefix so files land at the rep
   assert.equal(stripTopFolder('mydraft/main.tex'), 'main.tex');
   assert.equal(stripTopFolder('mydraft/figures/fig1.pdf'), 'figures/fig1.pdf');
   assert.equal(stripTopFolder('main.tex'), 'main.tex');
+});
+
+// ---- folderTexIndex: from a read folder, find the entry .tex + build the \include resolver map ----
+test('folderTexIndex finds the entry and maps includes for the resolver', () => {
+  const files = [
+    { path: 'main.tex', isText: true, text: '\\documentclass{report}\\include{chapters/intro}' },
+    { path: 'chapters/intro.tex', isText: true, text: '\\chapter{Intro}' },
+    { path: 'figures/fig1.pdf', isText: false, base64: 'AAAA' },
+  ];
+  const { entry, entryText, map } = folderTexIndex(files);
+  assert.equal(entry, 'main.tex');
+  assert.match(entryText, /\\include\{chapters\/intro\}/);
+  // include paths are keyed WITHOUT the .tex extension, matching parseLatexChapters' resolver contract
+  assert.equal(map['chapters/intro'], '\\chapter{Intro}');
+  assert.equal('main' in map, true);
+});
+
+test('folderTexIndex returns a null entry when the folder has no .tex', () => {
+  const { entry, entryText, map } = folderTexIndex([{ path: 'refs.bib', isText: true, text: '@a{x}' }]);
+  assert.equal(entry, null);
+  assert.equal(entryText, '');
+  assert.deepEqual(Object.keys(map), []);
 });
 
 test('isTextPath treats source files as text and figures as binary', () => {

@@ -73,6 +73,20 @@ export function stripTopFolder(relPath) {
 const TEXT_EXT = /\.(tex|bib|cls|sty|bst|txt|md|json|yml|yaml|csv|clo|ltx)$/i;
 export function isTextPath(path) { return TEXT_EXT.test(String(path)); }
 
+// From a read folder ([{path, isText, text?, base64?}]), find the entry .tex and build the
+// \include/\input resolver map keyed WITHOUT the .tex extension (matching parseLatexChapters /
+// detectUnitLevel's resolveFile contract). Returns { entry, entryText, map }; entry is null and
+// entryText '' when the folder has no .tex. Pure + testable — the New Project + reviewer import
+// flows both use it so folder handling can't drift between them.
+export function folderTexIndex(files) {
+  const texts = (files || []).filter(f => f.isText);
+  const entry = pickEntryTex(texts);
+  const map = {};
+  for (const f of texts) if (/\.tex$/i.test(f.path)) map[f.path.replace(/\.tex$/i, '')] = f.text;
+  const entryText = entry ? (texts.find(f => f.path === entry)?.text ?? '') : '';
+  return { entry, entryText, map };
+}
+
 // ---- source-repo I/O (injectable fetch; default global fetch in the browser) ----
 // These write to the ADOPTER's OWN source repo with their OWN token — no Footnote-held credential.
 

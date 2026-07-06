@@ -4,7 +4,7 @@
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=69a0da0';
 import { seedDataRepo } from './seed.js?v=69a0da0';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, migrateProjectToWorkspace } from './importdoc.js?v=69a0da0';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=69a0da0';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=69a0da0';
 
 // ---- pure helpers (unit-tested) ----
@@ -377,7 +377,7 @@ export async function launch() {
   // Advanced. mode='local' uploads a .tex (Footnote creates the repo + commits it); 'github'/'overleaf'
   // point at an existing repo.
   function newProjectSheet(list) {
-    let mode = 'local', pendingTex = null;
+    let mode = 'local', pendingTex = null, pendingFiles = null, detectedLevel = null;
     const wsRepo = hub();   // ONE workspace repo holds every project as a subfolder — no per-paper repos
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
@@ -400,15 +400,41 @@ export async function launch() {
     const renderPanel = () => {
       const p = q('#np-panel');
       if (mode === 'local') {
-        p.innerHTML = `<label class="fn-drop"><i class="ti ti-upload"></i> <span id="np-tex-name">Choose your .tex file</span><input id="np-tex" type="file" accept=".tex" style="display:none"></label>
-          <div class="fn-hint">Committed as <code>${esc(slugPreview())}/source/main.tex</code>. For figures + <code>.bib</code>, open the project and use “Upload your whole project folder”. <code>.docx</code> support is coming.</div>`;
+        p.innerHTML = `<label class="fn-drop"><i class="ti ti-folder"></i> <span id="np-folder-name">Upload your whole project folder</span><input id="np-folder" type="file" webkitdirectory directory multiple style="display:none"></label>
+          <div class="fn-hint">Brings your figures + <code>.bib</code> along — committed under <code>${esc(slugPreview())}/source/</code>, so it renders complete. Or just a <label style="cursor:pointer;text-decoration:underline" for="np-tex">single .tex file</label>. <code>.docx</code> support is coming.
+          <input id="np-tex" type="file" accept=".tex" style="display:none"></div>
+          <div id="np-local-status" class="fn-hint"></div>`;
+        q('#np-folder').onchange = async e => {
+          const picked = [...e.target.files]; if (!picked.length) return;
+          pendingTex = null; pendingFiles = null; detectedLevel = null;
+          const st = q('#np-local-status'); st.textContent = `Reading ${picked.length} files…`; q('#np-err').textContent = '';
+          try {
+            const MAX = 40 * 1024 * 1024; let skipped = 0; const files = [];
+            for (const f of picked) {
+              const rel = stripTopFolder(f.webkitRelativePath || f.name);
+              if (/(^|\/)\./.test(rel)) continue;                 // skip dotfiles / .git
+              if (f.size > MAX) { skipped++; continue; }
+              if (isTextPath(rel)) files.push({ path: rel, isText: true, text: await f.text() });
+              else { const buf = new Uint8Array(await f.arrayBuffer()); let bin = ''; for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]); files.push({ path: rel, isText: false, base64: btoa(bin) }); }
+            }
+            const { entry, entryText, map } = folderTexIndex(files);
+            if (!entry) { st.textContent = ''; q('#np-err').textContent = 'No .tex file found in that folder.'; return; }
+            pendingFiles = { files, entry, entryText, map };
+            detectedLevel = detectUnitLevel(entryText, pth => (pth in map ? map[pth] : null));
+            const nfig = files.filter(f => !f.isText).length;
+            q('#np-folder-name').textContent = `${files.length} files · entry ${entry}`;
+            st.innerHTML = `Ready: <b>${files.length}</b> files${nfig ? `, ${nfig} figure${nfig !== 1 ? 's' : ''}` : ''}${skipped ? `; ${skipped} skipped >40&nbsp;MB` : ''}.`;
+          } catch (err) { st.textContent = ''; q('#np-err').textContent = 'Could not read the folder: ' + err.message; }
+        };
         q('#np-tex').onchange = async e => {
           const f = e.target.files[0]; if (!f) return;
           if (importFormat(f.name) !== 'tex') { q('#np-err').textContent = 'Please choose a .tex file (.docx is coming soon).'; return; }
-          pendingTex = { name: f.name, text: await f.text() }; q('#np-tex-name').textContent = f.name; q('#np-err').textContent = '';
+          pendingFiles = null; detectedLevel = null;
+          pendingTex = { name: f.name, text: await f.text() }; q('#np-folder-name').textContent = f.name;
+          q('#np-local-status').textContent = 'Single file — no figures. Use a folder to include them.'; q('#np-err').textContent = '';
         };
       } else {
-        pendingTex = null;
+        pendingTex = null; pendingFiles = null; detectedLevel = null;
         const overleaf = mode === 'overleaf';
         p.innerHTML = `${overleaf ? `<div class="fn-hint">In Overleaf: <b>Menu → GitHub → Sync</b> to a new repo, then pick it here.</div>` : ''}
           <label class="fn-field">${overleaf ? 'Your synced GitHub repo' : 'Pick the repo with your LaTeX'}<input id="np-pick" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false"></label>
@@ -422,7 +448,7 @@ export async function launch() {
       q('#np-modes').querySelectorAll('.fn-seg-b').forEach(x => x.classList.toggle('on', x === b));
       renderPanel();
     });
-    q('#np-name').addEventListener('input', () => { if (mode === 'local' && !pendingTex) renderPanel(); });
+    q('#np-name').addEventListener('input', () => { if (mode === 'local' && !pendingTex && !pendingFiles) renderPanel(); });
     renderPanel();
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
@@ -432,13 +458,14 @@ export async function launch() {
       if (!wsRepo) return q('#np-err').textContent = 'Set up your workspace repo first.';
       const id = projectIdFromName(name);
       const externalSrc = (mode !== 'local') ? q('#np-pick').value.trim() : '';
-      if (mode === 'local' && !pendingTex) return q('#np-err').textContent = 'Choose your .tex file to upload.';
+      if (mode === 'local' && !pendingTex && !pendingFiles) return q('#np-err').textContent = 'Upload your project folder (or a single .tex) to import.';
       if (mode !== 'local' && !externalSrc) return q('#np-err').textContent = 'Pick the repo where your LaTeX lives.';
       try {
         // Workspace project: DATA (and, for uploads, source) live under <wsRepo>/<id>/…; external repos
         // (github/overleaf) stay the source, comments still go in the workspace. Detect the unit level from
-        // the uploaded .tex so a journal article gets unitNoun 'section', not the 'chapter' default.
-        const unitNoun = pendingTex ? resolveUnitNoun('chapter', detectUnitLevel(pendingTex.text, () => null)) : 'chapter';
+        // the uploaded LaTeX so a journal article gets unitNoun 'section', not the 'chapter' default.
+        const localLevel = pendingFiles ? detectedLevel : (pendingTex ? detectUnitLevel(pendingTex.text, () => null) : null);
+        const unitNoun = resolveUnitNoun('chapter', localLevel);
         const next = addProject(list, { id, name, dataRepo: wsRepo, sourceRepo: externalSrc, workspace: true, doc: { noun, unitNoun } });
         q('#np-save').disabled = true;
         q('#np-err').textContent = `Preparing ${wsRepo}…`;
@@ -447,7 +474,17 @@ export async function launch() {
         q('#np-err').textContent = 'Setting up background email/notify…';
         try { await seedDataRepo(wsRepo, tok(), undefined, undefined, `${id}/`); } catch (e) { console.warn('seed:', e.message); }
         let chapters = null;
-        if (pendingTex) {
+        if (pendingFiles) {   // whole folder: commit every file under <id>/source/ preserving structure
+          const { files, entry, entryText, map } = pendingFiles;
+          let i = 0;
+          for (const f of files) {
+            q('#np-err').textContent = `Committing ${++i}/${files.length} · ${f.path}…`;
+            const dest = `${id}/source/${f.path}`;
+            if (f.isText) await commitSourceFile(wsRepo, dest, f.text, tok(), `Footnote import: ${dest}`);
+            else await commitSourceBinary(wsRepo, dest, f.base64, tok(), `Footnote import: ${dest}`);
+          }
+          chapters = parseLatexChapters(entryText, pth => (pth in map ? map[pth] : null));
+        } else if (pendingTex) {
           q('#np-err').textContent = `Committing ${id}/source/main.tex…`;
           await commitSourceFile(wsRepo, `${id}/source/main.tex`, pendingTex.text, tok(), `Footnote import: ${id}/source/main.tex`);
           chapters = parseLatexChapters(pendingTex.text, () => null);
