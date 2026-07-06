@@ -1856,7 +1856,7 @@ function enterHome(){
   document.getElementById('btn-export').onclick = exportAdvisorResponse;
   document.getElementById('btn-overleaf').onclick = () => openOverleafPanel().catch(e => alert('Could not build worklist: ' + e.message));
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
-  document.getElementById('btn-token').onclick = manageToken;
+  document.getElementById('btn-token').onclick = () => openSettingsPage('access');
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
@@ -2526,14 +2526,14 @@ function openMoreMenu(){
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
     <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
     <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
-    <div class="mmi" data-act="assistant"><i class="ti ti-robot-face"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
+    <div class="mmi" data-act="assistant"><i class="ti ti-settings"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, help: toggleHelp, token: manageToken, dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
+  const acts = { release: openReleasePanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
-    // The master switch now lives in Reviewers → Settings; the ⋯ entry just navigates there and scrolls to it.
-    assistant: () => openReleasePanel().then(() => document.getElementById('ai-setting')?.scrollIntoView({ block:'center' })) };
+    // Both the access token and the AI master switch now live on the dedicated Settings page.
+    assistant: () => openSettingsPage('ai') };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
@@ -2679,13 +2679,6 @@ function toggleAssistant(){
     alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN data repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
   }
   if (document.getElementById('btn-send')) renderTopbar();   // refresh the top-bar button label
-}
-function manageToken(){
-  const cur = tok();
-  const v = prompt(cur ? '❯ Access token is set. Paste a new one to replace it, or leave blank and OK to remove it:' : '❯ Paste a fine-grained PAT (Contents: read/write on the data repo):', '');
-  if (v === null) return;
-  if (v.trim() === ''){ if (cur && confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); } return; }
-  localStorage.setItem('ghpat', v.trim()); flash('Token saved.'); if (document.getElementById('doc') || current) loadChapter(current);
 }
 // Shared modal used by Settings dialogs (and, later, agent authoring). Stacks; ESC / backdrop-click
 // closes the topmost. `body` is an HTMLElement; `actions` is [{label, primary?, onClick(close)}].
