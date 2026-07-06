@@ -1,15 +1,16 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=702f965';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=702f965';
-import { wordDiff } from './textdiff.js?v=702f965';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=702f965';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=702f965';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=702f965';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=702f965';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=702f965';
-import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=702f965';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
+import { anchorFromSelection } from './anchor.js?v=092b7cb';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=092b7cb';
+import { wordDiff } from './textdiff.js?v=092b7cb';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams } from './config.js?v=092b7cb';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=092b7cb';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=092b7cb';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR } from './onboarding.js?v=092b7cb';   // pure onboarding logic (header/state routing/key validation/first-run guide)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=092b7cb';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=092b7cb';
+import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=092b7cb';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
@@ -56,6 +57,32 @@ const ADVISOR_TOUR = [
   { sel:'#adv-tour-btn', title:'Replay anytime', body:'Reopen this tour whenever you like with the ? button.' },
 ];
 function launchAdvisorTour(){ const restore = loadDemoChapter(); startTour(ADVISOR_TOUR, { storageKey:'tour-advisor-v1', onDone: restore }); }
+// One-time, skippable first-run guide: a brand-new reviewer sees the three-step gist BEFORE the detailed
+// interactive tour. Steps are FIRST_RUN_TOUR data. "Show me" launches the full interactive walkthrough;
+// "Got it" dismisses. Fires once (remembered via tourSeen/markTourSeen 'guide-advisor-v1').
+function launchFirstRunGuide(onShowMe){
+  if (document.getElementById('firstrun')) return;
+  const ov = document.createElement('div'); ov.id = 'firstrun';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9500;background:rgba(0,0,0,.4);display:flex;align-items:center;justify-content:center;padding:18px';
+  const steps = FIRST_RUN_TOUR.map(s => `<div style="display:flex;gap:12px;align-items:flex-start;margin-bottom:14px">
+      <div style="flex:0 0 26px;height:26px;border-radius:50%;background:var(--accent);color:#fff;font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center">${s.step}</div>
+      <div style="min-width:0"><div style="font-size:14px;font-weight:600;margin-bottom:2px">${escapeHtml(s.title)}</div>
+      <div style="font-size:12.5px;color:var(--text-2);line-height:1.5">${escapeHtml(s.body)}</div></div></div>`).join('');
+  ov.innerHTML = `<div role="dialog" aria-modal="true" aria-label="Welcome to Footnote" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:16px;box-shadow:0 22px 60px rgba(0,0,0,.3);width:min(440px,94vw);padding:24px 24px 20px">
+      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:4px">WELCOME</div>
+      <div style="font-size:18px;font-weight:600;margin-bottom:16px">Reviewing here takes three steps</div>
+      ${steps}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn" id="fr-skip">Got it</button>
+        <button class="btn btn-primary" id="fr-show">Show me</button></div></div>`;
+  document.body.appendChild(ov);
+  const close = () => { ov.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = e => { if (e.key === 'Escape'){ e.stopPropagation(); close(); } };
+  ov.querySelector('#fr-skip').onclick = close;
+  ov.querySelector('#fr-show').onclick = () => { close(); try { (onShowMe || launchAdvisorTour)(); } catch {} };
+  ov.addEventListener('mousedown', e => { if (e.target === ov) close(); });
+  document.addEventListener('keydown', onKey, true);
+}
 // Short walkthrough of commenting on the proposed outline (auto-launches once the first time the outline opens).
 const ADVISOR_OUTLINE_TOUR = [
   { sel:'.ol-chapter', title:'The proposed structure', body:'This is the author\'s planned outline. Click a chapter to expand its sections and subsections.' },
@@ -174,6 +201,48 @@ function storageWarn(){
   x.onclick = () => b.remove(); b.append(x);
   document.body.prepend(b);
 }
+let _CFG = null;   // the effective instance config (set at boot) — powers the "what am I reviewing?" header
+// In-page access-key entry (replaces native prompt()): paste-friendly, visible focus, validated inline,
+// mobile-friendly. opts: { current, allowClear }. Resolves the trimmed key on Save (or '' when cleared),
+// or null on Cancel. Uses validateKey so a whole pasted invite URL is reduced to just the key.
+function keyModal({ current = '', allowClear = false, title = 'Enter your access key' } = {}){
+  return new Promise(resolve => {
+    document.getElementById('keymodal')?.remove();
+    const back = document.createElement('div'); back.id = 'keymodal';
+    back.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center;padding:18px';
+    back.innerHTML = `<div role="dialog" aria-modal="true" aria-label="${escapeHtml(title)}" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(430px,94vw);padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:4px">${escapeHtml(title)}</div>
+      <div style="font-size:12.5px;color:var(--text-3);line-height:1.55;margin-bottom:14px">Paste the access key from your invitation email. It's stored only in this browser.</div>
+      <input id="km-in" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="ghp_…" value="${escapeHtml(current || '')}"
+        style="width:100%;box-sizing:border-box;padding:11px 12px;border:.5px solid var(--border-2);border-radius:9px;font:inherit;font-size:14px;background:var(--bg);color:var(--text);outline:none">
+      <div id="km-err" style="min-height:16px;font-size:12px;color:var(--danger,#c0392b);margin:7px 2px 0"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:12px">
+        ${allowClear ? `<button class="btn" id="km-clear" style="margin-right:auto;color:var(--text-3)">Remove key</button>` : ''}
+        <button class="btn" id="km-cancel">Cancel</button>
+        <button class="btn btn-primary" id="km-save">Save key</button></div></div>`;
+    document.body.appendChild(back);
+    const inp = back.querySelector('#km-in'), err = back.querySelector('#km-err');
+    const done = v => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
+    const save = () => { const r = validateKey(inp.value); if (!r.ok){ err.textContent = r.error; inp.style.borderColor = 'var(--danger,#c0392b)'; inp.focus(); return; } done(r.value); };
+    const onKey = e => { if (e.key === 'Escape'){ e.stopPropagation(); done(null); } };
+    back.querySelector('#km-save').onclick = save;
+    back.querySelector('#km-cancel').onclick = () => done(null);
+    back.querySelector('#km-clear')?.addEventListener('click', () => done(''));
+    inp.addEventListener('input', () => { err.textContent = ''; inp.style.borderColor = 'var(--accent)'; });
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); save(); } });
+    back.addEventListener('mousedown', e => { if (e.target === back) done(null); });
+    document.addEventListener('keydown', onKey, true);
+    setTimeout(() => { inp.focus(); inp.select(); }, 30);
+  });
+}
+// Store a chosen key (or clear it) and re-boot. Central handler behind every "enter/change key" control,
+// so the whole portal shares one humane, validated entry path. v===null → cancelled (no change).
+function applyKeyChoice(v){
+  if (v === null) return;
+  if (v){ if (!_store.set('ghpat', v)) storageWarn(); keyBad = false; }
+  else { _store.set('ghpat', ''); }
+  boot();
+}
 let keyBad = false, revoked = false;
 const is401 = e => /\b401\b/.test((e && e.message) || '');
 function showKeyExpired(){
@@ -184,7 +253,7 @@ function showKeyExpired(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Your access key has expired</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px;max-width:430px">Access keys are time-limited for security. Please request a fresh key, then enter it below to pick up where you left off — your comments are saved.</div>
     <button class="btn btn-primary" id="newkey">Enter a new key</button></div>`;
-  read.querySelector('#newkey').onclick = () => { const v = prompt('❯ New access key:'); if (v && v.trim()){ localStorage.setItem('ghpat', v.trim()); keyBad = false; boot(); } };
+  read.querySelector('#newkey').onclick = async () => { applyKeyChoice(await keyModal({ title: 'Enter a new access key' })); };
 }
 function showRevoked(){
   document.getElementById('nav').style.display = 'none';
@@ -342,7 +411,7 @@ function renderConnect(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Enter your access key</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Paste the access key you were emailed. It's stored only in this browser.</div>
     <button class="btn" id="connect">Add access key</button></div>`;
-  document.getElementById('connect').onclick = () => { const v = prompt('❯ Access key:'); if (v){ localStorage.setItem('ghpat', v.trim()); boot(); } };
+  document.getElementById('connect').onclick = async () => { applyKeyChoice(await keyModal({})); };
 }
 
 // ---------- document rendering (math, footnotes, figures, cross-refs) ----------
@@ -991,14 +1060,16 @@ function renderTopbar(){ const m=chMeta(current);
       <button class="icbtn" id="btn-help" title="How reviewing works"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="icbtn" id="btn-export" title="Download this ${UNIT} (Word · Markdown)"><i class="ti ti-file-export"></i></button>
+      <button class="icbtn" id="btn-notify" title="Email notifications"><i class="ti ti-bell"></i></button>
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('chsel').onclick=openChapterMenu;
+  document.getElementById('btn-notify').onclick=openNotifyPrefs;
   document.getElementById('btn-help').onclick=()=>window.open('tutorials/walkthrough.html','_blank','noopener');
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-export').onclick=()=>exportDialog(current);
-  document.getElementById('btn-key').onclick=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  document.getElementById('btn-key').onclick=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
   const si=document.getElementById('search'); si.addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(si.value); if(e.key==='Escape'){ si.value=''; clearSearch(); } });
 }
 function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old){ old.remove(); return; } const menu=document.createElement('div'); menu.id='chmenu';
@@ -1038,6 +1109,21 @@ async function openNotifyPrefs(){
   };
   setTimeout(()=>document.addEventListener('click', function h(e){ if(!pop.contains(e.target) && e.target.id!=='btn-notify' && !e.target.closest?.('#btn-notify')){ pop.remove(); document.removeEventListener('click', h); } }), 0);
 }
+// "What am I reviewing?" — a compact header on the reviewer home: doc title, author, who you're
+// reviewing as, how many units are shared, and the deadline if the author set one. Pure data comes
+// from reviewingHeader(); this only renders it.
+function reviewHeaderHtml(releasedCount){
+  const h = reviewingHeader(_CFG || { doc:{ noun:DOC, unitNoun:UNIT, title:'', authorName:'' }, deadline:(_CFG&&_CFG.deadline)||null }, displayName(), releasedCount);
+  const meta = [];
+  if (h.author) meta.push(`<span><i class="ti ti-user" style="font-size:13px;vertical-align:-2px;color:var(--text-3)"></i> ${escapeHtml(h.author)}</span>`);
+  meta.push(`<span><i class="ti ti-eye" style="font-size:13px;vertical-align:-2px;color:var(--text-3)"></i> reviewing as ${escapeHtml(h.reviewingAs || ADVISOR.name)}</span>`);
+  meta.push(`<span><i class="ti ti-files" style="font-size:13px;vertical-align:-2px;color:var(--text-3)"></i> ${h.sharedCount} ${escapeHtml(h.unitNoun)}${h.sharedCount===1?'':'s'} shared</span>`);
+  if (h.deadline) meta.push(`<span><i class="ti ti-clock" style="font-size:13px;vertical-align:-2px;color:var(--text-3)"></i> ${escapeHtml(h.deadline.label)} in ${h.deadline.days} day${h.deadline.days===1?'':'s'}</span>`);
+  return `<div style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:16px 18px;margin-bottom:22px;background:var(--bg-2,var(--bg))">
+      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:5px">YOU'RE REVIEWING</div>
+      <div style="font-size:18px;font-weight:600;line-height:1.3;margin-bottom:9px">${escapeHtml(h.title)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:7px 16px;font-size:12.5px;color:var(--text-2)">${meta.join('')}</div></div>`;
+}
 function enterHome(){
   stopLiveSync();
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
@@ -1047,7 +1133,7 @@ function enterHome(){
      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-notify').onclick=openNotifyPrefs;
-  const askKey=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  const askKey=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
   document.getElementById('btn-key').onclick=askKey;
   // first-run: no access key yet — prompt for it before anything else
   if(!tok()){
@@ -1065,6 +1151,7 @@ function enterHome(){
       <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
+      ${reviewHeaderHtml(list.length)}
       <div style="font-size:13px;color:var(--text-2);margin-bottom:20px">Welcome, ${escapeHtml(displayName())}. The ${UNIT}s released for your review are below. Open one to read it and leave comments or suggested edits; each one is shared with the author as soon as you add it.</div>
       ${list.length?`<button data-ch="__whole__" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:16px;background:none;cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-book" style="font-size:20px;color:var(--accent)"></i>
@@ -1082,7 +1169,9 @@ function enterHome(){
         <div style="font-size:11.5px;color:var(--text-2)">See how the author addressed each comment you submitted.</div></div>
         <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>` : ''}
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">${UNIT.toUpperCase()}S FOR REVIEW</div>
-      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty">No ${UNIT}s have been released for your review yet. You'll see them here once they're shared.</div>`}<div id="adv-downloads"></div></div>`;
+      ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty" style="margin:6vh auto"><i class="ti ti-mail-fast" style="font-size:26px;color:var(--text-3)"></i>
+        <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   document.getElementById('outline-card').onclick=loadOutline;
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
@@ -1243,7 +1332,7 @@ function renderOutlineTopbar(){
       <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button></div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-key').onclick=()=>{ const v=prompt('❯ Access key:',tok()||''); if(v!==null){ if(v.trim()) localStorage.setItem('ghpat',v.trim()); else localStorage.removeItem('ghpat'); boot(); } };
+  document.getElementById('btn-key').onclick=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
 }
 function renderOutline(data){
   const cnt=(label,sec)=>review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===sec).length;
@@ -1413,6 +1502,7 @@ async function boot(){
   const _pid = new URLSearchParams(location.search).get('p') || '';
   _PREFIX = _pid ? `${_pid}/` : '';
   const _eff = { ..._cfg, dataRepo: dataRepoFromParams(location.search, _cfg.dataRepo), dataPrefix: _PREFIX };
+  _CFG = _eff;   // remembered for the "what am I reviewing?" header
   setConfig(_eff);
   ({ owner:_OWNER, repo:_REPO } = dataRepoParts(_eff));
   DATA_REPO = _eff.dataRepo;
@@ -1425,7 +1515,8 @@ async function boot(){
   ensureTourButton();
   // Only auto-run once the reviewer is actually in (has an access key) — never over the login screen.
   // Mark seen at launch (not just on finish) so a hard refresh doesn't re-show it to a returning reviewer.
-  if (tok() && !tourSeen('tour-advisor-v1')){ markTourSeen('tour-advisor-v1'); setTimeout(() => { try { launchAdvisorTour(); } catch {} }, 1400); } }
+  // A brand-new reviewer gets the concise 3-step first-run guide; "Show me" opens the full interactive tour.
+  if (tok() && !tourSeen('guide-advisor-v1')){ markTourSeen('guide-advisor-v1'); markTourSeen('tour-advisor-v1'); setTimeout(() => { try { launchFirstRunGuide(); } catch {} }, 1000); } }
 // Floating replay button (always available); appended once.
 function ensureTourButton(){
   if (document.getElementById('adv-tour-btn')) return;
