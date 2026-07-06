@@ -47,6 +47,13 @@ An animated, self-contained product tour of the full workflow (read → comment 
 resolve → what-changed → direct edit → back-to-Overleaf worklist) lives at **[`tutorials/walkthrough.html`](tutorials/walkthrough.html)** —
 autoplays with play/pause/replay and jump-to-scene dots. No dependencies; open it directly.
 
+## Setup guide
+A self-paced, click-through guide for wiring **Overleaf + GitHub + Footnote** together (token → connect →
+workspace → get your `.tex` into GitHub → first project → invite → review loop) lives at
+**[`tutorials/setup.html`](tutorials/setup.html)**. It covers both the premium Overleaf GitHub-sync path and
+the free fallbacks, with copyable links/commands. Linked from the onboarding **Connect** step so users find
+it as soon as they open their account.
+
 ## Development
 ```
 npm test        # node --test tests/*.test.mjs  (unit tests)

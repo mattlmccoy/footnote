@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Footnote — setup guide</title>
+<link rel="icon" type="image/svg+xml" href="../brand/footnote-mark.svg">
+<style>
+:root{
+  --accent:#2c64c4; --accent-2:#4f86e0; --ink:#1f1e1c; --ink-2:#605e58; --ink-3:#8f8d84;
+  --card:#ffffff; --line:rgba(0,0,0,.09); --box:#f4f6f8; --ok:#0f6e56; --ok-bg:#e1f5ee;
+  --warn:#8a5a00; --warn-bg:#fbf1d9; --warn-line:#e7cf93;
+  --gh:#24292f; --ol:#138a07;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  background:radial-gradient(1200px 700px at 50% -10%,#20264a 0%,#141830 45%,#0c0f1e 100%);
+  color:#fff;min-height:100%;display:flex;align-items:center;justify-content:center;padding:26px 20px;
+}
+
+/* shell */
+.wrap{width:1000px;max-width:96vw;height:min(680px,88vh);background:var(--card);color:var(--ink);
+  border-radius:18px;overflow:hidden;display:flex;flex-direction:column;
+  box-shadow:0 40px 120px -30px rgba(0,0,0,.7),0 0 0 1px rgba(255,255,255,.04)}
+
+/* top bar */
+.tb{height:56px;flex:0 0 56px;display:flex;align-items:center;gap:11px;padding:0 20px;border-bottom:1px solid var(--line);background:#fafafa}
+.tb .logo{width:24px;height:24px;border-radius:7px}
+.tb .brand{font-weight:600;font-size:16px}
+.tb .ctx{font-size:13px;color:var(--ink-2)}
+.tb .prog{margin-left:auto;font-size:12px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+#bar{height:3px;background:var(--accent);width:0;transition:width .4s cubic-bezier(.2,.7,.2,1);box-shadow:0 0 12px var(--accent)}
+
+.main{flex:1;display:flex;min-height:0}
+
+/* left stepper */
+.rail{width:246px;flex:0 0 246px;border-right:1px solid var(--line);background:#fcfcfb;padding:18px 12px;overflow-y:auto}
+.rail .rh{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin:4px 8px 12px}
+.st{display:flex;align-items:center;gap:10px;padding:8px 9px;border-radius:9px;margin-bottom:2px;cursor:pointer;transition:.15s;color:var(--ink-2)}
+.st:hover{background:#f1f3f6}
+.st.on{background:#eaf1fb;color:var(--ink);font-weight:600}
+.st .num{width:22px;height:22px;flex:0 0 22px;border-radius:50%;border:1.5px solid var(--ink-3);display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--ink-3);background:#fff;transition:.15s}
+.st.on .num{border-color:var(--accent);background:var(--accent);color:#fff}
+.st.done .num{border-color:var(--ok);background:var(--ok);color:#fff}
+.st.done .num::after{content:"✓";font-size:12px}
+.st.done .num span{display:none}
+.st .lb{font-size:13px;line-height:1.25}
+
+/* content */
+.content{flex:1;display:flex;flex-direction:column;min-height:0}
+.scroll{flex:1;overflow-y:auto;padding:30px 40px 20px}
+.eyebrow{font-size:11.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:9px}
+h1{font-size:26px;font-weight:600;letter-spacing:-.5px;line-height:1.2;margin-bottom:8px}
+.lead{font-size:15px;color:var(--ink-2);line-height:1.6;margin-bottom:22px;max-width:60ch}
+h2{font-size:14px;font-weight:600;margin:22px 0 10px}
+p{font-size:14px;line-height:1.68;color:#33322e;margin-bottom:12px;max-width:64ch}
+ul,ol{margin:0 0 14px 20px}
+li{font-size:14px;line-height:1.7;color:#33322e;margin-bottom:7px;max-width:62ch}
+b{font-weight:600;color:var(--ink)}
+.kbd,code{font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:12.5px;background:var(--box);border:1px solid var(--line);border-radius:5px;padding:1px 6px;color:var(--ink)}
+a.lnk{color:var(--accent);text-decoration:none;border-bottom:1px solid rgba(44,100,196,.3)}
+a.lnk:hover{border-bottom-color:var(--accent)}
+
+/* numbered action list */
+.acts{list-style:none;margin:6px 0 8px;padding:0;counter-reset:a}
+.acts>li{position:relative;padding:2px 0 14px 40px;margin:0;counter-increment:a;max-width:64ch}
+.acts>li::before{content:counter(a);position:absolute;left:0;top:0;width:26px;height:26px;border-radius:50%;background:#eaf1fb;color:var(--accent);font-size:13px;font-weight:600;display:flex;align-items:center;justify-content:center}
+.acts>li:not(:last-child)::after{content:"";position:absolute;left:13px;top:28px;bottom:2px;width:1.5px;background:var(--line)}
+
+/* copy row (link / command) */
+.copy{display:flex;align-items:stretch;gap:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;margin:8px 0 4px;background:var(--box);max-width:64ch}
+.copy .val{flex:1;padding:9px 12px;font-family:"SF Mono",Menlo,ui-monospace,monospace;font-size:12.5px;color:var(--ink);white-space:pre;overflow-x:auto;line-height:1.55}
+.copy .btn{flex:0 0 auto;border:none;border-left:1px solid var(--line);background:#fff;color:var(--accent);font:inherit;font-size:12.5px;font-weight:600;padding:0 14px;cursor:pointer;transition:.15s;white-space:nowrap}
+.copy .btn:hover{background:#eaf1fb}
+.copy .btn.done{color:var(--ok)}
+
+/* callouts */
+.note{border-radius:11px;padding:12px 15px;margin:14px 0;font-size:13px;line-height:1.6;display:flex;gap:11px;align-items:flex-start;max-width:64ch}
+.note .ic{flex:0 0 auto;font-size:15px;line-height:1.4}
+.note.info{background:#eef4fd;border:1px solid #cfe0f9;color:#2a3b57}
+.note.warn{background:var(--warn-bg);border:1px solid var(--warn-line);color:var(--warn)}
+.note.ok{background:var(--ok-bg);border:1px solid #bfe6d6;color:#0d5b46}
+.note b{color:inherit}
+
+/* pill icons / mini diagram */
+.trio{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:18px 0 6px}
+.pnode{display:flex;align-items:center;gap:9px;border:1px solid var(--line);border-radius:12px;padding:10px 13px;background:#fff;box-shadow:0 6px 18px -12px rgba(0,0,0,.25);flex:1 1 0;min-width:150px}
+.pnode svg{width:28px;height:28px;border-radius:8px;flex:0 0 auto}
+.pnode .t{font-size:13px;font-weight:600;line-height:1.2}
+.pnode .s{font-size:11px;color:var(--ink-3);line-height:1.3;white-space:nowrap}
+.parrow{color:var(--ink-3);font-size:16px;flex:0 0 auto}
+@media(max-width:720px){ .trio{flex-direction:column;align-items:stretch} .parrow{transform:rotate(90deg);align-self:center} .pnode .s{white-space:normal} }
+
+/* segmented (path A / path B) */
+.seg{display:inline-flex;background:var(--box);border:1px solid var(--line);border-radius:10px;padding:3px;margin:8px 0 14px;gap:3px}
+.seg button{border:none;background:transparent;font:inherit;font-size:13px;font-weight:500;color:var(--ink-2);padding:7px 14px;border-radius:7px;cursor:pointer;transition:.15s}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.12);font-weight:600}
+.pane{display:none}
+.pane.on{display:block;animation:fade .3s}
+@keyframes fade{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* footer nav */
+.foot{flex:0 0 auto;border-top:1px solid var(--line);padding:14px 40px;display:flex;align-items:center;gap:12px;background:#fafafa}
+.nav{font-size:13.5px;font-weight:500;border:1px solid var(--line);border-radius:9px;padding:9px 18px;background:#fff;color:var(--ink);cursor:pointer;transition:.15s}
+.nav:hover{background:#f1f3f6}
+.nav:disabled{opacity:.4;cursor:not-allowed}
+.nav.p{background:var(--accent);color:#fff;border-color:var(--accent)}
+.nav.p:hover{background:#2757ab}
+.foot .sp{margin-left:auto}
+.foot .hint{font-size:12px;color:var(--ink-3)}
+
+@media(max-width:720px){
+  body{padding:0}
+  .wrap{height:100vh;max-width:100vw;border-radius:0}
+  .rail{display:none}
+  .scroll{padding:22px 20px}
+  .foot{padding:12px 20px}
+  h1{font-size:22px}
+}
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="tb">
+      <img class="logo" src="../brand/footnote-mark.svg" alt="">
+      <span class="brand">Footnote</span><span class="ctx">· Setup guide</span>
+      <span class="prog" id="prog"></span>
+    </div>
+    <div id="bar"></div>
+    <div class="main">
+      <nav class="rail"><div class="rh">Steps</div><div id="steps"></div></nav>
+      <div class="content">
+        <div class="scroll" id="scroll"></div>
+        <div class="foot">
+          <button class="nav" id="back">← Back</button>
+          <button class="nav p" id="next">Next →</button>
+          <span class="sp"></span>
+          <span class="hint" id="hint"></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ---- brand + product icons (inline so the guide is fully self-contained) ----
+const MARK = `<svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg>`;
+const OVERLEAF = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#138a07"/><path d="M13 13h13M13 20h20M13 27h13M13 33h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`;
+const GITHUB = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#24292f"/><circle cx="16" cy="15" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="16" cy="31" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="30" cy="18" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M16 18v10M16 25c0-4 3.5-6.5 10-7" fill="none" stroke="#fff" stroke-width="2.2"/></svg>`;
+
+const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
+
+// a copyable command / link row
+function copyRow(val, label){ return `<div class="copy"><div class="val">${esc(val)}</div><button class="btn" data-copy="${esc(val)}">${label||'Copy'}</button></div>`; }
+function esc(s){ return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function node(icon,t,s){ return `<div class="pnode">${icon}<div><div class="t">${t}</div><div class="s">${s}</div></div></div>`; }
+
+// ================= STEPS =================
+const STEPS = [
+{ nav:'Overview', eyebrow:'Getting started', title:'Three tools, one review layer',
+  body:`
+  <p class="lead">Footnote is the review layer that sits on top of the writing tools you already use. This guide wires the three of them together — once, in about ten minutes. Nothing here is undone later.</p>
+  <div class="trio">
+    ${node(OVERLEAF,'Overleaf','you write here')}
+    <span class="parrow">→</span>
+    ${node(GITHUB,'GitHub','stores your .tex')}
+    <span class="parrow">→</span>
+    ${node(MARK.replace('viewBox="0 0 52 52"','viewBox="0 0 52 52" style="border-radius:8px"'),'Footnote','reviewers comment')}
+  </div>
+  <h2>What each one does</h2>
+  <ul>
+    <li><b>Overleaf</b> stays your editor. You keep writing and compiling exactly as you do today.</li>
+    <li><b>GitHub</b> holds your LaTeX source in a repository. This is the hand-off point: Overleaf pushes your <code>.tex</code> here, and Footnote reads it from here.</li>
+    <li><b>Footnote</b> reads that source and gives your reviewers a clean, rendered reading surface with click-to-comment — no LaTeX, no Overleaf seat, no login for them.</li>
+  </ul>
+  <div class="note info"><span class="ic">◆</span><div>Footnote runs entirely on <b>free GitHub infrastructure</b> (Pages + Actions). There is no Footnote server and no account to pay for — your token and your files stay in your own GitHub and your own browser.</div></div>
+  <p>The steps on the left mirror what you'll actually click. Work top to bottom; you can jump back anytime.</p>` },
+
+{ nav:'GitHub account', eyebrow:'Step 1', title:'Have a GitHub account',
+  body:`
+  <p class="lead">GitHub is where your source lives and where Footnote stores review comments. If you already have an account, skip straight to the next step.</p>
+  <ol class="acts">
+    <li>Go to ${'<a class="lnk" href="https://github.com/signup" target="_blank" rel="noopener">github.com/signup</a>'} and create a free account.</li>
+    <li>Verify your email address — GitHub requires this before you can create repositories.</li>
+  </ol>
+  <div class="note info"><span class="ic">◆</span><div>A <b>free</b> GitHub account is enough for everything in Footnote, including unlimited <b>private</b> repositories. You do not need GitHub Pro.</div></div>` },
+
+{ nav:'Access token', eyebrow:'Step 2', title:'Create a GitHub access token',
+  body:`
+  <p class="lead">Footnote talks to GitHub on your behalf using a personal access token. Think of it as an app-specific password that you can revoke at any time. It never leaves your browser.</p>
+  <ol class="acts">
+    <li>Open the pre-filled token page (it already selects the right scopes):
+      ${copyRow(TOKEN_URL,'Copy link')}
+      <div class="note info" style="margin-top:10px"><span class="ic">◆</span><div>The link pre-selects the <code>repo</code> and <code>workflow</code> scopes. <b>repo</b> lets Footnote read your source and store comments in your private repos; <b>workflow</b> lets it set up the optional background email/convert Actions later.</div></div>
+    </li>
+    <li>Set <b>Expiration</b> to something comfortable (90 days, or longer for a long project). When it expires you'll simply generate a new one.</li>
+    <li>Scroll down and click <b>Generate token</b>. Copy the value — it starts with <code>ghp_</code> and GitHub only shows it once.</li>
+  </ol>
+  <div class="note warn"><span class="ic">⚠</span><div><b>Keep it private.</b> This token can read and write your repositories. Don't paste it into chats, issues, or commits. If it ever leaks, delete it on GitHub and generate a new one — that instantly invalidates the old one.</div></div>
+  <div class="note ok"><span class="ic">🔒</span><div>Footnote stores the token only in <b>this browser</b> (in <code>localStorage</code>). It is never uploaded to any Footnote server — there isn't one.</div></div>
+  <p style="margin-top:6px;font-size:13px;color:var(--ink-2)">Prefer a fine-grained token? That works too — just set <b>Repository access → All repositories</b> so Footnote can see the private repos it needs.</p>` },
+
+{ nav:'Connect Footnote', eyebrow:'Step 3', title:'Connect Footnote to GitHub',
+  body:`
+  <p class="lead">This is the <b>Connect</b> step of Footnote's onboarding — the first screen you saw when you opened your account.</p>
+  <ol class="acts">
+    <li>In Footnote's onboarding, find the <b>Access token</b> field (placeholder <code>ghp_… or github_pat_…</code>).</li>
+    <li>Paste the token you just generated and press Enter.</li>
+    <li>Footnote lists your repositories to confirm the connection. You'll see a small line like <code>42 repos · 7 private</code>.</li>
+  </ol>
+  <div class="note warn"><span class="ic">⚠</span><div>If it says <b>“0 private”</b>, your token can't see private repos. Generate a new one with the <code>repo</code> scope (Step 2's link does this), then <b>Disconnect &amp; reconnect</b> in Footnote.</div></div>
+  <p>Once connected, Footnote moves you to the <b>Workspace</b> step.</p>` },
+
+{ nav:'Workspace repo', eyebrow:'Step 4', title:'Set up your workspace repo',
+  body:`
+  <p class="lead">Your workspace is a tiny private GitHub repo that holds the <b>list</b> of your projects and the review comments for each — <b>not</b> your document itself. Footnote can create it for you.</p>
+  <ol class="acts">
+    <li>On the <b>Workspace</b> step, keep the suggested name or type your own — for example ${'<code>footnote-projects</code>'}.</li>
+    <li>Click to create it. Footnote makes a <b>private</b> repo and records your projects there as you add them.</li>
+  </ol>
+  <h2>What lives where</h2>
+  <ul>
+    <li><b>Workspace repo</b> (private, yours): the project index + each project's comments, release state, and staged edits.</li>
+    <li><b>Your LaTeX source repo</b> (next step): your <code>.tex</code>. Footnote only <b>reads</b> it — it never writes to your source.</li>
+  </ul>
+  <div class="note info"><span class="ic">◆</span><div>Reviewers never touch this repo directly and never need a GitHub account. They get a private link and an access key by email.</div></div>` },
+
+{ nav:'LaTeX → GitHub', eyebrow:'Step 5', title:'Get your LaTeX into GitHub',
+  body:`
+  <p class="lead">Footnote reads your document from a GitHub repository, so your <code>.tex</code> needs to be there. Pick the path that matches your Overleaf plan — both end the same way.</p>
+  <div class="seg" id="seg">
+    <button class="on" data-pane="A">I have Overleaf premium</button>
+    <button data-pane="B">Free plan / no premium</button>
+  </div>
+
+  <div class="pane on" data-pane="A">
+    <p>Overleaf's built-in <b>GitHub Synchronization</b> is a premium feature (included with Overleaf Commons, group subscriptions, and individual paid plans). It keeps an Overleaf project and a GitHub repo in sync.</p>
+    <ol class="acts">
+      <li><b>Link your accounts once.</b> In Overleaf, open <b>Account Settings</b> and link your GitHub account under the integrations section.</li>
+      <li><b>Create the GitHub repo from your project.</b> Open your project, then <b>Menu → Integrations → GitHub</b> (Footnote's onboarding calls this <b>Menu → GitHub → Sync</b>). Give the new repository a name and create it.</li>
+      <li><b>Keep them in sync as you write.</b> Syncing is <b>manual, not automatic</b>: open the same <b>GitHub</b> panel and click <b>Push Overleaf changes to GitHub</b> whenever you want reviewers to see your latest text (and <b>Pull</b> if changes came from GitHub's side).</li>
+    </ol>
+    <div class="note info"><span class="ic">◆</span><div>Already start your project on GitHub? You can instead do <b>New Project → Import from GitHub</b> in Overleaf. Either direction works — you just need the repo to exist.</div></div>
+    <div class="note warn"><span class="ic">⚠</span><div>Overleaf recommends keeping a project under <b>~100 MB</b> and each sync under <b>~100 files</b> to avoid sync issues. Normal thesis-sized projects are well within this.</div></div>
+  </div>
+
+  <div class="pane" data-pane="B">
+    <p>No premium? You have three no-cost options. The first needs zero GitHub know-how.</p>
+    <h2>Option 1 — Let Footnote upload it (simplest)</h2>
+    <p>On Footnote's <b>First project</b> step, choose <b>On my computer</b> and drop in your <code>.tex</code> files. Footnote commits them into your workspace for you — no git, no Overleaf sync.</p>
+    <h2>Option 2 — Download from Overleaf, push to GitHub</h2>
+    <ol class="acts">
+      <li>In Overleaf: <b>Menu → Download → Source</b> to get a <code>.zip</code> of your project. This is free on every plan. Unzip it.</li>
+      <li>Create an empty <b>private</b> repo on GitHub, then push your files. With the GitHub CLI:
+        ${copyRow('cd my-thesis\ngit init && git add . && git commit -m "Import from Overleaf"\ngh repo create my-thesis --private --source=. --push','Copy')}
+        <div class="note info" style="margin-top:10px"><span class="ic">◆</span><div>No command line? On GitHub, create the repo and use <b>“uploading an existing file”</b> to drag your unzipped files straight into the browser.</div></div>
+      </li>
+      <li>Re-run the download/push whenever you want reviewers to see new text.</li>
+    </ol>
+    <h2>Option 3 — Already on GitHub</h2>
+    <p>If your source is already in a GitHub repo, there's nothing to do here — just point Footnote at it in the next step.</p>
+  </div>
+
+  <div class="note ok"><span class="ic">✓</span><div><b>Layout Footnote expects:</b> a main <code>.tex</code> and/or a <code>chapters/</code> folder of <code>.tex</code> files. Footnote reads the source and <b>auto-detects your chapters and sections</b> — you don't hand-list them.</div></div>` },
+
+{ nav:'First project', eyebrow:'Step 6', title:'Create your project in Footnote',
+  body:`
+  <p class="lead">Now point Footnote at the source you just put on GitHub. This is the <b>First project</b> step of onboarding.</p>
+  <ol class="acts">
+    <li>Choose how your source arrives: <b>In Overleaf</b>, <b>In a GitHub repo</b>, or <b>On my computer</b>. For the sync/download paths, pick the GitHub-backed option and select your repo (e.g. <code>you/my-thesis</code>).</li>
+    <li>Give the project a name and confirm. Footnote reads the source — <b>read-only, never edited</b> — and builds the reading surface.</li>
+    <li>It parses your <code>.tex</code> to discover chapters and sections automatically, and stores this project's comments in your workspace under its own subfolder.</li>
+  </ol>
+  <div class="note info"><span class="ic">◆</span><div>Whenever your source changes on GitHub (a fresh Overleaf push, or a new upload), re-import to refresh what reviewers see. Their existing comments stay put.</div></div>` },
+
+{ nav:'Invite reviewers', eyebrow:'Step 7', title:'Invite reviewers &amp; release chapters',
+  body:`
+  <p class="lead">Reviewers read in Footnote, not Overleaf — so anyone can comment, with no paid Overleaf seat and nothing to install.</p>
+  <ol class="acts">
+    <li>Open the <b>Reviewers</b> panel and add each reviewer's <b>name and email</b>. Footnote creates a private portal for each one.</li>
+    <li>In the <b>release</b> matrix, tick which chapters each reviewer can see. Release on your own schedule — share the intro now, the rest later.</li>
+    <li>(Optional) Use the <b>Connect email</b> wizard to send invites automatically. It sets a few GitHub <b>Actions secrets</b> (SMTP + a least-privilege access key) so invites go out on their own. You can also just copy each reviewer's link and send it yourself.</li>
+  </ol>
+  <div class="note warn"><span class="ic">⚠</span><div>The reviewer <b>access key</b> is emailed out, so it must be <b>least-privilege</b> — a fine-grained token scoped to <b>only</b> your workspace/data repo, Contents: Read and write. Never hand reviewers a broad account token.</div></div>
+  <div class="note info"><span class="ic">◆</span><div>Reviewers open their link, see the rendered document, and highlight-to-comment. Overleaf's own comments live in raw LaTeX and are limited to paid collaborators — this is the gap Footnote fills.</div></div>` },
+
+{ nav:'Review & back to Overleaf', eyebrow:'Step 8', title:'The review loop, and back to Overleaf',
+  body:`
+  <p class="lead">You're set up. Here's the loop you'll run for the rest of the project.</p>
+  <ol class="acts">
+    <li>Reviewers comment on the rendered document. Comments land on your side live — no refresh, no submit step.</li>
+    <li>You reply, mark comments addressed, and (optionally) see exactly what changed since a reviewer's last visit.</li>
+    <li>When you're ready to edit, click <b>Take to Overleaf</b>. Footnote turns every open comment into a worklist grouped by <code>.tex</code> file — each item gives a <b>search string</b> to find the spot and, for suggested edits, a literal <b>before → after</b>.</li>
+    <li>Make those edits in Overleaf, then <b>push to GitHub</b> again (or re-upload). Footnote picks up the new text on the next import, and the loop continues.</li>
+  </ol>
+  <div class="note ok"><span class="ic">✓</span><div><b>That's the whole cycle:</b> write in Overleaf → sync to GitHub → review in Footnote → worklist back to Overleaf. One-time setup done; from here it's just writing and reviewing.</div></div>
+  <p>Want to see the reviewing experience itself? Watch the ${'<a class="lnk" href="walkthrough.html">animated walkthrough →</a>'}</p>` },
+];
+
+// ---- render ----
+const scroll = document.getElementById('scroll');
+const stepsEl = document.getElementById('steps');
+const backB = document.getElementById('back');
+const nextB = document.getElementById('next');
+const bar = document.getElementById('bar');
+const progEl = document.getElementById('prog');
+const hintEl = document.getElementById('hint');
+const KEY = 'footnote-setup-progress';
+let seen = new Set(JSON.parse(localStorage.getItem(KEY) || '[]'));
+let i = 0;
+
+STEPS.forEach((s,n)=>{
+  const el = document.createElement('div');
+  el.className = 'st'; el.dataset.n = n;
+  el.innerHTML = `<span class="num"><span>${n+1}</span></span><span class="lb">${s.nav}</span>`;
+  el.onclick = ()=>go(n);
+  stepsEl.appendChild(el);
+});
+
+function paintRail(){
+  [...stepsEl.children].forEach((el,n)=>{
+    el.classList.toggle('on', n===i);
+    el.classList.toggle('done', n!==i && seen.has(n));
+  });
+}
+
+function render(){
+  const s = STEPS[i];
+  scroll.innerHTML = `<div class="eyebrow">${s.eyebrow}</div><h1>${s.title}</h1>${s.body}`;
+  scroll.scrollTop = 0;
+  bar.style.width = ((i+1)/STEPS.length*100)+'%';
+  progEl.textContent = `Step ${i+1} of ${STEPS.length}`;
+  backB.disabled = i===0;
+  nextB.textContent = i===STEPS.length-1 ? 'Done ✓' : 'Next →';
+  hintEl.textContent = i===STEPS.length-1 ? 'You can revisit this guide anytime.' : '';
+  paintRail();
+  wireCopies(); wireSeg();
+}
+
+function go(n){
+  seen.add(i);                                   // mark the one you're leaving as visited
+  localStorage.setItem(KEY, JSON.stringify([...seen]));
+  i = Math.max(0, Math.min(STEPS.length-1, n));
+  render();
+}
+
+backB.onclick = ()=>go(i-1);
+nextB.onclick = ()=>{ if(i<STEPS.length-1) go(i+1); else { seen.add(i); localStorage.setItem(KEY, JSON.stringify([...seen])); paintRail(); } };
+document.addEventListener('keydown', e=>{
+  if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+  if(e.key==='ArrowRight') nextB.click();
+  if(e.key==='ArrowLeft' && i>0) go(i-1);
+});
+
+// copy buttons
+function wireCopies(){
+  scroll.querySelectorAll('[data-copy]').forEach(b=>{
+    b.onclick = async ()=>{
+      try{ await navigator.clipboard.writeText(b.dataset.copy); }
+      catch(_){ const t=document.createElement('textarea'); t.value=b.dataset.copy; document.body.appendChild(t); t.select(); document.execCommand('copy'); t.remove(); }
+      const old=b.textContent; b.textContent='Copied ✓'; b.classList.add('done');
+      setTimeout(()=>{ b.textContent=old; b.classList.remove('done'); }, 1600);
+    };
+  });
+}
+// segmented panes (premium / free)
+function wireSeg(){
+  const seg = scroll.querySelector('#seg'); if(!seg) return;
+  seg.querySelectorAll('button').forEach(btn=>{
+    btn.onclick = ()=>{
+      seg.querySelectorAll('button').forEach(b=>b.classList.toggle('on', b===btn));
+      scroll.querySelectorAll('.pane').forEach(p=>p.classList.toggle('on', p.dataset.pane===btn.dataset.pane));
+    };
+  });
+}
+
+render();
+</script>
+</body>
+</html>

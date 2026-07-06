@@ -212,6 +212,7 @@ export async function launch() {
             <div class="fn-err" id="fn-err"></div>
             <button class="fn-btn fn-btn-primary" id="fn-go">Connect</button>
           </div>
+          <p class="fn-hint" style="margin-top:12px">New to wiring up Overleaf, GitHub, and Footnote? <a href="tutorials/setup.html" target="_blank" rel="noopener">Follow the step-by-step setup guide →</a></p>
         </div>
         <div class="fn-vid-col">
           <a class="fn-vid" href="tutorials/walkthrough.html" title="Watch the full walkthrough">
