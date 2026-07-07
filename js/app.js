@@ -2745,6 +2745,29 @@ function renderSettingsDocument(pane, t) {
   };
   pane.querySelector('#set-title-save').onclick = () => { const v = pane.querySelector('#set-title').value.trim(); if (!v){ pane.querySelector('#set-title-stat').textContent = 'Enter a title.'; return; } save(v, true); };
   pane.querySelector('#set-title-auto')?.addEventListener('click', () => save(cur, false));
+  // Backfill: projects imported before title-capture have no doc.title. Detect it from the LaTeX source now,
+  // fill the field, and persist (non-manual) so it shows everywhere without a re-import.
+  if (!cur && t) {
+    const stat = pane.querySelector('#set-title-stat'); stat.textContent = 'Detecting from your LaTeX source…';
+    _detectTitleFromSource(t).then(async det => {
+      const inp = pane.querySelector('#set-title');
+      if (!det) { stat.textContent = 'No \\title found in source/main.tex — enter one above.'; return; }
+      if (inp && !inp.value.trim()) inp.value = det;
+      _CFG.doc = { ..._CFG.doc, title: det, titleManual: false }; setConfig(_CFG);
+      try { if (_projectId && _CFG.hubRepo) await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); stat.textContent = 'Detected from your LaTeX source ✓'; }
+      catch (e) { stat.textContent = 'Detected — not saved: ' + e.message; }
+    }).catch(() => { stat.textContent = ''; });
+  }
+}
+// Read the uploaded LaTeX source (data-repo source/main.tex, same file the reviewer parses) and return its
+// \title via parseDocTitle. '' when the source isn't in the data repo (e.g. an external source repo) or has none.
+async function _detectTitleFromSource(t) {
+  try {
+    const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('source/main.tex')}?t=${Date.now()}`,
+      { headers: { Authorization: `Bearer ${t}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+    if (!r.ok) return '';
+    return parseDocTitle(await r.text());
+  } catch (e) { return ''; }
 }
 // Temporary placeholders — replaced in Tasks 4–7.
 // Email section: the "Notify me" digest (a personal preference) lives here, stored in notify_config.json.
