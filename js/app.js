@@ -11,7 +11,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseDocxChapters, docxToXml } from './docparse.js?v=7b77b84';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml } from './docparse.js?v=7b77b84';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=47573b7';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
@@ -2221,6 +2221,12 @@ async function saveChapters(chs, t){
   let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
   await putJson(t, 'chapters.json', chs, sha, `import: ${chs.length} ${UNIT}s from document`);
 }
+// Write the source-generated "Proposed outline" tree to outline.json (a true extraction of main.tex,
+// replacing any hand-authored/drifted one). Best-effort — never blocks the import.
+async function saveOutline(outline, t){
+  let sha = null; try { const cur = await getJson(t, 'outline.json'); sha = cur.sha; } catch {}
+  await putJson(t, 'outline.json', outline, sha, `import: outline from document (${outline.chapters.length} chapters)`);
+}
 function importDocument(){
   const t = localStorage.getItem('ghpat'); if (!t){ openSettingsPage('access'); return; }
   const src = _CFG.sourceRepo;
@@ -2367,7 +2373,10 @@ function importDocument(){
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); } catch (e) { console.warn('doc persist:', e.message); } }
       }
       status('Saving…');
-      await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();
+      await saveChapters(detected, t);
+      // Generate the Proposed outline from the same source (nested structure + source-derived synopses).
+      try { const outline = parseLatexOutline(_entryText, _resolveInc); if (outline.chapters.length) await saveOutline(outline, t); } catch (e) { console.warn('outline gen:', e.message); }
+      flash(`Imported ${detected.length} ${UNIT}s`); close();
       CHAPTERS = await loadChapters(t); enterHome();
     }
     catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
