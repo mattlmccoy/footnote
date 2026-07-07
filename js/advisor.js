@@ -1,17 +1,17 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=4a3b467';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=4a3b467';
-import { wordDiff } from './textdiff.js?v=4a3b467';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=4a3b467';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=4a3b467';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=4a3b467';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { parseVersion, latestFromHtml, isStale } from './version.js?v=4a3b467';   // stale-bundle refresh nudge
-import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=4a3b467';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=4a3b467';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { startWatch as startNetWatch } from './netstatus.js?v=4a3b467';
-import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=4a3b467';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
+import { anchorFromSelection } from './anchor.js?v=589b1a1';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=589b1a1';
+import { wordDiff } from './textdiff.js?v=589b1a1';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=589b1a1';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=589b1a1';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=589b1a1';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=589b1a1';   // stale-bundle refresh nudge
+import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=589b1a1';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=589b1a1';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { startWatch as startNetWatch } from './netstatus.js?v=589b1a1';
+import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=589b1a1';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
