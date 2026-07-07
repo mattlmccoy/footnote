@@ -11,8 +11,11 @@ import { parseVersion, latestFromHtml, isStale } from './version.js?v=cdda892'; 
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=cdda892';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=cdda892';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { startWatch as startNetWatch } from './netstatus.js?v=cdda892';
+import { showBuildTag } from './buildinfo.js?v=cdda892';
+import { readProgress } from './cardstats.js?v=cdda892';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=cdda892';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
+showBuildTag(import.meta.url);
 
 // A sample chapter shown ONLY during the tour, so the reading + commenting features have real-looking
 // content to point at even before any real chapter is released. Restored when the tour ends. The tour
@@ -602,6 +605,7 @@ function scrollFlash(el){ el.scrollIntoView({behavior:'smooth',block:'center'});
 function buildNav(){
   const nav=document.getElementById('nav'); const hs=[...document.querySelectorAll('#doc h2, #doc h3')];
   review.read=review.read||{};   // advisor-private per-section read check-offs
+  if(hs.length && review.secCount!==hs.length){ review.secCount=hs.length; save(); }   // persist section total so the home card can show read-progress
   const doneN=hs.filter((h,i)=>review.read[h.id||('sec-'+i)]).length;
   nav.innerHTML=`<div class="lbl">SECTIONS<span style="margin-left:auto">${doneN}/${hs.length}</span></div>`;
   hs.forEach((h,i)=>{ if(!h.id) h.id='sec-'+i; const sub=h.tagName==='H3'; const cnt=review.comments.filter(c=>(c.anchor.section||'')===h.textContent.trim()).length;
@@ -1201,10 +1205,14 @@ function enterHome(){
   }
   const list=CHAPTERS.filter(c=>released.includes(c.id));
   const cards=list.map(c=>{ const r=JSON.parse(localStorage.getItem(localKey(c.id))||'null'); const n=r?.comments?.length||0;
+    const p=readProgress(r); const pct=p.done?100:Math.round(p.frac*100); const bar=p.done?'var(--success)':'var(--accent)';
+    const progress=p.secN?`<div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${pct}%;height:100%;background:${bar}"></div></div>`:'';
+    const status=p.secN?(p.done?`<span style="color:var(--success)">reviewed</span>`:`${p.doneN}/${p.secN} read`):'open to review';
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
       <div style="font-size:11.5px;color:var(--text-3)">${UNITC} ${c.n}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
-      <div style="font-size:11px;color:var(--text-2)">${n?`${n} comment${n>1?'s':''}`:'open to review'}</div></div>`; }).join('');
+      ${progress}
+      <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; }).join('');
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
       ${reviewHeaderHtml(list.length)}

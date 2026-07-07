@@ -16,7 +16,11 @@ import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js
 import { startWatch as startNetWatch } from './netstatus.js?v=cdda892';
 import { settingsSections, resolveSection } from './settings.js?v=cdda892';
 import { modalReducer, topModal } from './modal.js?v=cdda892';
+import { showBuildTag } from './buildinfo.js?v=cdda892';
+import { readProgress } from './cardstats.js?v=cdda892';
+import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=cdda892';
 startNetWatch();
+showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1890,12 +1894,11 @@ const DEFENSE = _CFG.deadline ? _CFG.deadline.date : null;
 const daysToDefense = () => Math.max(0, Math.ceil((new Date(DEFENSE) - new Date()) / 86400000));
 function chapterStats(ch){
   const r = JSON.parse(localStorage.getItem('review:'+ch) || 'null');
-  const checked = r?.read ? Object.keys(r.read).length : 0;
-  const sec = r?.secCount || 0;
+  const p = readProgress(r);   // shared read-progress derivation (parity with reviewer cards)
   return { open: r ? r.comments.filter(c=>c.status==='open').length : 0,
            merged: r ? r.comments.filter(c=>c.status==='merged').length : 0,
            total: r ? r.comments.length : 0,
-           checked, sec, frac: sec ? checked/sec : 0, readDone: sec>0 && checked>=sec };
+           checked: p.doneN, sec: p.secN, frac: p.frac, readDone: p.done };
 }
 function enterHome(){
   stopOwnerLiveSync();
@@ -2689,7 +2692,7 @@ async function renderSettingsEmail(pane, t) {
     <div class="set-card">
       <h4>Invite email</h4>
       <div class="set-status">${emailConfigured?'<span class="ok">✓</span> Set up — reviewer invites send automatically.':'<span class="warn">●</span> Not set up — reviewers get portal links you copy yourself.'}</div>
-      <div style="font-size:11.5px;color:var(--text-3);margin-top:8px">Invite email is configured with your reviewers, since it sends their invitations. <a href="#" id="set-email-toreviewers">Open Reviewers →</a></div>
+      <div style="font-size:11.5px;color:var(--text-3);margin-top:8px">Invite email sends your reviewers their invitations. <a href="#" id="set-email-toreviewers">${emailConfigured?'Change or re-test email →':'Set up invite email →'}</a></div>
     </div>`;
   pane.querySelector('#set-notify-save').onclick = async () => {
     const stat = pane.querySelector('#set-notify-stat');
@@ -2705,7 +2708,7 @@ async function renderSettingsEmail(pane, t) {
       stat.textContent = !val ? 'Cleared — no digest emails.' : f === 'off' ? 'Saved — digests off.' : `Saved — ${f} digest.`;
     } catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + e.message; }
   };
-  pane.querySelector('#set-email-toreviewers').onclick = (e) => { e.preventDefault(); openReleasePanel(); };
+  pane.querySelector('#set-email-toreviewers').onclick = (e) => { e.preventDefault(); openReleasePanel({ openEmail: true }); };
 }
 // Access section: the browser PAT (read/write on the data repo) + the optional source-repo token
 // (only when the paper's LaTeX lives in a separate repo). Replaces the old ⋯ prompt() flow.
@@ -2918,7 +2921,8 @@ function openClaudeDialog(t) {
   ]);
 }
 // ---------- release gate: control which chapters each advisor's portal shows ----------
-async function openReleasePanel(){
+async function openReleasePanel(opts){
+  const openEmailOnLoad = !!(opts && opts.openEmail === true);   // Settings→Email deep-link opens the wizard directly
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
   stopOwnerLiveSync();
   document.getElementById('nav').style.display = 'none';
@@ -2979,8 +2983,19 @@ async function openReleasePanel(){
       items.length ? items.map(({chapter, c}) => cmtRow(a, chapter, c)).join('') : `<div style="font-size:12.5px;color:var(--text-3);padding:6px 2px">No comments submitted yet.</div>` }</div>`;
   }).join('');
   document.getElementById('rel-body').innerHTML = `
-    <div id="rel-preflight" style="margin-bottom:22px"></div>
-    <div class="rel-sec">People</div>
+    <div class="rel-sec">Access — which ${UNIT}s each reviewer sees</div>
+    <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
+    <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
+    <div class="rel-links">${advs.map(a => {
+        // Legacy committee members have dedicated pages; the shared lab pool uses review-lab.html;
+        // everyone added through the Advisors feature uses the generic advisor.html?a=<id> portal.
+        const _d = `data=${encodeURIComponent(DATA_REPO)}`;
+        const url = a === 'general' ? `${base}review-lab.html?${_d}`
+          : (a === 'CJS' || a === 'CCS') ? `${base}${a}.html?${_d}`
+          : advisorUrl(a, rel[a].name);
+        return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
+      }).join('')}</div>
+    <div class="rel-sec" style="margin-top:26px">People</div>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Add a reviewer to create their portal and (with an email) send them an invite with their link + access key. The access key can read released ${UNIT}s and write only review comments; keep it private.</div>
     <div class="advadd" style="display:grid;grid-template-columns:1fr 1fr 140px auto;gap:8px;align-items:center;margin-bottom:12px">
       <input id="adv-name" placeholder="Full name" style="font:inherit;font-size:13px;padding:7px 9px;border:.5px solid var(--border);border-radius:7px;background:var(--bg);color:var(--text);outline:none">
@@ -2997,19 +3012,8 @@ async function openReleasePanel(){
       <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
     </div>
     <div id="rel-board"></div>
-    <div class="rel-sec" style="margin-top:26px">Access — which ${UNIT}s each reviewer sees</div>
-    <table class="rel-tbl"><thead><tr><th>${UNITC}</th>${advs.map(a => `<th>${escapeHtml(a)}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${escapeHtml(rel[a].name||a)}</div></th>`).join('')}</tr></thead><tbody>${rows}<tr style="border-top:2px solid var(--border-2)"><td>Release responses<div style="font-weight:400;font-size:10px;color:var(--text-3)">let them see how you addressed their comments</div></td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-resp="${a}" ${rel[a].responses_released?'checked':''}></td>`).join('')}</tr></tbody></table>
-    <div style="display:flex;gap:8px;margin:14px 0 6px;align-items:center"><button class="btn btn-primary" id="rel-save">Save &amp; publish</button><span id="rel-stat" style="font-size:12px;color:var(--text-3)"></span></div>
-    <div class="rel-links">${advs.map(a => {
-        // Legacy committee members have dedicated pages; the shared lab pool uses review-lab.html;
-        // everyone added through the Advisors feature uses the generic advisor.html?a=<id> portal.
-        const _d = `data=${encodeURIComponent(DATA_REPO)}`;
-        const url = a === 'general' ? `${base}review-lab.html?${_d}`
-          : (a === 'CJS' || a === 'CCS') ? `${base}${a}.html?${_d}`
-          : advisorUrl(a, rel[a].name);
-        return `<div><b>${escapeHtml(rel[a].name||a)}</b> → <code>${escapeHtml(url)}</code></div>`;
-      }).join('')}</div>
-    <div class="rel-sec" style="margin-top:26px">Inbox — comments received</div>${inboxHtml}`;
+    <div class="rel-sec" style="margin-top:26px">Inbox — comments received</div>${inboxHtml}
+    <div id="rel-preflight" style="margin-top:26px"></div>`;
   const refresh = () => openReleasePanel();
   // panel is overview-only: read-gate + batch send + open-in-context. All in-place (no full re-fetch).
   const syncAdvHeader = a => {
@@ -3079,6 +3083,16 @@ async function openReleasePanel(){
   // true only once the invite workflow has confirmed working SMTP creds (it writes email_configured).
   // Until then we must NOT imply an email was sent — we tell the owner plainly and show how to fix it.
   const emailConfigured = () => advReg.email_configured === true;
+  // Default Reviewers view for email is a one-line pointer to Settings (the coupled SMTP wizard stays
+  // here in code but is entered from Settings → Email, which deep-links via openReleasePanel({openEmail:true})).
+  const renderEmailPointer = () => {
+    const box = document.getElementById('adv-email-banner'); if (!box) return;
+    const ok = emailConfigured();
+    box.innerHTML = `<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-3);border:.5px solid var(--border);border-radius:8px;padding:8px 11px;margin-bottom:12px">
+      <i class="ti ti-${ok?'circle-check':'mail'}" style="color:var(--${ok?'success':'text-3'})"></i> Email invites: ${ok?'set up':'not set up'}.
+      <button id="adv-email-manage" class="btn" style="padding:3px 10px;font-size:11px;margin-left:auto">Manage in Settings</button></div>`;
+    const mb = document.getElementById('adv-email-manage'); if (mb) mb.onclick = () => openSettingsPage('email');
+  };
   const renderEmailBanner = () => {
     const box = document.getElementById('adv-email-banner'); if (!box) return;
     if (emailConfigured()){
@@ -3476,7 +3490,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     }
   };
   const renderAdvList = () => {
-    renderEmailBanner();
+    renderEmailPointer();   // default email view is a one-line Settings pointer; the wizard is entered from Settings
     const box = document.getElementById('adv-list'); if (!box) return;
     if (!advReg.advisors.length){ box.innerHTML = `<div style="font-size:12.5px;color:var(--text-3)">No added reviewers yet.</div>`; return; }
     box.innerHTML = advReg.advisors.map(a => {
@@ -3605,6 +3619,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   document.getElementById('adv-add').onclick = addAdvisor;
   { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
   renderAdvList();
+  if (openEmailOnLoad) openConnectForm();   // Settings → Email deep-link opens the SMTP wizard directly
 
   // ---- Reviewer status board (Lane D feature 3) — per reviewer: units released, comments submitted,
   // last activity, invite state. Purely from data we already loaded (advReg/rel/inbox/pres); no invented
@@ -3634,8 +3649,16 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   // ---- Configuration health check / preflight (Lane D feature 2) — one at-a-glance green/amber panel.
   // Signals that need a live probe (render-built, token-write) are fetched async; the rest come from
   // state we already have. healthSignals is pure + TDD'd; each amber row names the exact next step.
-  (async () => {
+  // Deploy checklist lives at the BOTTOM now, collapsible + dismissable (dismissal persisted per
+  // project so a set-up project doesn't nag). Defaults collapsed once every signal is green.
+  const _relPid = DATA_REPO + ':' + (_projectId || 'root');
+  const renderPreflight = async () => {
     const box = document.getElementById('rel-preflight'); if (!box) return;
+    if (isChecklistDismissed(localStorage, _relPid)){
+      box.innerHTML = `<div style="text-align:right"><button id="rel-cl-show" style="background:none;border:0;color:var(--text-3);cursor:pointer;font:inherit;font-size:11.5px"><i class="ti ti-checklist"></i> Show deploy checklist</button></div>`;
+      const sh = box.querySelector('#rel-cl-show'); if (sh) sh.onclick = () => { restoreChecklist(localStorage, _relPid); renderPreflight(); };
+      return;
+    }
     let renderBuilt = false, tokenCanWrite = null;
     try {
       const paths = await ghTree(t);   // ghTree already strips this project's dataPrefix → match BARE paths (dpath() here double-prefixed → preflight was always amber for workspace projects)
@@ -3651,14 +3674,21 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     });
     const greens = signals.filter(s => s.status === 'green').length;
     const allGreen = greens === signals.length;
+    const collapsed = allGreen;   // once everything is green, default to collapsed
     box.innerHTML = `<div style="border:.5px solid var(--border);border-radius:11px;padding:14px 16px;background:var(--bg-2)">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
         <i class="ti ti-${allGreen?'circle-check':'alert-triangle'}" style="font-size:16px;color:var(--${allGreen?'success':'warn'})"></i>
-        <b style="font-size:13.5px">${allGreen?'Ready to share with reviewers':`Deploy checklist — ${greens}/${signals.length} ready`}</b></div>
-      ${signals.map(s => `<div style="display:flex;align-items:flex-start;gap:9px;padding:4px 0;font-size:12.5px">
+        <b style="font-size:13.5px">${allGreen?'Ready to share with reviewers':`Deploy checklist — ${greens}/${signals.length} ready`}</b>
+        <button id="rel-cl-toggle" title="Collapse / expand" style="margin-left:auto;background:none;border:0;color:var(--text-3);cursor:pointer;padding:2px"><i class="ti ti-chevron-${collapsed?'down':'up'}"></i></button>
+        <button id="rel-cl-dismiss" title="Dismiss checklist" style="background:none;border:0;color:var(--text-3);cursor:pointer;padding:2px"><i class="ti ti-x"></i></button></div>
+      <div id="rel-cl-body" style="${collapsed?'display:none':''}">${signals.map(s => `<div style="display:flex;align-items:flex-start;gap:9px;padding:4px 0;font-size:12.5px">
         <i class="ti ti-${s.status==='green'?'circle-check':'circle'}" style="font-size:14px;margin-top:1px;color:var(--${s.status==='green'?'success':'warn'})"></i>
-        <div><span style="color:var(--text)">${escapeHtml(s.label)}</span>${s.status==='amber'?`<div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${escapeHtml(s.next)}</div>`:''}</div></div>`).join('')}</div>`;
-  })();
+        <div><span style="color:var(--text)">${escapeHtml(s.label)}</span>${s.status==='amber'?`<div style="color:var(--text-3);font-size:11.5px;margin-top:1px">${escapeHtml(s.next)}</div>`:''}</div></div>`).join('')}</div></div>`;
+    const tg = box.querySelector('#rel-cl-toggle'); const bd = box.querySelector('#rel-cl-body');
+    if (tg && bd) tg.onclick = () => { const hid = bd.style.display === 'none'; bd.style.display = hid ? '' : 'none'; tg.querySelector('i').className = 'ti ti-chevron-' + (hid ? 'up' : 'down'); };
+    const dm = box.querySelector('#rel-cl-dismiss'); if (dm) dm.onclick = () => { dismissChecklist(localStorage, _relPid); renderPreflight(); };
+  };
+  renderPreflight();
   // (Notify-me digest + AI setup moved to the dedicated Settings page.)
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);

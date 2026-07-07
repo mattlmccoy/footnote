@@ -7,7 +7,9 @@ import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=cdda892';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=cdda892';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=cdda892';
 import { startWatch as startNetWatch } from './netstatus.js?v=cdda892';
+import { showBuildTag } from './buildinfo.js?v=cdda892';
 startNetWatch();
+showBuildTag(import.meta.url);
 
 // ---- pure helpers (unit-tested) ----
 
@@ -247,10 +249,10 @@ export async function launch() {
     frame(`<div class="fn-hero fn-reveal">
       ${stepperHtml(1)}
       <h1 class="fn-h1">Set up your <em>workspace</em>.</h1>
-      <p class="fn-lead">This is just a small private repo that holds the <b>list</b> of your projects — <b>not</b> your document or its comments. You'll pick those next, one per project. Create it now, or choose one you already have.</p>
+      <p class="fn-lead">This one private repo is your whole Footnote workspace. It keeps your projects, their documents, and every comment together, one folder per project. Create it now, or choose one you already have.</p>
       <div class="fn-card">
         <div class="fn-step">Workspace repo</div>
-        <label class="fn-field">Projects index <span class="fn-sub">a tiny private repo, e.g. footnote-projects</span><input id="fn-hub" value="${esc(defaultHubRepo(cfg))}" spellcheck="false"></label>
+        <label class="fn-field">Repository name <span class="fn-sub">one private repo, e.g. footnote-projects</span><input id="fn-hub" value="${esc(defaultHubRepo(cfg))}" spellcheck="false"></label>
         <div class="fn-err" id="fn-err"></div>
         <div class="fn-actions">
           <button class="fn-btn fn-btn-primary" id="fn-create">Create it for me</button>
