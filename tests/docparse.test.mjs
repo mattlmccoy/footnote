@@ -1,6 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseLatexTitle, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseLatexTitle, parseDocTitle, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+
+// ---- parseDocTitle: robust title extraction across LaTeX conventions ----
+test('parseDocTitle: standard \\title', () => {
+  assert.equal(parseDocTitle('\\documentclass{article}\n\\title{A Simple Paper}\n\\begin{document}'), 'A Simple Paper');
+});
+test('parseDocTitle: strips \\thanks (funding note must NOT leak into the title)', () => {
+  assert.equal(parseDocTitle('\\title{Deep Nets\\thanks{Funded by NSF grant 12345}}'), 'Deep Nets');
+});
+test('parseDocTitle: strips \\footnote and \\thanksref and \\tnoteref', () => {
+  assert.equal(parseDocTitle('\\title{Metrology\\footnote{corresponding author}\\tnoteref{t1}}'), 'Metrology');
+  assert.equal(parseDocTitle('\\title{Scanning Methods\\thanksref{a}}'), 'Scanning Methods');
+});
+test('parseDocTitle: strips \\textsuperscript / \\inst affiliation marks', () => {
+  assert.equal(parseDocTitle('\\title{Rapid Heating\\textsuperscript{1,2}}'), 'Rapid Heating');
+});
+test('parseDocTitle: resolves a title that is a macro (\\title{\\mytitle})', () => {
+  assert.equal(parseDocTitle('\\newcommand{\\mytitle}{Volumetric Manufacturing}\n\\title{\\mytitle}\n\\begin{document}'), 'Volumetric Manufacturing');
+});
+test('parseDocTitle: resolves \\def-defined title macro', () => {
+  assert.equal(parseDocTitle('\\def\\thetitle{Adjoint Design}\n\\title{\\thetitle}'), 'Adjoint Design');
+});
+test('parseDocTitle: finds \\title in an \\input-ed preamble file via resolveFile', () => {
+  const resolve = p => (p === 'preamble' || p === 'preamble.tex') ? '\\title{Title From Preamble}' : null;
+  assert.equal(parseDocTitle('\\documentclass{book}\n\\input{preamble}\n\\begin{document}', resolve), 'Title From Preamble');
+});
+test('parseDocTitle: multiline title + \\& escape, marks stripped together', () => {
+  assert.equal(parseDocTitle('\\title{Process Development\\\\ \\& Characterization\\thanks{x}}'), 'Process Development & Characterization');
+});
+test('parseDocTitle: returns empty string when there is no title anywhere', () => {
+  assert.equal(parseDocTitle('\\documentclass{article}\n\\begin{document}\nHello\n\\end{document}'), '');
+});
 
 test('parseLatexTitle extracts the \\title argument from a full document', () => {
   const tex = '\\documentclass{article}\n\\title{A Low-Cost Scanner-Based Diagnostic Pipeline}\n\\author[gt]{M. McCoy}\n\\begin{document}';

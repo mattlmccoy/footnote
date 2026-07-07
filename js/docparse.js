@@ -27,12 +27,79 @@ function stripComments(tex) {
   return String(tex).replace(/(^|[^\\])%.*$/gm, '$1');
 }
 
-// The document title from a LaTeX source: the balanced-brace argument of the FIRST \title{...} (optionally
-// \title[short]{...}), cleaned of formatting commands/braces/\\ and whitespace-collapsed. '' when absent.
-// This is the authoritative title source (the .tex the author wrote), ahead of any config/outline copy.
+// Title-attached marks: affiliations / funding / footnotes that authors hang on the title but are NOT part
+// of the title text. Removed (command + balanced-brace arg) before cleaning, or they leak into the title.
+const _TITLE_MARKS = ['thanks', 'footnote', 'tnoteref', 'thanksref', 'fnref', 'textsuperscript', 'inst',
+  'orcidlink', 'authormark', 'corref', 'footnotemark', 'IEEEauthorrefmark'];
+
+// Remove every `\name{...}` (balanced braces, one nesting level via depth count) from a string.
+function _stripCmdArg(s, name) {
+  const re = new RegExp(`\\\\${name}\\b\\s*(\\[[^\\]]*\\])?\\s*\\{`, 'g');
+  let out = '', last = 0, m;
+  while ((m = re.exec(s))) {
+    out += s.slice(last, m.index);
+    let i = re.lastIndex, depth = 1;
+    for (; i < s.length && depth > 0; i++) { const c = s[i]; if (c === '{') depth++; else if (c === '}') depth--; }
+    last = i; re.lastIndex = i;
+  }
+  return out + s.slice(last);
+}
+function _stripTitleMarks(s) {
+  return _TITLE_MARKS.reduce((acc, n) => _stripCmdArg(acc, n), String(s)).replace(/\\footnotemark\b/g, '');
+}
+
+// The raw (un-cleaned) balanced-brace argument of the first \title{...} (opt \title[short]{...}). null if none.
+function _rawTitleArg(tex) {
+  const re = /\\title\b\*?\s*(\[[^\]]*\])?\s*\{/g;
+  const m = re.exec(tex); if (!m) return null;
+  let i = re.lastIndex, depth = 1, buf = '';
+  for (; i < tex.length && depth > 0; i++) { const c = tex[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (depth === 0) break; } buf += c; }
+  return buf;
+}
+
+// \input{f} / \include{f} targets.
+function _includeTargets(tex) {
+  const out = [], re = /\\(?:input|include)\s*\{([^{}]+)\}/g; let m;
+  while ((m = re.exec(tex))) out.push(m[1].trim());
+  return out;
+}
+const _resolveInclude = (resolveFile, name) => resolveFile(name) ?? resolveFile(name.replace(/\.tex$/i, ''));
+
+// Body of \newcommand{\name}{...} / \newcommand\name{...} / \def\name{...}, searching src then its includes.
+function _macroBody(tex, name, resolveFile) {
+  const pat = new RegExp(`\\\\(?:newcommand|renewcommand|providecommand|def)\\s*\\{?\\\\${name}\\}?(?:\\[[^\\]]*\\])?\\s*\\{`);
+  const search = src => {
+    const m = pat.exec(src); if (!m) return null;
+    let i = m.index + m[0].length, depth = 1, buf = '';
+    for (; i < src.length && depth > 0; i++) { const c = src[i]; if (c === '{') depth++; else if (c === '}') { depth--; if (depth === 0) break; } buf += c; }
+    return buf;
+  };
+  let b = search(tex); if (b != null) return b;
+  for (const inc of _includeTargets(tex)) { const f = _resolveInclude(resolveFile, inc); if (f != null && (b = search(String(f))) != null) return b; }
+  return null;
+}
+
+// The document title from a LaTeX source of truth. Robust across conventions: strips title-attached marks
+// (\thanks/\footnote/\tnoteref/\textsuperscript…), resolves a macro title (\title{\mytitle}), and follows
+// \input/\include'd preamble files (via resolveFile, keyed WITHOUT .tex like folderTexIndex). '' when absent.
+export function parseDocTitle(entryText, resolveFile = () => null) {
+  const clean = stripComments(String(entryText || ''));
+  let raw = _rawTitleArg(clean);
+  if (raw == null) {   // no \title in the entry — look in \input'd preamble files
+    for (const inc of _includeTargets(clean)) {
+      const f = _resolveInclude(resolveFile, inc);
+      if (f != null) { const r = _rawTitleArg(stripComments(String(f))); if (r != null) { raw = r; break; } }
+    }
+  }
+  if (raw == null) return '';
+  const macro = raw.trim().match(/^\\([a-zA-Z@]+)$/);   // \title{\mytitle} → resolve the macro body
+  if (macro) { const body = _macroBody(clean, macro[1], resolveFile); if (body != null) raw = body; }
+  return latexTitleText(_stripTitleMarks(raw));
+}
+
+// Back-compat thin wrapper: the entry-only title (no include resolver).
 export function parseLatexTitle(tex) {
-  const hit = firstSectioning(stripComments(String(tex)), 'title');
-  return hit ? hit.title : '';
+  return parseDocTitle(tex);
 }
 
 // Extract the balanced-brace argument of the first \<level> command (optionally starred / \cmd[short])
