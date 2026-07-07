@@ -1,21 +1,21 @@
 // advisor.js — reviewer portal for a single named reviewer. Shows only the chapters released to
 // them, lets them comment on text and figures and propose exact edits, and submits those back
 // privately. Self-contained (only the anchor helper is shared) — no build tooling of any kind.
-import { anchorFromSelection } from './anchor.js?v=724dbd5';
-import { startTour, tourSeen, markTourSeen } from './tour.js?v=724dbd5';
-import { wordDiff } from './textdiff.js?v=724dbd5';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=724dbd5';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=724dbd5';   // magic-link: key in the invite URL
-import { makeSafeStore } from './safestore.js?v=724dbd5';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { parseVersion, latestFromHtml, isStale } from './version.js?v=724dbd5';   // stale-bundle refresh nudge
-import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=724dbd5';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
-import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=724dbd5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { buildRefsSection } from './wholerefs.js?v=724dbd5';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=724dbd5';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { startWatch as startNetWatch } from './netstatus.js?v=724dbd5';
-import { showBuildTag } from './buildinfo.js?v=724dbd5';
-import { readProgress } from './cardstats.js?v=724dbd5';   // shared read-progress derivation (parity with author cards)
-import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=724dbd5';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
+import { anchorFromSelection } from './anchor.js?v=ed8337b';
+import { startTour, tourSeen, markTourSeen } from './tour.js?v=ed8337b';
+import { wordDiff } from './textdiff.js?v=ed8337b';
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=ed8337b';   // instance config + chapter manifest; assistant-free by construction
+import { keyFromSearch, searchWithoutKey } from './invite.js?v=ed8337b';   // magic-link: key in the invite URL
+import { makeSafeStore } from './safestore.js?v=ed8337b';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=ed8337b';   // stale-bundle refresh nudge
+import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=ed8337b';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
+import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=ed8337b';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { buildRefsSection } from './wholerefs.js?v=ed8337b';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
+import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=ed8337b';   // "Chapter 3" / "Appendix A" — one label rule for both portals
+import { startWatch as startNetWatch } from './netstatus.js?v=ed8337b';
+import { showBuildTag } from './buildinfo.js?v=ed8337b';
+import { readProgress } from './cardstats.js?v=ed8337b';   // shared read-progress derivation (parity with author cards)
+import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=ed8337b';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 showBuildTag(import.meta.url);
 
