@@ -1,5 +1,42 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseLatexOutline } from '../js/docparse.js';
+
+test('parseLatexOutline nests chapters > sections > subsections with n', () => {
+  const tex = `\\title{My Doc}
+\\chapter{Introduction}
+Intro body sentence one. More text.
+\\section{Motivation}
+Why it matters here for readers.
+\\subsection{Background}
+Some background text follows.
+\\chapter{Methods}
+We did several things carefully.`;
+  const o = parseLatexOutline(tex);
+  assert.equal(o.title, 'My Doc');
+  assert.equal(o.chapters.length, 2);
+  assert.equal(o.chapters[0].title, 'Introduction');
+  assert.equal(o.chapters[0].n, 1);
+  assert.equal(o.chapters[0].sections[0].title, 'Motivation');
+  assert.equal(o.chapters[0].sections[0].subsections[0].title, 'Background');
+  assert.equal(o.chapters[1].title, 'Methods');
+});
+test('parseLatexOutline synopsis = cleaned first sentence after the heading', () => {
+  const tex = '\\chapter{Intro}\nThis work builds on RF heating \\cite{smith}. A second sentence.';
+  assert.equal(parseLatexOutline(tex).chapters[0].synopsis, 'This work builds on RF heating.');
+});
+test('parseLatexOutline promotes sections to top level for a journal (no chapters)', () => {
+  const tex = '\\title{Paper}\\section{Introduction}\nText here now.\n\\subsection{Prior Work}\nMore text.\n\\section{Methods}\nStuff done.';
+  const o = parseLatexOutline(tex);
+  assert.equal(o.chapters.length, 2);
+  assert.equal(o.chapters[0].title, 'Introduction');
+  assert.equal(o.chapters[0].sections[0].title, 'Prior Work');
+});
+test('parseLatexOutline resolves \\input chapters via resolveFile', () => {
+  const resolve = p => p==='ch1' ? '\\chapter{Loaded}\nBody here now.' : null;
+  assert.equal(parseLatexOutline('\\title{D}\\input{ch1}', resolve).chapters[0].title, 'Loaded');
+});
+
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseLatexTitle, parseDocTitle, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
 
 // ---- parseDocTitle: robust title extraction across LaTeX conventions ----

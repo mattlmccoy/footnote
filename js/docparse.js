@@ -102,6 +102,66 @@ export function parseLatexTitle(tex) {
   return parseDocTitle(tex);
 }
 
+// Inline one level of \input/\include content so a chapter's heading and its body text are contiguous.
+function _assembleDoc(clean, resolveFile) {
+  return clean.replace(/\\(?:input|include)\s*\{([^{}]+)\}/g, (m, name) => {
+    const f = resolveFile(name.trim()) ?? resolveFile(name.trim().replace(/\.tex$/i, ''));
+    return f != null ? `\n${stripComments(String(f))}\n` : m;
+  });
+}
+
+// A short, source-derived synopsis: the first sentence of the body text after a heading, stripped of LaTeX.
+function _firstSentence(tex) {
+  const s = String(tex || '')
+    .replace(/\\(?:begin|end)\s*\{[^{}]*\}/g, ' ')
+    .replace(/\$\$?[^$]*\$\$?/g, ' ')                                             // math
+    .replace(/\\(?:cite[a-zA-Z]*|ref|cref|Cref|autoref|eqref|label|footnote|thanks)\s*(?:\[[^\]]*\])?\s*\{[^{}]*\}/g, ' ')  // refs/cites first (drop, don't inline)
+    .replace(/\\[a-zA-Z@]+\*?\s*(?:\[[^\]]*\])?\s*\{([^{}]*)\}/g, '$1')           // \cmd{arg} → arg
+    .replace(/\\[a-zA-Z@]+\*?/g, ' ')                                             // bare \cmd
+    .replace(/[{}~]/g, ' ')
+    .replace(/\s+([.,;:!?])/g, '$1')                                             // no space before punctuation
+    .replace(/\s+/g, ' ').trim();
+  const m = s.match(/^.*?[.!?](?=\s|$)/);
+  let out = (m ? m[0] : s).trim();
+  if (out.length > 160) out = out.slice(0, 157).trim() + '…';
+  return out;
+}
+
+// Build a NESTED "Proposed outline" tree from the LaTeX source of truth — the same shape the outline view
+// renders ({title, intro, chapters:[{n, title, synopsis, sections:[{title, synopsis, subsections:[…]}]}]}).
+// Reuses the firstSectioning level machinery (top 3 heading levels present, e.g. chapter→section→subsection,
+// or section→subsection→subsubsection for a journal). Synopses are derived from the source (first sentence
+// after each heading), so the outline stays a true extraction — no hand-authored drift.
+export function parseLatexOutline(mainTex, resolveFile = () => null) {
+  const clean = stripComments(String(mainTex || ''));
+  const full = _assembleDoc(clean, resolveFile);
+  const ALL = ['chapter', 'section', 'subsection', 'subsubsection'];
+  const topIdx = ALL.findIndex(lvl => firstSectioning(full, lvl));
+  const root = { title: parseDocTitle(mainTex, resolveFile), intro: '', chapters: [] };
+  if (topIdx < 0) return root;
+  const LEVELS = ALL.slice(topIdx, topIdx + 3);
+  const nodes = [];
+  LEVELS.forEach((lvl, li) => {
+    let pos = 0, hit;
+    while ((hit = firstSectioning(full, lvl, pos))) { nodes.push({ level: li, title: hit.title, start: hit.start, bodyStart: hit.end + 1 }); pos = hit.end + 1; }
+  });
+  nodes.sort((a, b) => a.start - b.start);
+  nodes.forEach((n, i) => { const nextStart = i + 1 < nodes.length ? nodes[i + 1].start : full.length; n.synopsis = _firstSentence(full.slice(n.bodyStart, nextStart)); });
+  let curCh = null, curSec = null, chN = 0;
+  for (const n of nodes) {
+    if (n.level === 0) { curCh = { n: ++chN, title: n.title, synopsis: n.synopsis, sections: [] }; root.chapters.push(curCh); curSec = null; }
+    else if (n.level === 1) {
+      if (!curCh) { curCh = { n: ++chN, title: '', synopsis: '', sections: [] }; root.chapters.push(curCh); }
+      curSec = { title: n.title, synopsis: n.synopsis, subsections: [] }; curCh.sections.push(curSec);
+    } else {
+      const sub = { title: n.title, synopsis: n.synopsis };
+      if (curSec) curSec.subsections.push(sub);
+      else if (curCh) { curSec = { title: '', synopsis: '', subsections: [sub] }; curCh.sections.push(curSec); }
+    }
+  }
+  return root;
+}
+
 // Extract the balanced-brace argument of the first \<level> command (optionally starred / \cmd[short])
 // after `from`. `level` is 'chapter' or 'section'. Returns { title, end } or null. Handles one level of
 // nested braces in the title. \b after the level name means \section never matches \subsection.
