@@ -78,7 +78,7 @@ def _render(events, reg, labels, base, now):
                       f'{head}<div style="font-size:13px;color:{E["text"]};margin-top:2px;">{C.esc(e["body"][:200])}</div></div>')
     rows_html = (
         f'<tr><td style="padding:2px 24px 14px;"><table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:separate;border-spacing:8px 0;"><tr>'
-        f'{_stat(counts_c, "new comments")}{_stat(counts_r, "repl" + ("ies" if counts_r != 1 else "y"))}{_stat(n_adv, "advisors")}'
+        f'{_stat(counts_c, "new comments")}{_stat(counts_r, "repl" + ("ies" if counts_r != 1 else "y"))}{_stat(n_adv, "reviewer" + ("s" if n_adv != 1 else ""))}'
         '</tr></table></td></tr>'
         f'<tr><td style="padding:4px 24px 4px;">{cards}</td></tr>'
         + C.email_button(portal, "Open reviewer portal")
