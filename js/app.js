@@ -11,7 +11,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=cd3025b';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseDocxChapters, docxToXml } from './docparse.js?v=cd3025b';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=47573b7';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
@@ -2343,13 +2343,25 @@ function importDocument(){
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { sourceRepo: repo }, t); } catch (e) { console.warn('sourceRepo persist:', e.message); } }
         _CFG.sourceRepo = repo; setConfig(_CFG);
       }
-      // Adopt the detected unit level (chapter/section) so the reviewer's labels match the document, but
-      // never clobber a custom noun the adopter set. Persist to projects.json so it survives reload.
+      // Adopt the detected unit level (chapter/section) AND the LaTeX \title from the uploaded source, so
+      // the reviewer's labels and header match the document. Never clobber a custom noun or an owner title
+      // override (doc.titleManual). Capture the title from the entry .tex + its \input resolver. Persist once.
+      let _entryText = '', _resolveInc = () => null;
+      if (pendingTex) { _entryText = pendingTex.text || ''; }
+      else if (pendingFiles) {
+        const _texts = pendingFiles.filter(f => f.isText);
+        const _entry = pickEntryTex(_texts); const _map = {};
+        for (const f of _texts) _map[f.path.replace(/\.tex$/i, '')] = f.text;
+        _entryText = ((_texts.find(f => f.path === _entry)) || {}).text || '';
+        _resolveInc = p => (p in _map ? _map[p] : null);
+      }
+      const parsedTitle = parseDocTitle(_entryText, _resolveInc);
+      const titleUpd = !!(parsedTitle && !_CFG.doc.titleManual && parsedTitle !== _CFG.doc.title);
       const nextNoun = resolveUnitNoun(_CFG.doc.unitNoun, detectedLevel);
-      if (nextNoun !== _CFG.doc.unitNoun) {
-        _CFG.doc = { ..._CFG.doc, unitNoun: nextNoun }; setConfig(_CFG);
+      if (nextNoun !== _CFG.doc.unitNoun || titleUpd) {
+        _CFG.doc = { ..._CFG.doc, unitNoun: nextNoun, ...(titleUpd ? { title: parsedTitle } : {}) }; setConfig(_CFG);
         UNIT = nextNoun; UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);   // refresh the live labels this session
-        if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); } catch (e) { console.warn('unitNoun persist:', e.message); } }
+        if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); } catch (e) { console.warn('doc persist:', e.message); } }
       }
       status('Saving…');
       await saveChapters(detected, t); flash(`Imported ${detected.length} ${UNIT}s`); close();
