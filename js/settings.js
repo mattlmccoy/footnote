@@ -6,6 +6,7 @@
 export function settingsSections(cfg, state) {
   const agents = (cfg && cfg.reviewAgents) || [];
   const secs = [
+    { id: 'document', label: 'Document',            glyph: state.hasTitle ? 'ok' : null,          muted: false },
     { id: 'email',  label: 'Email & notifications', glyph: state.emailConfigured ? 'ok' : 'warn', muted: false },
     { id: 'access', label: 'Access token',          glyph: state.hasToken ? 'ok' : 'warn',        muted: false },
   ];

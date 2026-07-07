@@ -1435,14 +1435,18 @@ async function _outlineExists(){
 async function _docTitleFromRepo(){
   const t=tok(); if(!t) return '';
   const raw = { headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'}, cache:'no-store' };
-  // 1) authoritative source of truth: the LaTeX \title in the uploaded source (source/main.tex)
-  try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}source/main.tex?t=${Date.now()}`, raw);
-    if(r.ok){ const tt=parseLatexTitle(await r.text()); if(tt && tt.trim()) return tt.trim(); } }catch(e){}
+  // Precedence: owner MANUAL override → live LaTeX \title (source of truth) → auto-captured doc.title → outline.
+  let storedTitle='';
   if(_PREFIX){   // consolidated workspace — the per-project title lives in projects.json at the repo root
     try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/projects.json?t=${Date.now()}`, raw);
       if(r.ok){ const j=await r.json(); const ps=Array.isArray(j)?j:(j.projects||[]); const pid=_PREFIX.replace(/\/$/,'');
-        const p=ps.find(x=>x&&x.id===pid); const tt=p&&p.doc&&p.doc.title; if(tt&&tt.trim()) return tt.trim(); } }catch(e){}
+        const p=ps.find(x=>x&&x.id===pid); const doc=p&&p.doc;
+        if(doc&&doc.title&&doc.title.trim()){ storedTitle=doc.title.trim(); if(doc.titleManual) return storedTitle; } } }catch(e){}
   }
+  // authoritative source of truth: the LaTeX \title in the uploaded source (source/main.tex), always current
+  try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}source/main.tex?t=${Date.now()}`, raw);
+    if(r.ok){ const tt=parseLatexTitle(await r.text()); if(tt && tt.trim()) return tt.trim(); } }catch(e){}
+  if(storedTitle) return storedTitle;   // auto-captured at import, when the live source isn't readable
   try{ const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1'; let data=null;
     if(dev){ const r=await fetch('./outline.json'); if(r.ok) data=await r.json(); }
     if(!data){ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`, raw); if(r.ok) data=await r.json(); }

@@ -2697,7 +2697,7 @@ async function openSettingsPage(section) {
   let claudeConnected = false, emailConfigured = false;
   try { claudeConnected = claudeConnectionStatus(await listSecretNames(t)).claude; } catch {}
   try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
-  const state = { aiOn: assistantOn(), claudeConnected, emailConfigured, hasToken: !!t };
+  const state = { aiOn: assistantOn(), claudeConnected, emailConfigured, hasToken: !!t, hasTitle: !!(_CFG.doc && _CFG.doc.title) };
   const secs = settingsSections(_CFG, state);
   _setSection = resolveSection(secs, section || _setSection);
   const nav = secs.map(s => `<div class="set-item${s.id===_setSection?' active':''}${s.muted?' muted':''}" data-s="${s.id}">
@@ -2708,10 +2708,40 @@ async function openSettingsPage(section) {
 }
 function renderSettingsSection(id, t) {
   const pane = document.getElementById('set-pane'); if (!pane) return;
+  if (id === 'document') return renderSettingsDocument(pane, t);
   if (id === 'email')  return renderSettingsEmail(pane, t);
   if (id === 'access') return renderSettingsAccess(pane, t);
   if (id === 'agents') return renderSettingsAgents(pane, t);
   if (id === 'ai')     return renderSettingsAI(pane, t);
+}
+// Document section: the title reviewers see. Auto-captured from the LaTeX \title at import; the owner can
+// override it here. titleManual stops a later import from clobbering the manual value. Persists to
+// projects.json in workspace mode; takes effect in-session immediately either way.
+function renderSettingsDocument(pane, t) {
+  const cur = (_CFG.doc && _CFG.doc.title) || '';
+  const manual = !!(_CFG.doc && _CFG.doc.titleManual);
+  pane.innerHTML = `
+    <div class="set-card">
+      <h4>Document title</h4>
+      <div class="set-status">${cur ? `<span class="ok">✓</span> ${escapeHtml(cur)}` : '<span class="warn">●</span> No title yet — auto-detected from the LaTeX \\title on import.'}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:8px 0 6px">Shown in the reviewer header. ${manual ? 'Set manually.' : 'Auto-detected from your source — edit to override.'}</div>
+      <div style="display:flex;gap:8px">
+        <input id="set-title" type="text" value="${escapeHtml(cur)}" placeholder="Document title" style="flex:1;font:inherit;font-size:13px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+        <button class="btn btn-primary" id="set-title-save" style="padding:5px 12px">Save</button>
+        ${manual ? '<button class="btn" id="set-title-auto" style="padding:5px 12px" title="Clear the override; re-detect from the source on next import">Auto</button>' : ''}
+      </div>
+      <div id="set-title-stat" style="font-size:11.5px;color:var(--text-3);margin-top:6px"></div>
+    </div>`;
+  const save = async (title, isManual) => {
+    const stat = pane.querySelector('#set-title-stat'); stat.textContent = 'Saving…';
+    _CFG.doc = { ..._CFG.doc, title, titleManual: isManual }; setConfig(_CFG);
+    try {
+      if (_projectId && _CFG.hubRepo) await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t);
+      stat.textContent = 'Saved — reviewers see this title.'; setTimeout(() => openSettingsPage('document'), 700);
+    } catch (e) { stat.textContent = 'Failed: ' + e.message; }
+  };
+  pane.querySelector('#set-title-save').onclick = () => { const v = pane.querySelector('#set-title').value.trim(); if (!v){ pane.querySelector('#set-title-stat').textContent = 'Enter a title.'; return; } save(v, true); };
+  pane.querySelector('#set-title-auto')?.addEventListener('click', () => save(cur, false));
 }
 // Temporary placeholders — replaced in Tasks 4–7.
 // Email section: the "Notify me" digest (a personal preference) lives here, stored in notify_config.json.
