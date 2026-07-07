@@ -1734,15 +1734,18 @@ function clearSearch(){ document.querySelectorAll('#doc mark').forEach(m => m.re
 function openSendMenu(){
   document.getElementById('sendmenu')?.remove();
   const menu = document.createElement('div'); menu.id = 'sendmenu';
-  menu.style.cssText = 'position:absolute;top:50px;right:52px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:248px';
+  menu.style.cssText = 'position:absolute;top:50px;right:52px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:248px;max-width:340px';
   const open = review.comments.filter(c => c.status === 'open').length;
+  // The run-agents row lists the configured agents; cap the list so it never stretches the menu wide.
+  const _rvAgents = _CFG.reviewAgents || [];
+  const _rvLabel = _rvAgents.length > 5 ? `${_rvAgents.slice(0, 5).join(', ')} +${_rvAgents.length - 5} more` : _rvAgents.join(', ');
   // Which rows to show is gated by the master AI switch: when the assistant is OFF, sendMenuActions
   // returns ONLY 'export' — no Claude-dependent Apply-edits or Run-agents rows (the deterministic
   // apply-direct path stays on the per-comment pencil editor). When ON it adds apply-edits, and
   // run-agents only when the instance configures reviewAgents. Single source of truth in config.js.
   const rowFor = {
     'apply-edits': `<div class="smi" data-type="apply-edits"><i class="ti ti-git-pull-request"></i><div><div style="font-weight:500">Apply edits${open?` · ${open}`:''}</div><div class="smi-d">stage LaTeX edits on review-edits/${current}</div></div></div>`,
-    'run-agents': `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div><div style="font-weight:500">Run review agents</div><div class="smi-d">${escapeHtml(_CFG.reviewAgents.join(', '))} read-only critique</div></div></div>`,
+    'run-agents': `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div style="min-width:0"><div style="font-weight:500">Run review agents</div><div class="smi-d" style="overflow-wrap:anywhere">${escapeHtml(_rvLabel)} · read-only critique</div></div></div>`,
     'export': `<div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this ${UNIT}…</div><div class="smi-d">Word · Markdown, with comments</div></div></div>`,
   };
   menu.innerHTML = sendMenuActions(assistantOn(), _CFG.reviewAgents).map(a => rowFor[a]).join('');
