@@ -15,6 +15,7 @@ export function latexTitleText(tex) {
   return String(tex)
     .replace(/\\\\\s*(\[[^\]]*\])?/g, ' ')             // LaTeX \\ line break (opt [2ex]) → space
     .replace(/\\[a-zA-Z]+\*?\s*\{([^{}]*)\}/g, '$1')   // \cmd{arg} → arg (one level)
+    .replace(/\\([&%$#_])/g, '$1')                     // LaTeX escapes \& \% \$ \# \_ → literal char
     .replace(/\\[a-zA-Z]+\*?/g, '')                    // bare \cmd
     .replace(/[{}]/g, '')
     .replace(/\s+/g, ' ')

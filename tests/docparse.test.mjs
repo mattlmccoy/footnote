@@ -15,6 +15,10 @@ test('parseLatexTitle ignores commented titles and does not match \\titleformat'
 test('parseLatexTitle collapses a multi-line title with \\\\ into one line', () => {
   assert.equal(parseLatexTitle('\\title{First Line\\\\ Second Line}'), 'First Line Second Line');
 });
+test('parseLatexTitle unescapes LaTeX escapes like \\& in the title', () => {
+  assert.equal(parseLatexTitle('\\title{Process Development \\& Characterization}'), 'Process Development & Characterization');
+  assert.equal(parseLatexTitle('\\title{50\\% Faster \\_ Better}'), '50% Faster _ Better');
+});
 test('parseLatexTitle returns empty string when there is no title', () => {
   assert.equal(parseLatexTitle('\\section{Intro}\n\\begin{document}'), '');
 });
