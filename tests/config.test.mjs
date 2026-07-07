@@ -231,6 +231,14 @@ test('assistantEnabled is off by default, on via the local flag or a configured 
   assert.equal(assistantEnabled({}, null), false);                        // no reviewAgents key
 });
 
+test('assistantEnabled: an explicit off ("0") is a per-user master switch that overrides a shipped agent list', () => {
+  // The agent catalog says which agents are AVAILABLE, not that AI must be on. A user who turns the
+  // master switch off must stay off even when the project ships reviewAgents.
+  assert.equal(assistantEnabled({ reviewAgents: ['adversary', 'clarity'] }, '0'), false);  // explicit off wins
+  assert.equal(assistantEnabled({ reviewAgents: ['adversary'] }, '1'), true);              // explicit on
+  assert.equal(assistantEnabled({ reviewAgents: ['adversary'] }, null), true);             // unset → shipped default-on
+});
+
 test('sendMenuActions gates the Claude surface behind the master switch', () => {
   // AI OFF: only the deterministic Export action — no Claude-dependent rows at all.
   assert.deepEqual(sendMenuActions(false, ['adversary']), ['export']);

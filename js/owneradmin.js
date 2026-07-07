@@ -85,15 +85,20 @@ export function reviewerStatus({ advisors = [], release = {}, inbox = {}, presen
     const rel = release[a.id] || {};
     const items = inbox[a.id] || [];
     const pr = presence[a.id] || {};
+    const commentCount = items.filter(x => x.c && x.c.status !== 'open').length;
+    const lastActive = pr.lastActive || null;
     return {
       id: a.id,
       name: a.name,
       email: a.email || '',
       releasedCount: (rel.released || []).length,
       responsesReleased: !!rel.responses_released,
-      commentCount: items.filter(x => x.c && x.c.status !== 'open').length,
+      commentCount,
       draftCount: pr.drafts || 0,
-      lastActive: pr.lastActive || null,
+      lastActive,
+      // Derived activity signal: a reviewer who has left a comment or was recently present is "active",
+      // shown in place of "invite pending" — the invite-email flag alone was misleading once they engage.
+      active: commentCount > 0 || !!lastActive,
       inviteStatus: inviteStateOf(a),
     };
   });

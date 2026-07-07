@@ -150,6 +150,29 @@ test('reviewerStatus: aggregates released units, comment count, last activity, i
   assert.equal(n.lastActive, null);
 });
 
+test('reviewerStatus: marks a reviewer active once they have a comment or recent activity (shown instead of "invite pending")', () => {
+  const rows = reviewerStatus({
+    advisors: [
+      { id: 'a', name: 'A', email: 'a@x.edu', invited: false },   // invite email never sent → 'pending', but left a comment
+      { id: 'b', name: 'B', email: 'b@x.edu', invited: false },   // pending and no activity at all
+      { id: 'c', name: 'C', email: 'c@x.edu', invited: false },   // no comment, but was recently active
+    ],
+    inbox: {
+      a: [{ chapter: 'introduction', c: { status: 'submitted' } }],
+      b: [],
+      c: [],
+    },
+    presence: {
+      c: { lastActive: '2026-07-06T22:59:00Z' },
+    },
+  });
+  const a = rows.find(r => r.id === 'a'), b = rows.find(r => r.id === 'b'), c = rows.find(r => r.id === 'c');
+  assert.equal(a.active, true);            // has a submitted comment → active
+  assert.equal(a.inviteStatus, 'pending'); // underlying invite state is unchanged (activity is derived separately)
+  assert.equal(b.active, false);           // nothing → not active
+  assert.equal(c.active, true);            // recent presence → active
+});
+
 test('reviewerStatus: invite states map correctly (pending / failed / invited / no-email)', () => {
   const rows = reviewerStatus({
     advisors: [

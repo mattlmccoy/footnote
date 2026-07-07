@@ -2604,8 +2604,9 @@ function openMoreMenu(){
 // Turning it on explains that the AI round-trip runs on the user's OWN setup and must be configured.
 function toggleAssistant(){
   if (assistantOn()){
-    if (_CFG.reviewAgents.length){ flash('This project ships an AI agent list in its config — edit the config to disable it.'); return; }
-    localStorage.removeItem(ASSIST_KEY); flash('AI assistant off. “Review actions” (stage → approve → merge) still works.');
+    // Explicit per-user OFF (localStorage '0'), which overrides a shipped reviewAgents list too — the agent
+    // catalog says which agents are available, not that AI must stay on. The deterministic flow is unaffected.
+    localStorage.setItem(ASSIST_KEY, '0'); flash('AI assistant off. “Review actions” (stage → approve → merge) still works.');
   } else {
     localStorage.setItem(ASSIST_KEY, '1');
     alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN data repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
@@ -2857,7 +2858,6 @@ function renderSettingsAgents(pane, t) {
 // ON: status card (connected via <secret> / not connected) + Connect / Manage → dialog, + Run apply.
 async function renderSettingsAI(pane, t) {
   const on = assistantOn();
-  const shipped = (_CFG.reviewAgents || []).length > 0;
   if (!on) {
     pane.innerHTML = `<div class="set-card">
       <h4>AI assistant</h4>
@@ -2874,7 +2874,7 @@ async function renderSettingsAI(pane, t) {
         <span id="set-ai-run-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
-      ${shipped?'':`<div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>`}
+      <div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>
     </div>`;
   const conn = pane.querySelector('#set-ai-conn');
   try { const s = claudeConnectionStatus(await listSecretNames(t));
@@ -3636,13 +3636,13 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       : chip('bg-3','text-3','no email');
     box.innerHTML = `<div class="rel-sec" style="margin-top:22px">Reviewer status</div>
       <table class="rel-tbl" style="margin-top:2px"><thead><tr>
-        <th style="text-align:left">Reviewer</th><th>${UNITC}s shared</th><th>Comments</th><th>Last active</th><th>Invite</th></tr></thead><tbody>${
+        <th style="text-align:left">Reviewer</th><th>${UNITC}s shared</th><th>Comments</th><th>Last active</th><th>Status</th></tr></thead><tbody>${
       rows.map(r => `<tr>
         <td style="text-align:left"><b>${escapeHtml(r.name)}</b>${r.email?`<div style="font-weight:400;font-size:10.5px;color:var(--text-3)">${escapeHtml(r.email)}</div>`:''}</td>
         <td style="text-align:center">${r.releasedCount}${r.responsesReleased?' <span title="responses released" style="color:var(--success)">✓</span>':''}</td>
         <td style="text-align:center">${r.commentCount}${r.draftCount?` <span style="color:var(--text-3)" title="unsubmitted drafts">(+${r.draftCount})</span>`:''}</td>
         <td style="text-align:center;font-size:11.5px;color:var(--text-3)">${r.lastActive?escapeHtml(relTime(r.lastActive)):'—'}</td>
-        <td style="text-align:center">${inviteChip(r.inviteStatus)}</td></tr>`).join('') }</tbody></table>`;
+        <td style="text-align:center">${r.active ? chip('success-bg','success','active') : inviteChip(r.inviteStatus)}</td></tr>`).join('') }</tbody></table>`;
   };
   renderStatusBoard();
 

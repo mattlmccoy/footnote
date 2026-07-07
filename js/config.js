@@ -287,10 +287,13 @@ export function workspaceInviteBroken(pid, rootChapters, treePaths) {
 }
 
 // Whether the optional AI assistant (Send to Claude / run review agents) is on. OFF by default — the
-// deterministic review→stage→approve→merge path is the core product. Enabled either by a per-user local
-// flag (Settings toggle → localStorage 'footnote:assistant' === '1') or by an instance that ships a
-// reviewAgents list in its config. `flag` is the raw localStorage value (string | null).
+// deterministic review→stage→approve→merge path is the core product. The per-user master switch
+// (Settings toggle → localStorage 'footnote:assistant') is the source of truth: '1' = on, '0' = off.
+// When unset (null), it falls back to the instance default: on iff the config ships a reviewAgents list.
+// An explicit '0' overrides a shipped list — the agent catalog says which agents are AVAILABLE, not that
+// AI must be on — so the owner can always turn it off. `flag` is the raw localStorage value (string | null).
 export function assistantEnabled(cfg, flag) {
+  if (flag === '0') return false;   // explicit per-user off wins, even over a shipped reviewAgents list
   return flag === '1' || ((cfg && cfg.reviewAgents) || []).length > 0;
 }
 
