@@ -10,6 +10,7 @@ import { makeSafeStore } from './safestore.js?v=0afc32b';   // never-throw stora
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=0afc32b';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=0afc32b';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=0afc32b';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { parseLatexTitle } from './docparse.js?v=0afc32b';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=0afc32b';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=0afc32b';   // "Chapter 3" / "Appendix A" — one label rule for both portals
 import { startWatch as startNetWatch } from './netstatus.js?v=0afc32b';
@@ -1434,6 +1435,9 @@ async function _outlineExists(){
 async function _docTitleFromRepo(){
   const t=tok(); if(!t) return '';
   const raw = { headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'}, cache:'no-store' };
+  // 1) authoritative source of truth: the LaTeX \title in the uploaded source (source/main.tex)
+  try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}source/main.tex?t=${Date.now()}`, raw);
+    if(r.ok){ const tt=parseLatexTitle(await r.text()); if(tt && tt.trim()) return tt.trim(); } }catch(e){}
   if(_PREFIX){   // consolidated workspace — the per-project title lives in projects.json at the repo root
     try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/projects.json?t=${Date.now()}`, raw);
       if(r.ok){ const j=await r.json(); const ps=Array.isArray(j)?j:(j.projects||[]); const pid=_PREFIX.replace(/\/$/,'');

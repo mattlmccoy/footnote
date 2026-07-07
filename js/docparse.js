@@ -13,6 +13,7 @@ export function slugifyId(s) {
 // unwrap remaining braces, collapse whitespace.
 export function latexTitleText(tex) {
   return String(tex)
+    .replace(/\\\\\s*(\[[^\]]*\])?/g, ' ')             // LaTeX \\ line break (opt [2ex]) → space
     .replace(/\\[a-zA-Z]+\*?\s*\{([^{}]*)\}/g, '$1')   // \cmd{arg} → arg (one level)
     .replace(/\\[a-zA-Z]+\*?/g, '')                    // bare \cmd
     .replace(/[{}]/g, '')
@@ -23,6 +24,14 @@ export function latexTitleText(tex) {
 // Remove LaTeX line comments (unescaped %), preserving \%.
 function stripComments(tex) {
   return String(tex).replace(/(^|[^\\])%.*$/gm, '$1');
+}
+
+// The document title from a LaTeX source: the balanced-brace argument of the FIRST \title{...} (optionally
+// \title[short]{...}), cleaned of formatting commands/braces/\\ and whitespace-collapsed. '' when absent.
+// This is the authoritative title source (the .tex the author wrote), ahead of any config/outline copy.
+export function parseLatexTitle(tex) {
+  const hit = firstSectioning(stripComments(String(tex)), 'title');
+  return hit ? hit.title : '';
 }
 
 // Extract the balanced-brace argument of the first \<level> command (optionally starred / \cmd[short])

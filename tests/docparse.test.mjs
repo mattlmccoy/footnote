@@ -1,6 +1,23 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, slugifyId, latexTitleText, parseLatexTitle, parseDocxChapters, findZipEntry, docxToXml } from '../js/docparse.js';
+
+test('parseLatexTitle extracts the \\title argument from a full document', () => {
+  const tex = '\\documentclass{article}\n\\title{A Low-Cost Scanner-Based Diagnostic Pipeline}\n\\author[gt]{M. McCoy}\n\\begin{document}';
+  assert.equal(parseLatexTitle(tex), 'A Low-Cost Scanner-Based Diagnostic Pipeline');
+});
+test('parseLatexTitle handles an optional short-title arg and nested formatting', () => {
+  assert.equal(parseLatexTitle('\\title[Short]{Full \\textbf{Bold} Title}'), 'Full Bold Title');
+});
+test('parseLatexTitle ignores commented titles and does not match \\titleformat', () => {
+  assert.equal(parseLatexTitle('% \\title{Commented Out}\n\\titleformat{\\section}{}{}{}\n\\title{The Real Title}'), 'The Real Title');
+});
+test('parseLatexTitle collapses a multi-line title with \\\\ into one line', () => {
+  assert.equal(parseLatexTitle('\\title{First Line\\\\ Second Line}'), 'First Line Second Line');
+});
+test('parseLatexTitle returns empty string when there is no title', () => {
+  assert.equal(parseLatexTitle('\\section{Intro}\n\\begin{document}'), '');
+});
 
 // Build a minimal STORED (uncompressed) zip containing one entry, to test the zip reader without inflate.
 function storedZip(name, content) {
