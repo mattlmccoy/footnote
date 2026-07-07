@@ -9,6 +9,8 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=724dbd5';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=724dbd5';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=724dbd5';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=724dbd5';
+import { buildRefsSection } from './wholerefs.js?v=724dbd5';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
+import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=724dbd5';   // "Chapter 3" / "Appendix A" — one label rule for both portals
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=724dbd5';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=724dbd5';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=724dbd5';
@@ -235,7 +237,7 @@ function renderTopbar(){
   const m = chMeta(current);
   document.getElementById('topbar').innerHTML = `
     <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
-    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${UNITC} ${m.n} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
+    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT} · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -1306,13 +1308,28 @@ async function loadWholeDoc(){
   const frags = await Promise.all(_wholeUnits.map(fetchFrag));
   const parts = _wholeUnits.map((u, i) => {
     const frag = frags[i] != null ? frags[i] : `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
-    return wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag);
+    return wrapUnit(u.id, `${unitLabelWithTitle(u, UNIT)}`, frag);
   });
   read.innerHTML = `<article id="doc">${parts.join('\n')}</article>`;
   const doc = document.getElementById('doc');
+  consolidateWholeRefs(doc);   // pull each unit's own reference list into ONE at the very end
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+}
+// Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
+// of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
+function consolidateWholeRefs(doc){
+  if (!doc) return;
+  const entries = [];
+  doc.querySelectorAll('.wd-chapter').forEach(seg => {
+    seg.querySelectorAll('#refs, .references').forEach(block => {
+      block.querySelectorAll('.csl-entry').forEach(el => entries.push({ key: el.id, html: el.outerHTML }));
+      block.remove();
+    });
+  });
+  const html = buildRefsSection(entries);
+  if (html) doc.insertAdjacentHTML('beforeend', html);
 }
 // Load EVERY unit's owner review (local merged with remote) + advisor comments into the per-chapter maps.
 async function loadAllReviews(units){
@@ -1540,7 +1557,7 @@ async function approveChapter(){
   if (p.approved.length) lines.push(`${p.approved.length} approved edit(s) will be merged.`);
   if (p.rejected.length) lines.push(`${p.rejected.length} rejected edit(s) will be discarded.`);
   if (p.revise.length)   lines.push(`${p.revise.length} edit(s) will be re-queued for revision.`);
-  if (!confirm(`Apply ${decided} decision(s) in ${UNITC} ${chMeta(current).n}?\n` + lines.join('\n'))) return;
+  if (!confirm(`Apply ${decided} decision(s) in ${unitLabel(chMeta(current), UNIT)}?\n` + lines.join('\n'))) return;
   const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
   try {
   // persist the promotion conflict-safe: re-apply queueApproved on the freshest remote copy
@@ -1746,7 +1763,7 @@ async function sendJob(type){
         agents:_CFG.reviewAgents, field:(_CFG.doc && _CFG.doc.field) || '',
         status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: agents '+current);
-      flash(`Requested adversary review of ${UNITC} ${chMeta(current).n}`);
+      flash(`Requested adversary review of ${unitLabel(chMeta(current), UNIT)}`);
       return;
     }
     const open = review.comments.filter(c => c.status === 'open');
@@ -1779,7 +1796,7 @@ function undoToast(msg, onUndo){
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const whole = scope === '__all__';
-  const title = whole ? `the whole ${DOC}` : `${UNITC} ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+  const title = whole ? `the whole ${DOC}` : `${unitLabel(chMeta(scope), UNIT)} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
   const back = document.createElement('div'); back.id = 'expdlg';
   back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
   back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
@@ -1841,7 +1858,7 @@ async function renderHomeDownloads(){
   const order = Object.keys(groups).sort((a,b) => (a==='__all__'?99:chMeta(a).n) - (b==='__all__'?99:chMeta(b).n));
   box.innerHTML = header + order.map(scope => {
     const list = groups[scope];
-    const name = scope === '__all__' ? `Whole ${DOC}` : `${UNITC} ${chMeta(scope).n} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+    const name = scope === '__all__' ? `Whole ${DOC}` : `${unitLabel(chMeta(scope), UNIT)} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
     const pending = list.filter(j => j.status !== 'done').length;
     const open = _expOpen.has(scope);
     const versions = list.map(j => {
@@ -2125,7 +2142,7 @@ async function exportAdvisorResponse(){
             <td class="cm">${escapeHtml(c.body)}</td>
             <td class="rs"><b>${status}</b>${r?.note?`<div>${escapeHtml(r.note)}</div>`:''}</td></tr>`;
         }).join('');
-        return `<h3>${UNITC} ${chMeta(g.ch).n} — ${escapeHtml(shortTitle(chMeta(g.ch).title))}</h3>
+        return `<h3>${unitLabel(chMeta(g.ch), UNIT)} — ${escapeHtml(shortTitle(chMeta(g.ch).title))}</h3>
           <table><thead><tr><th>Passage</th><th>Comment</th><th>Response</th></tr></thead><tbody>${rows}</tbody></table>`;
       }).join('');
       return `<section><h2>Response to ${escapeHtml(name)}</h2>${items}</section>`;
@@ -2401,7 +2418,7 @@ function homeHtml(){
       <i class="ti ti-player-play" style="font-size:22px;color:var(--accent)"></i>
       <div style="min-width:0">
         <div style="font-size:11.5px;color:var(--text-2)">Continue where you left off</div>
-        <div style="font-size:14px;font-weight:500">${last==='__whole__' ? `Whole ${escapeHtml(DOC)}` : `${UNITC} ${lm.n} · ${shortTitle(lm.title)}`}</div>
+        <div style="font-size:14px;font-weight:500">${last==='__whole__' ? `Whole ${escapeHtml(DOC)}` : `${unitLabel(lm, UNIT)} · ${shortTitle(lm.title)}`}</div>
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
@@ -2412,7 +2429,7 @@ function homeHtml(){
     const status = done ? `<span style="color:var(--success)">complete</span>` : s.checked>0 ? `${s.checked}/${s.sec} sections` : `not started`;
     const right = s.open ? `<span style="color:var(--accent)">${s.open} open</span>` : s.merged ? `${s.merged} merged` : `<span style="color:var(--text-3)">—</span>`;
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
-        <div style="font-size:11.5px;color:var(--text-3)">${UNITC} ${c.n}</div>
+        <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
@@ -2468,7 +2485,7 @@ function renderHistoryShell(commits, file){
   const m = chMeta(current);
   read.innerHTML = `<div style="height:100%;display:flex;flex-direction:column">
       <div style="display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:.5px solid var(--border);background:var(--bg-2)">
-        <i class="ti ti-history"></i><strong style="font-weight:600">History · ${UNITC} ${m.n}</strong>
+        <i class="ti ti-history"></i><strong style="font-weight:600">History · ${unitLabel(m, UNIT)}</strong>
         <button class="btn" id="hist-close" style="margin-left:auto"><i class="ti ti-x"></i>Close</button></div>
       <div style="flex:1;display:flex;min-height:0">
         <div id="hist-list" style="flex:0 0 290px;border-right:.5px solid var(--border);overflow:auto;padding:12px 10px"></div>

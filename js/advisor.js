@@ -10,6 +10,8 @@ import { makeSafeStore } from './safestore.js?v=724dbd5';   // never-throw stora
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=724dbd5';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=724dbd5';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=724dbd5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { buildRefsSection } from './wholerefs.js?v=724dbd5';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
+import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=724dbd5';   // "Chapter 3" / "Appendix A" — one label rule for both portals
 import { startWatch as startNetWatch } from './netstatus.js?v=724dbd5';
 import { showBuildTag } from './buildinfo.js?v=724dbd5';
 import { readProgress } from './cardstats.js?v=724dbd5';   // shared read-progress derivation (parity with author cards)
@@ -437,7 +439,7 @@ async function loadChapter(ch){
   if (ch === '__whole__'){ loadWholeDoc(); return; }                    // the whole-document view assembles every released unit
   WHOLE = false;
   current = ch; review = loadLocal(ch);
-  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading ${UNITC} ${chMeta(ch).n}…</div></div>`;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading ${unitLabel(chMeta(ch), UNIT)}…</div></div>`;
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
   renderTopbar(); renderComments();
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
@@ -456,7 +458,7 @@ async function loadChapter(ch){
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Reconnecting…</div>
         <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">GitHub is briefly rate-limiting this review. Give it a moment, then reopen this ${escapeHtml(UNIT)}.</div></div>`;
       return; }
-    read.innerHTML = `<div class="empty">Couldn't load ${UNITC} ${chMeta(ch).n} (${escapeHtml(e.message)}). Check your access link.</div>`; }
+    read.innerHTML = `<div class="empty">Couldn't load ${unitLabel(chMeta(ch), UNIT)} (${escapeHtml(e.message)}). Check your access link.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -1000,6 +1002,21 @@ function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilt
 // Assemble every RELEASED unit into one #doc, each wrapped in a #wd-<id> segment. This reviewer's comments
 // are held per chapter in _reviews and resolved within their own segment; new comments route back to the
 // owning chapter's advisor/<id>/<ch>.json. Live sync off in this view (v1); the durable outbox still ships.
+// Whole-doc only: each unit's HTML carries its own citeproc #refs block (separate pandoc passes). Pull
+// every unit's .csl-entry out, drop the per-unit blocks (also kills duplicate ids), dedupe by ref key,
+// and append one consolidated References section at the end of #doc. No-op when nothing cites.
+function consolidateWholeRefs(doc){
+  if(!doc) return;
+  const entries=[];
+  doc.querySelectorAll('.wd-chapter').forEach(seg=>{
+    seg.querySelectorAll('#refs, .references').forEach(block=>{
+      block.querySelectorAll('.csl-entry').forEach(el=>entries.push({ key:el.id, html:el.outerHTML }));
+      block.remove();
+    });
+  });
+  const html=buildRefsSection(entries);
+  if(html) doc.insertAdjacentHTML('beforeend', html);
+}
 async function loadWholeDoc(){
   WHOLE=true; current='__whole__'; review=loadLocal('__whole__');
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
@@ -1026,10 +1043,11 @@ async function loadWholeDoc(){
   const frags=await Promise.all(_wholeUnits.map(fetchFrag));
   const parts=_wholeUnits.map((u,i)=>{
     const frag=frags[i]!=null?frags[i]:`<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;
-    return wrapUnit(u.id, `${UNITC} ${u.n} · ${u.title}`, frag);
+    return wrapUnit(u.id, `${unitLabelWithTitle(u, UNIT)}`, frag);
   });
   read.innerHTML=`<article id="doc">${parts.join('\n')}</article>`;
   const doc=document.getElementById('doc');
+  consolidateWholeRefs(doc);   // pull each unit's own reference list into ONE at the very end
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments();
@@ -1113,7 +1131,7 @@ async function pushChapterReviewAdv(ch){
 function renderTopbar(){ const m=chMeta(current);
   document.getElementById('topbar').innerHTML=`
     <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
-    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${UNITC} ${m.n} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
+    <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT}"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
@@ -1209,7 +1227,7 @@ function enterHome(){
     const progress=p.secN?`<div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${pct}%;height:100%;background:${bar}"></div></div>`:'';
     const status=p.secN?(p.done?`<span style="color:var(--success)">reviewed</span>`:`${p.doneN}/${p.secN} read`):'open to review';
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
-      <div style="font-size:11.5px;color:var(--text-3)">${UNITC} ${c.n}</div>
+      <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
       ${progress}
       <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; }).join('');
@@ -1288,7 +1306,7 @@ function renderResponses(groups){
         <div class="resp-replybox" style="display:none"><textarea rows="2" placeholder="If this wasn't fully addressed, add a note for the author…"></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary resp-send">Send reply</button><button class="btn resp-cancel">Cancel</button></div></div>
       </div>`;
   };
-  const head=g=>g.ch==='__outline__'?'Proposed outline':`${UNITC} ${chMeta(g.ch).n} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
+  const head=g=>g.ch==='__outline__'?'Proposed outline':`${unitLabel(chMeta(g.ch), UNIT)} · ${escapeHtml(shortTitle(chMeta(g.ch).title))}`;
   const activeSecs=groups.map(g=>{ const cs=(g.comments||[]).filter(c=>!_isArchived(c)); return cs.length?`<div class="resp-sec"><div class="resp-ch">${head(g)}</div>${cs.map(c=>item(c,g.ch)).join('')}</div>`:''; }).join('');
   const resolved=groups.flatMap(g=>(g.comments||[]).filter(c=>_isArchived(c)).map(c=>({c,ch:g.ch})));
   const resolvedHtml=resolved.length?`<div class="resp-resolved-grp"><button class="resp-resolved-head"><i class="ti ti-chevron-${_respResolvedOpen?'down':'right'}"></i><span>Resolved</span><span class="rcount">${resolved.length}</span></button><div class="resp-resolved-body" style="display:${_respResolvedOpen?'block':'none'}">${resolved.map(r=>item(r.c,r.ch)).join('')}</div></div>`:'';
@@ -1446,7 +1464,7 @@ const _expOpen = new Set();
 function exportDialog(scope){
   document.getElementById('expdlg')?.remove();
   const m = chMeta(scope);
-  const title = scope==='__outline__' ? 'the proposed outline' : `${UNITC} ${m.n} · ${shortTitle(m.title)}`;
+  const title = scope==='__outline__' ? 'the proposed outline' : `${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`;
   const back=document.createElement('div'); back.id='expdlg';
   back.style.cssText='position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
   back.innerHTML=`<div style="background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(440px,92vw);padding:20px 22px">
@@ -1513,7 +1531,7 @@ async function renderAdvisorDownloads(){
   const groups={}; for(const j of jobs){ (groups[j.chapter] ||= []).push(j); }
   box.innerHTML=header+Object.keys(groups).map(scope=>{
     const list=groups[scope]; const m=chMeta(scope);
-    const name=scope==='__outline__'?'Proposed outline':`${UNITC} ${m.n} · ${shortTitle(m.title)}`;
+    const name=scope==='__outline__'?'Proposed outline':`${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`;
     const pending=list.filter(j=>j.status!=='done').length; const open=_expOpen.has(scope);
     const versions=list.map(j=>{
       const when=j.done_ts?fmtDate(j.done_ts):(j.requested_ts?fmtDate(j.requested_ts):'');
