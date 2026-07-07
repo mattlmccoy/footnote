@@ -7,7 +7,7 @@ import { wordDiff } from './textdiff.js?v=112b6a1';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=624ac4e';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=00c33f4';   // magic-link: key in the invite URL
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { parseVersion, latestFromHtml, isStale } from './version.js?v=2b2a1ef';   // stale-bundle refresh nudge
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { parseLatexTitle } from './docparse.js?v=eda521e';   // authoritative doc title = the LaTeX \title in the uploaded source
