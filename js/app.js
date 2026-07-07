@@ -19,6 +19,7 @@ import { modalReducer, topModal } from './modal.js?v=4f887f5';
 import { showBuildTag } from './buildinfo.js?v=4f887f5';
 import { readProgress } from './cardstats.js?v=4f887f5';
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=4f887f5';
+import { resolveReviewerName } from './reviewername.js?v=4f887f5';
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -492,14 +493,31 @@ async function stageDirectEdit(ch, source, newSource, before, after){
 // ---------- advisor comments surfaced in the owner reviewer ----------
 const ADVISOR_IDS = _CFG.advisors.map(a=>a.id);
 const ADVISOR_NAME = Object.fromEntries(_CFG.advisors.map(a=>[a.id,a.name]));
-// label a comment's source: named advisor → their name; a shared lab reviewer (general-<slug>) → the name they entered
-const whoLabel = c => ADVISOR_NAME[c._advisor] || (/^general-/.test(c._advisor||'') ? (c.author || 'Lab reviewer') : c._advisor);
+// Names of reviewers added at RUNTIME (via the Reviewers panel → advisors.json), which aren't in the
+// config. Populated lazily from advisors.json so a comment pill shows "Matt McCoy", not "matt-mccoy-h2uf".
+let _advNamesRuntime = {};
+// label a comment's source: named advisor → their name (config or runtime); shared lab reviewer → typed name
+const whoLabel = c => resolveReviewerName(c._advisor, { configNames: ADVISOR_NAME, runtimeNames: _advNamesRuntime, author: c.author });
 // an advisor's follow-up replies (when they felt a response was incomplete) + a re-opened flag
 const fupHtml = c => (c.followups||[]).map(f => `<div class="rel-fup"><i class="ti ti-corner-down-right" style="font-size:13px"></i> ${escapeHtml(f.text)} <span style="color:var(--text-3);font-size:11px">· ${(f.ts||'').slice(0,10)}</span></div>`).join('');
 const threadHtml = c => (c.thread||[]).map(m => `<div class="rel-fup" style="border-left-color:${m.author==='author'?'var(--accent)':'var(--success)'}"><b>${m.author==='author'?'You':'Reviewer'}</b> <span style="color:var(--text-3);font-size:11px">· ${fmtDate(m.ts)}</span><div>${escapeHtml(m.text)}</div></div>`).join('');
 let advisorComments = [];
+// Load reviewer display names once (runtime reviewers live in advisors.json, not the config) so pills
+// show names, not ids. Dev reads the local file; production reads the data repo via the token.
+let _advNamesLoaded = false;
+async function ensureAdvNames(t){
+  if (_advNamesLoaded) return;
+  try {
+    let advisors = null;
+    if (location.hostname==='localhost' || location.hostname==='127.0.0.1'){
+      const r = await fetch('./advisors.json'); if (r.ok){ const j = await r.json(); advisors = j && j.advisors; }
+    } else if (t){ const { reg } = await loadAdvisorsRegistry(t); advisors = reg.advisors; }
+    if (Array.isArray(advisors)){ _advNamesRuntime = Object.fromEntries(advisors.map(a=>[a.id, a.name])); _advNamesLoaded = true; }
+  } catch(e){}
+}
 async function loadAdvisorComments(ch){
   advisorComments = []; const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+  await ensureAdvNames(tok());   // reviewer names for comment pills (runtime reviewers aren't in the config)
   let ids = ADVISOR_IDS;
   if (!dev){ const t = tok(); if (t){ try { const paths = await ghTree(t); const re = new RegExp(`^advisor/([^/]+)/${ch}\\.json$`);
     ids = [...new Set(paths.map(p => { const m = p.match(re); return m && m[1]; }).filter(Boolean))]; } catch(e){} } }
