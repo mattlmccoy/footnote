@@ -9,6 +9,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=724dbd5';
 import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=724dbd5';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=724dbd5';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=724dbd5';
+import { buildRefsSection } from './wholerefs.js?v=724dbd5';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocxChapters, docxToXml } from './docparse.js?v=724dbd5';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=724dbd5';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=724dbd5';
@@ -1310,9 +1311,24 @@ async function loadWholeDoc(){
   });
   read.innerHTML = `<article id="doc">${parts.join('\n')}</article>`;
   const doc = document.getElementById('doc');
+  consolidateWholeRefs(doc);   // pull each unit's own reference list into ONE at the very end
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+}
+// Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
+// of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
+function consolidateWholeRefs(doc){
+  if (!doc) return;
+  const entries = [];
+  doc.querySelectorAll('.wd-chapter').forEach(seg => {
+    seg.querySelectorAll('#refs, .references').forEach(block => {
+      block.querySelectorAll('.csl-entry').forEach(el => entries.push({ key: el.id, html: el.outerHTML }));
+      block.remove();
+    });
+  });
+  const html = buildRefsSection(entries);
+  if (html) doc.insertAdjacentHTML('beforeend', html);
 }
 // Load EVERY unit's owner review (local merged with remote) + advisor comments into the per-chapter maps.
 async function loadAllReviews(units){

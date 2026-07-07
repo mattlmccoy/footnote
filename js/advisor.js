@@ -10,6 +10,7 @@ import { makeSafeStore } from './safestore.js?v=724dbd5';   // never-throw stora
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=724dbd5';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=724dbd5';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=724dbd5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
+import { buildRefsSection } from './wholerefs.js?v=724dbd5';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { startWatch as startNetWatch } from './netstatus.js?v=724dbd5';
 import { showBuildTag } from './buildinfo.js?v=724dbd5';
 import { readProgress } from './cardstats.js?v=724dbd5';   // shared read-progress derivation (parity with author cards)
@@ -1000,6 +1001,21 @@ function wrapInNode(el,needle,c){ const tw=document.createTreeWalker(el,NodeFilt
 // Assemble every RELEASED unit into one #doc, each wrapped in a #wd-<id> segment. This reviewer's comments
 // are held per chapter in _reviews and resolved within their own segment; new comments route back to the
 // owning chapter's advisor/<id>/<ch>.json. Live sync off in this view (v1); the durable outbox still ships.
+// Whole-doc only: each unit's HTML carries its own citeproc #refs block (separate pandoc passes). Pull
+// every unit's .csl-entry out, drop the per-unit blocks (also kills duplicate ids), dedupe by ref key,
+// and append one consolidated References section at the end of #doc. No-op when nothing cites.
+function consolidateWholeRefs(doc){
+  if(!doc) return;
+  const entries=[];
+  doc.querySelectorAll('.wd-chapter').forEach(seg=>{
+    seg.querySelectorAll('#refs, .references').forEach(block=>{
+      block.querySelectorAll('.csl-entry').forEach(el=>entries.push({ key:el.id, html:el.outerHTML }));
+      block.remove();
+    });
+  });
+  const html=buildRefsSection(entries);
+  if(html) doc.insertAdjacentHTML('beforeend', html);
+}
 async function loadWholeDoc(){
   WHOLE=true; current='__whole__'; review=loadLocal('__whole__');
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
@@ -1030,6 +1046,7 @@ async function loadWholeDoc(){
   });
   read.innerHTML=`<article id="doc">${parts.join('\n')}</article>`;
   const doc=document.getElementById('doc');
+  consolidateWholeRefs(doc);   // pull each unit's own reference list into ONE at the very end
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments();
