@@ -2876,13 +2876,15 @@ async function renderSettingsAI(pane, t) {
   const conn = pane.querySelector('#set-ai-conn');
   try { const s = claudeConnectionStatus(await listSecretNames(t));
     conn.innerHTML = s.claude ? `<span class="ok">✓</span> Claude connected via <code>${s.via}</code> — every paper in ${escapeHtml(DATA_REPO)} is set.` : '<span class="warn">●</span> Not connected — add your Claude Code token.';
-  } catch(e){ conn.textContent = 'Couldn’t check connection: ' + e.message; }
+  } catch(e){ conn.innerHTML = (e && e.code === 'NOSCOPE')
+      ? '<span class="warn">●</span> Can’t verify from here — your access token can’t list secrets. If you connected Claude before, it still works. To connect or change it, use <b>Connect / manage Claude</b> below with a token that has <b>Secrets + Actions</b> access.'
+      : 'Couldn’t check connection: ' + escapeHtml((e && e.message) || 'error'); }
   pane.querySelector('#set-ai-connect').onclick = () => openClaudeDialog(t);
   pane.querySelector('#set-ai-run').onclick = async () => {
     const stat = pane.querySelector('#set-ai-run-stat'); stat.style.color='var(--text-3)'; stat.textContent='Ensuring engine…';
     try { await ensureApplyEngine(DATA_REPO, t); stat.textContent='Dispatching…'; await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
       stat.style.color='var(--success)'; stat.textContent='Apply run started — watch your repo’s Actions tab.'; }
-    catch(e){ stat.style.color='var(--warn)'; stat.textContent = e.message==='workflow-scope'?'Token lacks the workflow scope.':'Failed: '+e.message; }
+    catch(e){ stat.style.color='var(--warn)'; stat.textContent = (e.message==='workflow-scope'||isScopeError(e)) ? 'Your access token needs Actions + Workflows access to run apply — update it under Access token (or use a classic repo+workflow token).' : 'Failed: '+escapeHtml((e && e.message)||'error'); }
   };
   const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
 }
@@ -2895,17 +2897,23 @@ function openClaudeDialog(t) {
     <input id="set-claude-tok" type="password" placeholder="CLAUDE_CODE_OAUTH_TOKEN" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
     <details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key? (billed per token)</summary>
       <input id="set-claude-key" type="password" placeholder="sk-ant-… (ANTHROPIC_API_KEY)" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:8px"></details>
+    <input id="set-claude-etok" type="password" placeholder="GitHub token with Secrets + Actions access (only if the saved one can’t)" style="display:none;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--warn);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
     <div id="set-claude-stat" style="font-size:11.5px;color:var(--text-3)"></div>`;
   openModal('<i class="ti ti-robot-face" style="margin-right:7px"></i>Connect Claude', box, [
     { label:'Save & connect', primary:true, onClick: async (close) => {
       const stat = box.querySelector('#set-claude-stat');
       const values = { claudeCodeToken: box.querySelector('#set-claude-tok').value, anthropicKey: box.querySelector('#set-claude-key')?.value || '' };
+      if (!values.claudeCodeToken.trim() && !values.anthropicKey.trim()){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
+      const etok = (box.querySelector('#set-claude-etok').value || '').trim() || t;   // elevated one-time token if the saved login can't write secrets
       stat.style.color='var(--text-3)'; stat.textContent='Sealing…';
-      try { const names = await setAiSecrets(t, sealToBase64, values);
+      try { const names = await setAiSecrets(etok, sealToBase64, values);
         if (!names.length){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
-        try { await ensureApplyEngine(DATA_REPO, t); } catch {}
+        try { await ensureApplyEngine(DATA_REPO, etok); } catch {}
         close(); flash('Saved ' + names.join(' + ') + ' to your data repo.'); openSettingsPage('ai');
-      } catch(e){ stat.style.color='var(--warn)'; stat.textContent = isScopeError(e)?'Token lacks Secrets write on the data repo.':'Failed: '+e.message; }
+      } catch(e){
+        if (isScopeError(e)){ const ef = box.querySelector('#set-claude-etok'); if (ef){ ef.style.display='block'; ef.focus(); } stat.style.color='var(--warn)'; stat.textContent='Your saved access token can’t write secrets. Paste a token with Secrets + Actions access (fine-grained) or a classic repo+workflow token above, then Save again.'; }
+        else { stat.style.color='var(--warn)'; stat.textContent='Failed: '+escapeHtml((e && e.message)||'error'); }
+      }
     } },
   ]);
 }
