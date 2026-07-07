@@ -11,7 +11,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseDocxChapters, docxToXml } from './docparse.js?v=cd3025b';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseDocxChapters, docxToXml } from './docparse.js?v=7b77b84';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=47573b7';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
