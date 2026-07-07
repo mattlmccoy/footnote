@@ -175,6 +175,20 @@ test('ensureApplyEngine skips files that already exist (idempotent — safe to c
   assert.equal(puts.length, 0);
 });
 
+test('ensureApplyEngine NEVER clobbers an existing agents.json (user-authored agents), even if it drifted from the template', async () => {
+  const bb = s => Buffer.from(s, 'utf8').toString('base64');
+  const puts = [];
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') { puts.push(url.split('/contents/')[1]); return { ok: true, status: 200 }; }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: true, status: 200, json: async () => ({ content: bb('USER EDITED / DRIFTED CONTENT'), sha: 's' }) };  // present, differs from template
+    return { ok: true, status: 200, text: async () => 'SHIPPED TEMPLATE' };
+  };
+  const res = await ensureApplyEngine('alice/ws', 'tok', fake, 'http://x/');
+  assert.ok(!puts.some(p => p.endsWith('agents.json')), 'agents.json is create-only — never overwritten on refresh');
+  assert.ok(res.already.includes('agents.json'), 'agents.json left as-is');
+  assert.ok(puts.length > 0, 'drifted CODE files still self-heal');   // the .py/.yml still refresh
+});
+
 test('ensureApplyEngine surfaces the workflow-scope error (403 on the workflow write)', async () => {
   const fake = async (url, opts) => {
     if (opts && opts.method === 'PUT') return url.includes('.github/workflows/') ? { ok: false, status: 403 } : { ok: true, status: 201 };

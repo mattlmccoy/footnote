@@ -101,9 +101,10 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
     const head = await f(`${API}/repos/${dataRepo}/contents/${dest}`, { headers: h });
     let sha;
     if (head && head.ok) {
+      if (dest.endsWith('.json')) { out.already.push(dest); continue; }   // user-owned config/data (e.g. agents.json holds user-authored agents) — CREATE-only, NEVER clobber on refresh
       let meta = null; try { meta = await head.json(); } catch (e) {}
       if (meta && norm(meta.content) === norm(content)) { out.already.push(dest); continue; }   // up to date
-      sha = meta && meta.sha;                                                                    // stale → update with sha
+      sha = meta && meta.sha;                                                                    // stale code file → refresh in place with sha
     }
     const put = await f(`${API}/repos/${dataRepo}/contents/${dest}`, {
       method: 'PUT',
