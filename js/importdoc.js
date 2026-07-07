@@ -49,6 +49,27 @@ export function planNewProjectRepos({ mode, name, owner, sourceOverride, dataOve
   return { sourceRepo, dataRepo };
 }
 
+// Resolve the concrete repos + project fields for a NEW project from the two axes chosen in the New
+// Project sheet: `style` ('workspace' | 'independent') and `mode` (where the source is: 'local' upload |
+// 'github' | 'overleaf'). Returns the addProject fields (workspace/dataRepo/sourceRepo/uploaded) plus
+// `creates` = the repos to ensure exist (never an external source repo). Beginners never type a repo name
+// (auto-derived from the project name); Advanced overrides win. Pure so the sheet's click handler stays
+// thin and the whole matrix is unit-tested.
+export function newProjectPlan(style, mode, name, cfg, opts = {}) {
+  const owner = cfg.owner;
+  const wsRepo = cfg.workspaceRepo || cfg.hubRepo;
+  const uploaded = mode === 'local';
+  const externalSrc = uploaded ? '' : (opts.sourceOverride || opts.sourceRepo || '').trim();
+  if (style === 'workspace') {
+    return { workspace: true, dataRepo: wsRepo, sourceRepo: externalSrc, uploaded, creates: [wsRepo] };
+  }
+  // independent: this document gets its own repos
+  const dataRepo = (opts.dataOverride || '').trim() || dataRepoSuggestion(name, owner);
+  const sourceRepo = externalSrc || (opts.sourceOverride || '').trim() || sourceRepoSuggestion(name, owner);
+  const creates = uploaded ? [dataRepo, sourceRepo] : [dataRepo];  // never create an external source repo
+  return { workspace: false, dataRepo, sourceRepo, uploaded, creates };
+}
+
 // ---- folder upload: a real article needs its figures + .bib, so we commit the whole project ----
 
 // Which uploaded .tex is the document root: prefer a file literally named main.tex, else the one that
