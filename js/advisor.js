@@ -7,6 +7,7 @@ import { wordDiff } from './textdiff.js?v=582ac0d';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=582ac0d';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=582ac0d';   // magic-link: key in the invite URL
 import { makeSafeStore } from './safestore.js?v=582ac0d';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=582ac0d';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR } from './onboarding.js?v=582ac0d';   // pure onboarding logic (header/state routing/key validation/first-run guide)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=582ac0d';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { startWatch as startNetWatch } from './netstatus.js?v=582ac0d';
@@ -1632,4 +1633,26 @@ window.addEventListener('keydown',e=>{
   }
 });
 document.addEventListener('click', e => { if (e.target.closest('#btn-refresh')) doRefresh(); });   // refresh buttons across every topbar
+
+// Stale-bundle nudge: if the live page now references a NEWER advisor.js than the one we're running, the
+// browser is on a cached old build (the exact "it's broken for me but not you" trap). Offer a refresh, and
+// stamp the build sha on <html data-build> for diagnosis. Never nags unless both shas are known and differ.
+const _BUILD = parseVersion(import.meta.url);
+try { if (_BUILD) document.documentElement.dataset.build = _BUILD; } catch (e) {}
+async function checkVersion(){
+  if (!_BUILD) return;
+  try {
+    const r = await fetch(location.pathname + '?_ck=' + Date.now(), { cache: 'no-store' });
+    if (!r || !r.ok) return;
+    if (isStale(_BUILD, latestFromHtml(await r.text(), 'advisor.js')) && !document.getElementById('updbar')){
+      const b = document.createElement('div'); b.id = 'updbar';
+      b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;background:#2c64c4;color:#fff;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:9px 14px;text-align:center';
+      b.innerHTML = 'A newer version of Footnote is available. <button id="updref" style="margin-left:8px;background:#fff;color:#2c64c4;border:0;border-radius:6px;padding:3px 11px;font:inherit;font-weight:600;cursor:pointer">Refresh</button>';
+      document.body.appendChild(b);
+      const rb = document.getElementById('updref'); if (rb) rb.onclick = () => location.reload();
+    }
+  } catch (e) {}
+}
+setTimeout(checkVersion, 6000);        // once shortly after load
+setInterval(checkVersion, 900000);     // and every 15 min — a long-open reviewer gets nudged after a deploy
 boot();
