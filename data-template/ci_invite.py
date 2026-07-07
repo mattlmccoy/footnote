@@ -141,7 +141,10 @@ def main():
             result = {"email_test": {"ok": True, "ts": _now(), "error": None}, "email_configured": True}
             print(f"test email sent to {test_email}")
         except Exception as e:
-            result = {"email_test": {"ok": False, "ts": _now(), "error": str(e)[:300]}, "email_configured": False}
+            # Record ONLY the test result — do NOT set email_configured:False. This test send stamps every
+            # project in the workspace; a transient SMTP hiccup must not mute already-working projects
+            # (email_configured gates all advisor/author notifications). Success sets True; failure leaves it.
+            result = {"email_test": {"ok": False, "ts": _now(), "error": str(e)[:300]}}
             print(f"::warning::test email to {test_email} failed: {e}")
         for pfx in prefixes:
             _stamp(pfx, result)

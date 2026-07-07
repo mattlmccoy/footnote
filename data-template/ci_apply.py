@@ -205,11 +205,11 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
     review/jobs writeback."""
     _git(["config", "user.name", "github-actions[bot]"], repo_dir, check=False)
     _git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], repo_dir, check=False)
-    # start the branch from base (create if new, reset onto base if it exists)
-    if _git(["rev-parse", "--verify", branch], repo_dir, check=False).returncode == 0:
-        _git(["checkout", branch], repo_dir)
-    else:
-        _git(["checkout", "-b", branch, base], repo_dir)
+    # start the branch from base — create if new, RESET onto base if it exists (-B does both). Without the
+    # reset, an existing review-edits/<unit> branch stays behind main, so the preview builds from a stale
+    # tree and `changed` (diffed against main) is applied onto divergent source. The approved-only merge
+    # reapplies from main, so the branch never needs its own history.
+    _git(["checkout", "-B", branch, base], repo_dir)
     for rel, text in changed.items():
         fp = Path(repo_dir) / rel
         fp.parent.mkdir(parents=True, exist_ok=True)
