@@ -2,7 +2,7 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=7141042';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage } from './config.js?v=7141042';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=97d184f';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
@@ -284,13 +284,21 @@ export async function launch() {
     let list = [];
     try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
     // Each project is a face-out book standing on the shelf; its spine color comes from its position.
-    const books = list.map((p, i) => `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
+    const books = list.map((p, i) => {
+      // Show WHERE the LaTeX lives (source), not the comments repo — that's what identifies a document
+      // on the shelf. projectStorage reports it honestly for every shape (uploaded / external / workspace).
+      const st = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, p);
+      const srcLine = st.source.mode === 'uploaded'
+        ? (st.source.inWorkspace ? 'uploaded · in workspace' : `uploaded · ${st.source.repo}`)
+        : (st.source.repo ? st.source.repo : 'no source yet');
+      return `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
         <span class="fn-book-spine"></span>
         <button class="fn-book-manage" data-mid="${esc(p.id)}" title="Manage project" aria-label="Manage ${esc(p.name)}">⋯</button>
         <span class="fn-book-type">${esc(texFileName(p.doc.noun).replace(/\.tex$/, ''))}<span class="fn-ext">.tex</span></span>
         <span class="fn-book-title">${esc(p.name)}</span>
-        <span class="fn-book-repo">${esc(p.dataRepo)}</span>
-        <span class="fn-book-go">open</span></a>`).join('');
+        <span class="fn-book-repo" title="source">${esc(srcLine)}</span>
+        <span class="fn-book-go">open</span></a>`;
+    }).join('');
     // "Add a book" tile stands at the end of the shelf, same footprint as the books.
     const addTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
         <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
@@ -370,12 +378,22 @@ export async function launch() {
   // Edit: rename, repoint the source repo, change the noun. Never creates/seeds repos; the comments repo
   // is the project's identity and stays fixed.
   function editProjectSheet(list, v) {
+    // Where does this project's source actually live? An uploaded (workspace or dedicated) project has no
+    // external source repo to type — showing an empty text box reads as broken. Branch on the real mode.
+    const stor = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, v);
+    const uploadedSrc = stor.source.mode === 'uploaded';
+    const srcField = uploadedSrc
+      ? `<div class="fn-field"><span class="fn-field-lbl">Your document's source</span>
+           <div class="fn-src-static" style="padding:4px 0;color:var(--ink)">Uploaded ${stor.source.inWorkspace ? `into your workspace (<span class="fn-mono">${esc(stor.source.prefix)}</span>)` : `to <span class="fn-mono">${esc(stor.source.repo)}</span>`}</div>
+           <button type="button" class="fn-link" id="np-src-ext">Point at an external repo instead</button>
+           <input id="np-src" type="hidden" value=""></div>`
+      : `<label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing (a GitHub repo, Overleaf-synced or not). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false" value="${esc(stor.source.repo || '')}"></label>`;
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
       <div class="fn-sheet-h">Edit project</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false" value="${esc(v.name)}"></label>
-      <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing (a GitHub repo, Overleaf-synced or not). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
-      <label class="fn-field">Comments repo <span class="fn-sub">where this project’s comments live — fixed once created</span><input id="np-data" value="${esc(v.dataRepo || '')}" disabled></label>
+      ${srcField}
+      <label class="fn-field">Comments repo <span class="fn-sub">where this project’s comments live — fixed once created</span><input id="np-data" value="${esc(stor.data.repo || '')}" disabled></label>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="${esc((v.doc && v.doc.noun) || 'thesis')}" spellcheck="false"></label>
       ${v.workspace ? `<div class="fn-ovl" style="border-top:1px solid var(--line,#e2e7f0);margin-top:14px;padding-top:13px">
         <div class="fn-field-lbl" style="display:flex;align-items:center;gap:7px">🔗 Overleaf sync <span class="fn-sub" style="font-weight:400">edit in Overleaf, review here — bidirectional</span></div>
@@ -396,16 +414,30 @@ export async function launch() {
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Save changes</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
-    attachRepoPicker(q('#np-src'), tok());
+    if (!uploadedSrc) attachRepoPicker(q('#np-src'), tok());
+    // "Point at an external repo instead": swap the read-only line for an editable picker. The uploaded copy
+    // under <id>/source/ is kept; only project.sourceRepo changes, which repoints resolveProject at the repo.
+    const ext = q('#np-src-ext');
+    if (ext) ext.onclick = () => {
+      const field = ext.closest('.fn-field');
+      field.innerHTML = `Your document's source repo <span class="fn-sub">points Footnote at an external repo; your uploaded copy is kept.</span><input id="np-src" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false" value="">`;
+      attachRepoPicker(q('#np-src'), tok());
+      q('#np-src').focus();
+    };
     if (v.workspace) wireOverleafSection(q, v);
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
-      const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document', sourceRepo = q('#np-src').value.trim();
+      const name = q('#np-name').value.trim(), noun = q('#np-noun').value.trim() || 'document';
+      const srcVal = (q('#np-src').value || '').trim();
       if (!name) return q('#np-err').textContent = 'Name is required.';
       try {
         q('#np-save').disabled = true; q('#np-err').textContent = 'Saving…';
-        await writeProjects(hub(), tok(), updateProject(list, v.id, { name, sourceRepo, doc: { noun } }));
+        // For an uploaded project, an empty field means "leave the uploaded source as-is" — only patch
+        // sourceRepo when the user actually typed an external repo (or the project was already external).
+        const patch = { name, doc: { noun } };
+        if (srcVal || !uploadedSrc) patch.sourceRepo = srcVal;
+        await writeProjects(hub(), tok(), updateProject(list, v.id, patch));
         close(); render();
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };
