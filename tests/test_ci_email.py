@@ -53,6 +53,29 @@ def test_invite_subject_default_noun_is_document():
     assert "dissertation" not in subject.lower()
 
 
+def test_invite_does_not_make_the_reviewer_paste_a_key():
+    _clear()
+    _to, _subj, eml = ci_invite.build_message(
+        {"id": "a1", "name": "Ada", "email": "ada@example.com"},
+        "noreply@example.com", None, "KEY123", "Alex Kim", "https://x.github.io/repo/")
+    # the magic link still carries the key, so one click signs them in
+    assert "k=KEY123" in eml
+    # but the email no longer shows an "access key" box or tells them to paste anything
+    low = eml.lower()
+    assert "access key" not in low
+    assert "paste" not in low
+
+
+def test_invite_is_a_dash_free_welcome():
+    _clear()
+    _to, _subj, eml = ci_invite.build_message(
+        {"id": "a1", "name": "Ada", "email": "ada@example.com"},
+        "noreply@example.com", None, "KEY123", "Alex Kim", "https://x.github.io/repo/")
+    assert "welcome" in eml.lower()
+    for dash in ("—", "–", "&mdash;", "&ndash;"):   # no em/en dashes (house style)
+        assert dash not in eml, f"dash {dash!r} leaked into the invite email"
+
+
 # ---- workspace consolidation: one data repo holds many projects as <id>/ subfolders. The CI must be
 # ---- project-aware (loop over subfolders) while still handling a legacy root-level project. ----
 import json as _json

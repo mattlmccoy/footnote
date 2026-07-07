@@ -21,7 +21,7 @@ export const PROVIDERS = {
                      'Copy the "Login" shown there (looks like 12345@smtp-brevo.com) — this is the username, not your account email.',
                      'Click "Generate SMTP key", name it, and copy the key.',
                      'IMPORTANT: turn OFF IP blocking — Settings → Security → Authorized IPs → keep "Activate for SMTP keys" DEACTIVATED (GitHub’s servers use changing IPs, so blocking rejects them).',
-                     'Add your real email as a verified sender → Settings → Senders, domains, IPs → add + confirm it (that’s the "From" address advisors see).'] },
+                     'Add your real email as a verified sender → Settings → Senders, domains, IPs → add + confirm it (that’s the "From" address reviewers see).'] },
   gmail:    { id:'gmail',    label:'Gmail',                host:'smtp.gmail.com',     port:465, domains:['gmail.com','googlemail.com'],
               secretWord:'App Password', keyUrl:'https://myaccount.google.com/apppasswords', keyLabel:'Open Gmail App Passwords',
               howto:['Make sure 2-Step Verification is ON for your Google account.', 'On the page that opens, create an App Password (name it anything).', 'Copy the 16-character code it shows (spaces are fine).'] },

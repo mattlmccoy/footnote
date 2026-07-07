@@ -34,34 +34,33 @@ def portal_url(base, a, prefix="", key=""):
 def build_message(a, frm, frm_name, key, author, base, prefix=""):
     to = a["email"]
     name = a.get("name", "")
-    url = portal_url(base, a, prefix, key)   # magic link — key embedded so the reviewer just clicks
+    url = portal_url(base, a, prefix, key)   # magic link: the key is embedded, so one click signs the reviewer in
     noun = C.doc_noun(prefix)
     whose = f"{author}'s" if author else "a"
     subject = f"You're invited to review {author}'s {noun}" if author else f"You're invited to review a {noun}"
-    # --- plain-text fallback ---
+    # --- plain-text fallback. House style: no em/en dashes. No access key to paste; the link carries it. ---
     text = (
-        f"Hi {name},\n\n"
-        f"You've been invited to review {whose} {noun} in a private, comment-only reader.\n\n"
-        f"Your access key (paste it when the portal asks; it's stored only in your browser):\n  {key}\n\n"
+        f"Hi {name}, welcome.\n\n"
+        f"You've been invited to review {whose} {noun} in a private, comment-only reader. "
+        f"There's nothing to install and no account to create; your personal link below signs you in automatically.\n\n"
         f"Open your review portal:\n  {url}\n\n"
-        "How it works: open the link, paste the access key once, then read the released chapters and "
-        "leave comments or suggested edits inline. Your comments are private to the author.\n\n"
-        "Thank you for your time.\n"
+        "Once you're in, read the released chapters and leave comments or suggested edits right in the margin. "
+        "Everything you write stays private to the author. We'll email you when new chapters are released, and "
+        "when the author responds to your comments.\n\n"
+        "Thanks for lending your time and expertise.\n"
     )
     # --- HTML (shared portal-matched shell from ci_notify_common) ---
     E = C.EMAIL
-    intro = (f"you've been invited to review <span style=\"color:{E['text']};font-weight:500;\">{C.esc(author)}'s</span> {C.esc(noun)}"
-             if author else f"you've been invited to review a {C.esc(noun)}")
+    who_html = (f'<span style="color:{E["text"]};font-weight:500;">{C.esc(author)}\'s</span> {C.esc(noun)}'
+                if author else f'a {C.esc(noun)}')
     title = f"You're invited to review {C.esc(author)}'s {C.esc(noun)}" if author else f"You're invited to review a {C.esc(noun)}"
     rows = (
-        f'<tr><td style="padding:0 24px 16px;">'
-        f'<div style="font-size:14px;color:{E["text2"]};line-height:1.55;margin-bottom:16px;">Hi {C.esc(name)}, {intro} in a private, comment-only reader.</div>'
-        f'<div style="background:{E["box"]};border:1px solid {E["box_border"]};border-radius:9px;padding:13px 15px;">'
-        f'<div style="font-size:11px;color:{E["text3"]};text-transform:uppercase;letter-spacing:.6px;font-weight:600;margin-bottom:5px;">Your access key</div>'
-        f'<div style="font-family:Menlo,Consolas,monospace;font-size:13px;color:{E["accent"]};word-break:break-all;">{C.esc(key)}</div></div>'
-        f'<div style="font-size:12px;color:{E["text3"]};margin-top:7px;">Paste it when the portal asks &mdash; it\'s stored only in your browser.</div></td></tr>'
+        f'<tr><td style="padding:2px 24px 6px;">'
+        f'<div style="font-size:14px;color:{E["text2"]};line-height:1.55;margin-bottom:12px;">Hi {C.esc(name)}, welcome. You\'ve been invited to review {who_html} in a private, comment-only reader.</div>'
+        f'<div style="font-size:13px;color:{E["text2"]};line-height:1.55;">There\'s nothing to install and no account to create; your personal link below signs you in automatically.</div></td></tr>'
         + C.email_button(url, "Open your review portal")
-        + f'<tr><td style="padding:0 24px 22px;"><div style="font-size:12px;color:{E["text3"]};line-height:1.5;">Open the link, paste the access key once, then read the released chapters and leave comments or suggested edits inline. Your comments are private to the author.</div></td></tr>'
+        + f'<tr><td style="padding:0 24px 6px;"><div style="font-size:12.5px;color:{E["text2"]};line-height:1.55;">Once you\'re in, read the released chapters and leave comments or suggested edits right in the margin. Everything you write stays private to the author.</div></td></tr>'
+        + f'<tr><td style="padding:0 24px 22px;"><div style="font-size:12px;color:{E["text3"]};line-height:1.5;">We\'ll email you when new chapters are released, and when the author responds to your comments.</div></td></tr>'
     )
     html = C.email_shell(title, "A private, comment-only reader", rows)
     frm_disp = frm_name or author or C.default_sender_name()
