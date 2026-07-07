@@ -264,6 +264,22 @@ function showRevoked(){
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">This review link is no longer active</div>
     <div style="font-size:13px;line-height:1.6;color:var(--text-3)">Access for this reviewer has been removed by the author. If you think this is a mistake, please contact them for a new invitation.</div></div>`;
 }
+// CRITICAL guard: boot() loads config/chapters/release over the network; any throw (offline, captive
+// wifi, a CDN/Pages hiccup, a malformed response) used to leave the reviewer on a permanent BLANK page
+// with no error and no retry — the worst first impression on "I clicked the email link on my phone".
+// This renders an honest, retryable screen instead. Config-independent (boot may fail before config loads).
+function showBootError(err){
+  try { console.error('Footnote boot failed:', err); } catch(e){}
+  try { const n = document.getElementById('nav'); if (n) n.style.display = 'none'; } catch(e){}
+  try { const c = document.getElementById('comments'); if (c) c.style.display = 'none'; } catch(e){}
+  try { const tb = document.getElementById('topbar'); if (tb) tb.innerHTML = `<strong style="font-size:16px;font-weight:600">Review</strong>`; } catch(e){}
+  const host = (typeof read !== 'undefined' && read) || document.getElementById('read') || document.body;
+  host.innerHTML = `<div class="empty" style="max-width:460px;margin:12vh auto;text-align:center"><i class="ti ti-cloud-off" style="font-size:26px;color:var(--text-3)"></i>
+    <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Couldn’t load this review</div>
+    <div style="font-size:13px;line-height:1.6;color:var(--text-3)">We couldn’t reach the document — usually a network blip or a captive-wifi login screen. Check your connection, then try again.</div>
+    <button id="bootretry" style="margin-top:14px;background:var(--accent,#2c64c4);color:#fff;border:0;border-radius:8px;padding:9px 18px;font:inherit;font-weight:600;cursor:pointer">Try again</button></div>`;
+  try { const b = document.getElementById('bootretry'); if (b) b.onclick = () => location.reload(); } catch(e){}
+}
 // F7 — the invite link is missing its project (&p=). The data repo is a workspace holding several
 // projects under subfolders, but this link didn't say which one, so it points at the empty repo root.
 // Tell the reviewer the truth (the link is broken) with a concrete next step, not a silent "nothing shared".
@@ -1662,4 +1678,4 @@ async function checkVersion(){
 }
 setTimeout(checkVersion, 6000);        // once shortly after load
 setInterval(checkVersion, 900000);     // and every 15 min — a long-open reviewer gets nudged after a deploy
-boot();
+boot().catch(showBootError);           // never leave the reviewer on a blank page when a network blip breaks boot
