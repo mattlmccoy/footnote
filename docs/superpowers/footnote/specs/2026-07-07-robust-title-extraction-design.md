@@ -61,9 +61,15 @@ the uploaded source and **write the result to `projects.json[<id>].doc.title`** 
 (legacy). The title is thus GENERATED from `main.tex` at import — the source-parity rule — and stored once,
 deterministically. Re-running import/sync re-generates it (never a hand-kept copy).
 
-For synced/legacy docs (the dissertation, pushed by an external pipeline): the same extractor runs in that
-pipeline so `source/main.tex` and/or `doc.title` are refreshed on every content sync — replacing today's
-static `source/main.tex` copy.
+For synced/legacy docs (the dissertation): there is **no single locatable content-push pipeline** — the
+`content/*.html` in `dissertation-tracker-data` was rendered/pushed by a local/ad-hoc process (neither
+`dissertation-hub` nor the source tree holds a sync script; both only have `process-reviews.py`). Resolution:
+add a small, deterministic **`refresh-source-title` step to `scripts/process-reviews.py`** (the KNOWN, current
+dissertation intake script — see [[dissertation-intake-session]]) that copies the canonical
+`.../dissertation/main.tex` → `dissertation-tracker-data/source/main.tex` (and, once import writes it,
+`doc.title`). Matt already runs process-reviews.py for the review round-trip, so the title stays
+source-parity-compliant (regenerated, never hand-kept) on his existing flow. The **owner override remains the
+guaranteed mechanism** for the dissertation regardless of sync.
 
 ### Layer 3 — owner override + graceful fallback (the guarantee)
 
