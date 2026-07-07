@@ -40,7 +40,7 @@ function firstSectioning(tex, level, from = 0) {
     else if (ch === '}') { depth--; if (depth === 0) break; }
     buf += ch;
   }
-  return { title: latexTitleText(buf), end: i };
+  return { title: latexTitleText(buf), end: i, start: m.index };
 }
 
 function allSectioning(tex, level) {
@@ -83,14 +83,20 @@ export async function docxToXml(arrayBuffer) {
   return new TextDecoder().decode(await new Response(stream).arrayBuffer());
 }
 
-// Dedupe ids + number a raw [{title, id, sourceFile}] list into the chapter manifest shape.
+// Dedupe ids + number a raw [{title, id, sourceFile, appendix?}] list into the manifest shape.
+// Main units number 1..K; appendix units (kind:'appendix') number 1..M separately (unitLabel renders
+// that as A, B, …). Absent kind = a normal chapter/section (back-compatible).
 function finalizeChapters(raw) {
   const used = new Set();
-  return raw.map((c, i) => {
+  let chN = 0, apN = 0;
+  return raw.map((c) => {
     let id = c.id, k = 2;
     while (used.has(id)) id = `${c.id}-${k++}`;
     used.add(id);
-    return { id, n: i + 1, title: c.title, sourceFile: c.sourceFile ?? null };
+    const out = { id, title: c.title, sourceFile: c.sourceFile ?? null };
+    if (c.appendix) { out.kind = 'appendix'; out.n = ++apN; }
+    else { out.n = ++chN; }
+    return out;
   });
 }
 
@@ -122,7 +128,7 @@ function resolveIncludes(clean, resolveFile) {
   while ((m = includeRe.exec(clean))) {
     const path = m[1].trim().replace(/\.tex$/, '');
     const content = resolveFile(path);
-    includes.push({ path, content: content == null ? null : stripComments(content) });
+    includes.push({ path, content: content == null ? null : stripComments(content), at: m.index });
   }
   return includes;
 }
@@ -167,15 +173,24 @@ export function parseLatexChapters(mainTex, resolveFile = () => null) {
   const clean = stripComments(mainTex);
   const includes = resolveIncludes(clean, resolveFile);
   const level = pickLevel(clean, includes.map(i => i.content));
+  // \appendix marks the boundary: units at/after it are appendices. We look for it in the main file
+  // (the common pattern: \appendix sits in main.tex before the appendix \include's / \section's).
+  const appM = /\\appendix\b/.exec(clean);
+  const appPos = appM ? appM.index : -1;
   const raw = [];
   for (const inc of includes) {
     if (inc.content == null) continue;
     const title = (firstSectioning(inc.content, level) || {}).title;
-    if (title) raw.push({ title, id: slugifyId(inc.path.split('/').pop()), sourceFile: `${inc.path}.tex` });
+    if (title) raw.push({ title, id: slugifyId(inc.path.split('/').pop()), sourceFile: `${inc.path}.tex`, appendix: appPos >= 0 && inc.at > appPos });
   }
-  // Single-file fallback: no includes produced units → parse the level's commands in the main file itself.
+  // Single-file fallback: no includes produced units → parse the level's commands in the main file,
+  // tracking each command's position so the ones after \appendix are marked appendix.
   if (raw.length === 0) {
-    for (const title of allSectioning(clean, level)) raw.push({ title, id: slugifyId(title), sourceFile: 'main.tex' });
+    let pos = 0, hit;
+    while ((hit = firstSectioning(clean, level, pos))) {
+      raw.push({ title: hit.title, id: slugifyId(hit.title), sourceFile: 'main.tex', appendix: appPos >= 0 && hit.start > appPos });
+      pos = hit.end + 1;
+    }
   }
   return finalizeChapters(raw);
 }
