@@ -1,5 +1,5 @@
-import { getConfig, dataRepoParts, dataPath } from './config.js?v=370e933';
-import { fetchWithTimeout } from './nethelpers.js?v=370e933';
+import { getConfig, dataRepoParts, dataPath } from './config.js?v=4f887f5';
+import { fetchWithTimeout } from './nethelpers.js?v=4f887f5';
 // Every GitHub request is bounded (timeout + one transport retry) so a hung request can't hang the app,
 // and non-ok responses throw an error carrying .status + .headers so callers can classify rate limits.
 const gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
