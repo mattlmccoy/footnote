@@ -25,22 +25,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Stamp asset versions with the commit SHA
+      - name: Stamp asset versions with per-file content hashes
+        # Content-hash each ?v= token (via scripts/cachebust_hash.py) so a file's URL changes ONLY when it
+        # or one of its transitive imports changes — no more false "newer version available" nags on pushes
+        # that don't touch a given bundle. A changed dependency still busts every dependent's cache.
         run: |
           python3 - <<'PY'
-          import re, glob, subprocess
-          sha = subprocess.run(["git","rev-parse","--short","HEAD"], capture_output=True, text=True).stdout.strip()
-          qv = re.compile(r"\?v=[A-Za-z0-9._-]+")
-          # relative JS module specifiers, optionally already carrying ?v=
-          imp = re.compile(r"(['\"])(\.{1,2}/[A-Za-z0-9._/-]+\.js)(\?v=[A-Za-z0-9._-]+)?\1")
-          def stamp_html(s): return qv.sub(f"?v={sha}", s)
-          def stamp_js(s):   return imp.sub(lambda m: f"{m.group(1)}{m.group(2)}?v={sha}{m.group(1)}", s)
-          for f in glob.glob("*.html"):
-              t = open(f, encoding="utf-8").read(); n = stamp_html(t)
-              if n != t: open(f, "w", encoding="utf-8").write(n); print("stamped", f)
-          for f in glob.glob("js/*.js"):
-              t = open(f, encoding="utf-8").read(); n = stamp_js(t)
-              if n != t: open(f, "w", encoding="utf-8").write(n); print("stamped", f)
+          import glob, sys
+          sys.path.insert(0, "scripts")
+          from cachebust_hash import stamp
+          paths = sorted(set(glob.glob("*.html") + glob.glob("js/**/*.js", recursive=True) + glob.glob("css/**/*.css", recursive=True)))
+          files = {p: open(p, encoding="utf-8").read() for p in paths}
+          out = stamp(files)
+          for p, c in out.items():
+              if c != files[p]:
+                  open(p, "w", encoding="utf-8").write(c); print("stamped", p)
           PY
 
       - name: Commit stamped versions
@@ -49,6 +48,6 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then echo "nothing to stamp"; else
-            git commit -m "chore: cache-bust assets to ${GITHUB_SHA:0:7}"
+            git commit -m "chore: cache-bust assets (per-file content hash)"
             git push
           fi
