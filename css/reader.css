@@ -164,8 +164,11 @@ mark.wn-add{background:var(--success-bg);color:inherit;border-radius:2px;box-sha
 .ccard .cresp{margin-top:8px;padding:8px 10px;background:var(--success-bg);border-radius:var(--r-sm);font-size:12.5px;line-height:1.5;color:var(--text)}
 .ccard .cresp-h{display:flex;align-items:center;gap:4px;font-size:10.5px;font-weight:500;color:var(--success);margin-bottom:4px}
 /* send menu */
+#sendmenu{max-width:min(360px,92vw)}   /* cap width — the run-agents row lists every agent and would otherwise stretch across the page */
 #sendmenu .smi{display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:7px;cursor:pointer;font-size:13px}
-#sendmenu .smi i{font-size:17px;color:var(--text-2);margin-top:1px} #sendmenu .smi-d{font-size:11px;color:var(--text-3)}
+#sendmenu .smi>div{min-width:0}        /* let the text column shrink so its description wraps instead of forcing width */
+#sendmenu .smi i{font-size:17px;color:var(--text-2);margin-top:1px}
+#sendmenu .smi-d{font-size:11px;color:var(--text-3);overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 /* focus mode */
 body.focusmode .nav,body.focusmode .comments{display:none!important}
 body.focusmode #doc{max-width:760px}
