@@ -3525,13 +3525,16 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     const btn = document.getElementById('adv-add'); if (btn) btn.disabled = true;
     stat.textContent = ready.willSend ? 'Adding reviewer and queuing their invite…' : 'Adding reviewer…';
     try {
-      await mutateAdvisors(reg => reg.advisors.push(entry), `advisors: add ${name}`);
+      // Register the release-gate entry BEFORE pushing advisors.json. Pushing advisors.json fires the
+      // push-triggered invite email; if the reviewer clicked before release.json held their id, the gate
+      // (which treats an absent id as revoked) would falsely tell them "this link is no longer active".
       const { json:relNow, sha:relSha } = await getJson(t, 'release.json');
       relNow[id] = { name, released: [], responses_released: false };
       await putJson(t, 'release.json', relNow, relSha, `release: register ${name}`);
-      // Guarantee invite.yml exists before relying on the push trigger to email them. Idempotent; a
-      // missing workflow/contents scope throws here and is named below instead of silently not sending.
+      // Guarantee invite.yml exists before the advisors.json push relies on the trigger to email them.
+      // Idempotent; a missing workflow/contents scope throws and is named below instead of silently not sending.
       if (ready.willSend){ try { await ensureInvitePipeline(DATA_REPO, t); } catch(e){ ready._pipeErr = e; } }
+      await mutateAdvisors(reg => reg.advisors.push(entry), `advisors: add ${name}`);   // last: fires the invite email
       const link = `<code>${escapeHtml(advisorUrl(id, name))}</code>`;
       const scope = ready._pipeErr ? permissionFromError(ready._pipeErr.message) : null;
       stat.innerHTML = scope
@@ -3635,12 +3638,12 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     const box = document.getElementById('rel-preflight'); if (!box) return;
     let renderBuilt = false, tokenCanWrite = null;
     try {
-      const paths = await ghTree(t);
-      const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes(dpath('content/'+id+'.html')));
+      const paths = await ghTree(t);   // ghTree already strips this project's dataPrefix → match BARE paths (dpath() here double-prefixed → preflight was always amber for workspace projects)
+      const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes('content/'+id+'.html'));
       const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => rel[k].released || []))];
       renderBuilt = renderBuiltStatus({ allUnitIds: CHAPTERS.map(c => c.id), releasedUnitIds, builtUnitIds });
     } catch(e){}
-    try { await checkActionsAccess(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }
+    try { await checkActionsAccess(t); await getPublicKey(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }   // Actions read AND Secrets write (email/AI/key seal all need the latter)
     const anyReleased = Object.keys(rel).some(k => k !== '_comment' && (rel[k].released||[]).length > 0);
     const signals = healthSignals({
       keySet: !!advisorKey(), emailConfigured: emailConfigured(),
