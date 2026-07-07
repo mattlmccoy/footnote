@@ -45,7 +45,9 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add notify_state.json */notify_state.json 2>/dev/null || true
+          # stage each file only if it exists — `git add a b` aborts (stages NOTHING) when ANY pathspec
+          # matches no file, so in workspace mode (no root notify_state.json) the old form never staged state
+          for f in notify_state.json */notify_state.json; do [ -f "$f" ] && git add "$f"; done
           if git diff --cached --quiet; then echo "no state change"; else
             git commit -m "notify: update state [skip ci]"
             for attempt in 1 2 3; do

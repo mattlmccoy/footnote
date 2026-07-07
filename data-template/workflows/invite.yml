@@ -77,7 +77,9 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm -f --ignore-unmatch email_test_request.json */email_test_request.json >/dev/null 2>&1 || true
-          git add advisors.json */advisors.json 2>/dev/null || true
+          # stage each file only if it exists — `git add a b` aborts (stages NOTHING) when ANY pathspec
+          # matches no file, so in workspace mode (no root advisors.json) the old form never staged the flag
+          for f in advisors.json */advisors.json; do [ -f "$f" ] && git add "$f"; done
           if git diff --cached --quiet; then echo "no status change"; else
             git commit -m "invite: update advisor invite status [skip ci]"
             # the browser may have written advisors.json since checkout — rebase onto the remote and retry
