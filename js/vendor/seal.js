@@ -6,8 +6,8 @@
 //   epk,esk = keypair();  nonce = BLAKE2b(epk || rpk, 24);
 //   c = crypto_box(m, nonce, rpk, esk);  return epk || c
 // This is byte-identical to libsodium's crypto_box_seal, so GitHub decrypts it server-side.
-import './nacl.min.js';    // browser: sets globalThis.nacl (UMD global assignment)
-import './blake2b.js';     // browser + node: sets globalThis.blake2bLib (IIFE)
+import './nacl.min.js?v=9d6e31e';    // browser: sets globalThis.nacl (UMD global assignment)
+import './blake2b.js?v=28cafdb';     // browser + node: sets globalThis.blake2bLib (IIFE)
 
 // Pure core with injected libs so it's unit-testable under Node (where the UMD global isn't set).
 export function sealWith(nacl, blake2b, pubKeyB64, value){
