@@ -792,7 +792,7 @@ function seenHtml(c){ return c.read?`<div class="seen"><i class="ti ti-check" st
 const _isArchived = c => !c.reopened && (!!c.resolution || c.status==='resolved' || c.advisor_state==='resolved');
 function _buildCard(c){
   const card=document.createElement('div'); card.className='ccard'; card.dataset.id=c.id;
-  if(editingId===c.id){ card.appendChild(editCard(c)); return card; }
+  if(editingId===c.id){ card.appendChild(editCard(c, (body,tag)=>{ review=updateComment(review,c.id,{body,tag}); editingId=null; markDirty(); renderComments(); buildNav(); paintHighlights(); })); return card; }
   const st=c.status; const resolved=st==='resolved'; const submitted=st==='submitted';
   const stBadge = resolved ? '<span class="status" style="color:var(--text-3)">resolved</span>'
     : submitted ? '<span class="status" style="background:var(--success-bg);color:var(--success)">submitted</span>' : '<span class="status" style="display:none"></span>';
@@ -852,7 +852,7 @@ function commentAction(id,act){ const c=review.comments.find(x=>x.id===id); if(!
   else if(act==='resolve'){ const reopening = c.status==='resolved';   // reopen restores 'submitted' (still submitted to the author), NOT 'open' (a draft the author hides)
     review=updateComment(review,id,{status: reopening?'submitted':'resolved', reopened: reopening}); }
   markDirty(); renderComments(); buildNav(); paintHighlights(); }
-function editCard(c){ const w=document.createElement('div');
+function editCard(c, onSave){ const w=document.createElement('div');
   w.innerHTML=`<textarea id="ebody" style="width:100%;border:.5px solid var(--accent);border-radius:6px;padding:7px;font:inherit;background:var(--bg);color:var(--text);min-height:54px;outline:none">${escapeHtml(c.body)}</textarea>
     <div id="etags" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px"></div>
     <div style="display:flex;gap:6px;margin-top:8px"><button class="btn btn-primary" id="esave" style="padding:5px 13px;font-size:12px">Save</button><button class="btn" id="ecancel" style="padding:5px 13px;font-size:12px">Cancel</button></div>`;
@@ -860,8 +860,8 @@ function editCard(c){ const w=document.createElement('div');
   TAGS.forEach(t=>{ const b=document.createElement('button'); b.textContent=t; b.style.cssText='font-size:11.5px;padding:3px 11px;border-radius:20px;border:.5px solid var(--border);background:transparent;color:var(--text-2);cursor:pointer';
     const pick=()=>{ etag=t; [...tr.children].forEach(x=>{x.style.background='transparent';x.style.color='var(--text-2)';x.style.borderColor='var(--border)';}); b.style.background=`var(--${t}-bg)`; b.style.color=`var(--${t})`; b.style.borderColor='transparent'; };
     b.onclick=pick; tr.appendChild(b); if(t===c.tag) pick(); });
-  w.querySelector('#ecancel').onclick=()=>{ editingId=null; renderComments(); };
-  w.querySelector('#esave').onclick=()=>{ review=updateComment(review,c.id,{body:w.querySelector('#ebody').value, tag:etag}); editingId=null; markDirty(); renderComments(); buildNav(); paintHighlights(); }; return w; }
+  w.querySelector('#ecancel').onclick=()=>{ editingId=null; (WHOLE?renderWholeComments:renderComments)(); };
+  w.querySelector('#esave').onclick=()=>{ onSave(w.querySelector('#ebody').value, etag); }; return w; }
 // robust anchor location: a stored quote rarely byte-matches rendered HTML (injected
 // "Figure 3.9." prefixes, KaTeX math, citation brackets, curly quotes/dashes).
 function normText(s){ return (s||'').replace(/ /g,' ').normalize('NFKD')
@@ -1093,17 +1093,42 @@ function renderWholeComments(){
 }
 function buildWholeCard(chapterId, c){
   const m=chMeta(chapterId);
-  const card=document.createElement('div'); card.className='ccard'; card.dataset.id=c.id; card.style.cursor='pointer';
+  const card=document.createElement('div'); card.className='ccard'; card.dataset.id=c.id;
+  if(editingId===c.id){ card.appendChild(editCard(c, (body,tag)=>{ _wholeCommitEdit(chapterId, updateComment(_reviews[chapterId], c.id, {body,tag})); editingId=null; })); return card; }
+  const resolved=c.status==='resolved'; card.style.cursor='pointer';
   card.innerHTML=`<div class="row">
       <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(UNITC)} ${m.n}</span>
-      <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span></div>
+      <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>
+      <span class="cactions" style="margin-left:auto;display:none;gap:1px">
+        <button class="icbtn cact" data-act="resolve" title="${resolved?'Reopen':'Resolve'}" style="width:25px;height:25px;font-size:14px"><i class="ti ti-${resolved?'rotate-clockwise':'check'}"></i></button>
+        <button class="icbtn cact" data-act="edit" title="Edit" style="width:25px;height:25px;font-size:14px"><i class="ti ti-pencil"></i></button>
+        <button class="icbtn cact" data-act="del" title="Delete" style="width:25px;height:25px;font-size:14px"><i class="ti ti-trash"></i></button></span></div>
     <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"</div>
-    ${c.body?`<div class="body">${escapeHtml(c.body)}</div>`:''}`;
+    ${c.body?`<div class="body" style="${resolved?'opacity:.5;text-decoration:line-through':''}">${escapeHtml(c.body)}</div>`:''}${resolHtml(c)}${threadHtml(c)}`;
+  card.onmouseenter=()=>{ const a=card.querySelector('.cactions'); if(a) a.style.display='flex'; };
+  card.onmouseleave=()=>{ const a=card.querySelector('.cactions'); if(a) a.style.display='none'; };
+  card.querySelectorAll('.cact').forEach(b=>b.onclick=e=>{ e.stopPropagation(); wholeCommentAction(chapterId, c.id, b.dataset.act); });
   card.onclick=()=>{ const seg=document.getElementById('wd-'+chapterId);
     const mark=seg&&seg.querySelector(`.cmark[data-id="${c.id}"], .cmark-el[data-cid="${c.id}"], figure[data-cid="${c.id}"]`);
     (mark||seg)?.scrollIntoView({behavior:'smooth',block:'center'});
     if(mark){ mark.classList.add('flash'); setTimeout(()=>mark.classList.remove('flash'),1500); } };
   return card;
+}
+// Whole-doc edit/resolve/delete: mutate ONLY the owning chapter's review (in _reviews), persist to its
+// file, and re-render the whole view. Mirrors createWholeComment's persist+sync so the per-chapter
+// advisor/<id>/<ch>.json stays the single source of truth (the global `review` is not the whole-doc store).
+function _wholeCommitEdit(chapterId, nrev){
+  nrev.pending=true; nrev.last_active=new Date().toISOString();
+  _reviews[chapterId]=nrev; localStorage.setItem(localKey(chapterId), JSON.stringify(nrev));
+  paintWholeHighlights(); buildNavWhole(); renderWholeComments();
+  const t=tok(); if(t) pushChapterReviewAdv(chapterId).catch(()=>{});
+}
+function wholeCommentAction(chapterId, id, act){
+  const rev=_reviews[chapterId]; if(!rev) return;
+  const c=rev.comments.find(x=>x.id===id); if(!c) return;
+  if(act==='edit'){ editingId=id; renderWholeComments(); return; }
+  if(act==='del'){ if(!confirm('Delete this comment?')) return; _wholeCommitEdit(chapterId, deleteComment(rev,id)); return; }
+  if(act==='resolve'){ const reopening=c.status==='resolved'; _wholeCommitEdit(chapterId, updateComment(rev,id,{status:reopening?'submitted':'resolved', reopened:reopening})); }
 }
 // Create a comment in the whole-doc view: mutate ONLY the owning chapter's review + persist to its file.
 function createWholeComment(chapterId, fields){
