@@ -16,7 +16,7 @@ import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSh
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch } from './netstatus.js?v=9c958aa';
-import { settingsSections, resolveSection } from './settings.js?v=9e304e2';
+import { settingsSections, resolveSection } from './settings.js?v=5b66ea0';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 import { readProgress } from './cardstats.js?v=cfa6c99';
