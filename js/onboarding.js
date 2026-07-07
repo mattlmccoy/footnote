@@ -67,3 +67,12 @@ export const FIRST_RUN_TOUR = [
   { step: 2, title: 'Leave a comment or suggested edit', body: 'Type a note and tag it, or propose exact replacement wording the author can accept in one click.' },
   { step: 3, title: 'The author sees it instantly', body: 'Every comment is shared the moment you add it — no submit step. Their replies appear right here.' },
 ];
+
+// Stable localStorage key for an in-progress comment draft, so a half-written comment survives an accidental
+// refresh/navigate. Keyed by chapter + the anchored passage (quote+section, whitespace-normalized): the same
+// passage yields the same key, so the draft comes back when the reviewer reopens the composer on it.
+export function commentDraftKey(chapterId, anchor) {
+  const q = ((anchor && anchor.quote) || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+  const s = ((anchor && anchor.section) || '').trim();
+  return `footnote:draft:${chapterId || '_'}:${s}::${q}`;
+}

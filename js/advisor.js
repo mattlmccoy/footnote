@@ -8,7 +8,7 @@ import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams,
 import { keyFromSearch, searchWithoutKey } from './invite.js?v=b29f773';   // magic-link: key in the invite URL
 import { makeSafeStore } from './safestore.js?v=b29f773';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b29f773';   // stale-bundle refresh nudge
-import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR } from './onboarding.js?v=b29f773';   // pure onboarding logic (header/state routing/key validation/first-run guide)
+import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=b29f773';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=b29f773';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { startWatch as startNetWatch } from './netstatus.js?v=b29f773';
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=b29f773';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
@@ -626,12 +626,19 @@ function showPopover(anchor,rects,defaultTag='wording',figEl=null){
   let tag=defaultTag, mode='note'; const tr=pop.querySelector('#tags');
   TAGS.forEach(t=>{ const b=document.createElement('button'); b.textContent=t; const pick=()=>{ tag=t; [...tr.children].forEach(x=>{x.className='';x.style.background='transparent';x.style.color='var(--text-2)';x.style.borderColor='var(--border)';}); b.className='on'; b.style.background=`var(--${t}-bg)`; b.style.color=`var(--${t})`; b.style.borderColor='transparent'; }; b.onclick=pick; tr.appendChild(b); if(t===defaultTag) pick(); });
   const repl=pop.querySelector('#crepl'), body=pop.querySelector('#cbody'), saveBtn=pop.querySelector('#csave');
+  // Draft-save — a half-written comment survives an accidental refresh: restore any draft for this passage,
+  // persist on each keystroke, clear it once the comment is saved or the composer is cancelled.
+  const _dkey = commentDraftKey(anchor.chapterId || current, anchor);
+  try { const _d = _store.get(_dkey); if (_d){ const o = JSON.parse(_d); if (o && o.body) body.value = o.body; if (o && o.repl) repl.value = o.repl; } } catch (e) {}
+  const _saveDraft = () => { try { (body.value || repl.value) ? _store.set(_dkey, JSON.stringify({ body: body.value, repl: repl.value })) : _store.remove(_dkey); } catch (e) {} };
+  body.addEventListener('input', _saveDraft); repl.addEventListener('input', _saveDraft);
+  const _clearDraft = () => { try { _store.remove(_dkey); } catch (e) {} };
   const setMode=m=>{ mode=m; pop.querySelectorAll('#pmodes button').forEach(b=>b.classList.toggle('on',b.dataset.m===m)); const nr=m==='replace'||m==='insert'; repl.style.display=nr?'block':'none';
     repl.placeholder=m==='replace'?'Exact replacement text (verbatim)…':'Exact text to insert after the selection (verbatim)…'; body.placeholder=m==='note'?`Leave a comment…  (⌥1–6 to tag · ${MOD}↵ to save)`:'Optional note for this edit…';
     saveBtn.textContent=m==='note'?'Comment':m==='delete'?'Suggest deletion':m==='insert'?'Suggest insertion':'Suggest replacement'; saveBtn.className='btn '+(m==='delete'?'btn-danger':m==='note'?'btn-primary':'btn-suggest');
     pop.querySelector('#psnip').style.textDecoration=m==='delete'?'line-through':'none'; (nr?repl:body).focus(); };
   pop.querySelectorAll('#pmodes button').forEach(b=>b.onclick=()=>setMode(b.dataset.m)); body.focus();
-  pop.querySelector('#ccancel').onclick=()=>{ pop.remove(); window.getSelection().removeAllRanges(); };
+  pop.querySelector('#ccancel').onclick=()=>{ _clearDraft(); pop.remove(); window.getSelection().removeAllRanges(); };
   pop.querySelector('#figdraw')?.addEventListener('click',()=>{ pop.remove(); openFigureMarkup(figEl,anchor); });
   pop._commit=()=>saveBtn.click(); pop._pickTag=i=>{ const b=tr.children[i]; if(b) b.click(); };
   saveBtn.onclick=()=>{ let edit=null;
@@ -640,8 +647,8 @@ function showPopover(anchor,rects,defaultTag='wording',figEl=null){
     else if(mode==='delete') edit={op:'delete',find:anchor.quote,replacement:''};
     if(edit&&mode!=='delete'&&!repl.value.trim()){ flash('Enter the '+(mode==='insert'?'text to insert':'replacement text')+'.'); return; }
     const fields={ anchor:pending, kind:edit?'suggestion':pending.kind, tag:edit?'edit':tag, body:body.value, edit, author:authorId(), status:'submitted' };
-    if(WHOLE){ createWholeComment(pending.chapterId, fields); pop.remove(); window.getSelection().removeAllRanges(); return; }
-    review=addComment(review,fields);
+    if(WHOLE){ createWholeComment(pending.chapterId, fields); _clearDraft(); pop.remove(); window.getSelection().removeAllRanges(); return; }
+    review=addComment(review,fields); _clearDraft();
     markDirty(); renderComments(); buildNav(); paintHighlights(); pop.remove(); window.getSelection().removeAllRanges(); };
 }
 

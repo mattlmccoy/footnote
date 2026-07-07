@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR } from '../js/onboarding.js';
+import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from '../js/onboarding.js';
+
+// ---- commentDraftKey: a half-written comment survives a refresh, keyed by the passage ----
+test('commentDraftKey is stable per passage (whitespace-normalized) and distinct across passages', () => {
+  const a = { quote: 'the quick brown fox', section: 'Intro' };
+  assert.strictEqual(commentDraftKey('ch1', a), commentDraftKey('ch1', { quote: '  the quick   brown fox ', section: 'Intro' }));
+  assert.notStrictEqual(commentDraftKey('ch1', a), commentDraftKey('ch2', a));                       // different chapter
+  assert.notStrictEqual(commentDraftKey('ch1', a), commentDraftKey('ch1', { quote: 'other', section: 'Intro' }));  // different passage
+  assert.ok(commentDraftKey(null, null).startsWith('footnote:draft:'));                              // safe fallback, no throw
+});
 
 // ---- reviewingHeader: "What am I reviewing?" ----
 test('reviewingHeader surfaces doc title, author, reviewing-as, chapter count', () => {
