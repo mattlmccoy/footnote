@@ -10,7 +10,7 @@ import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw stora
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
-import { parseLatexTitle } from './docparse.js?v=eda521e';   // authoritative doc title = the LaTeX \title in the uploaded source
+import { parseLatexTitle } from './docparse.js?v=32c274f';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
 import { startWatch as startNetWatch } from './netstatus.js?v=9c958aa';
