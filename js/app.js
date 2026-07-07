@@ -16,7 +16,10 @@ import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js
 import { startWatch as startNetWatch } from './netstatus.js?v=cdda892';
 import { settingsSections, resolveSection } from './settings.js?v=cdda892';
 import { modalReducer, topModal } from './modal.js?v=cdda892';
+import { showBuildTag } from './buildinfo.js?v=cdda892';
+import { readProgress } from './cardstats.js?v=cdda892';
 startNetWatch();
+showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
 //  • multi-project: footnote.config.json sets hubRepo → the reviewer opens ONE project via ?project=<id>,
 //    resolving its config from the hub's projects.json. No ?project → redirect to the launcher (index.html).
@@ -1890,12 +1893,11 @@ const DEFENSE = _CFG.deadline ? _CFG.deadline.date : null;
 const daysToDefense = () => Math.max(0, Math.ceil((new Date(DEFENSE) - new Date()) / 86400000));
 function chapterStats(ch){
   const r = JSON.parse(localStorage.getItem('review:'+ch) || 'null');
-  const checked = r?.read ? Object.keys(r.read).length : 0;
-  const sec = r?.secCount || 0;
+  const p = readProgress(r);   // shared read-progress derivation (parity with reviewer cards)
   return { open: r ? r.comments.filter(c=>c.status==='open').length : 0,
            merged: r ? r.comments.filter(c=>c.status==='merged').length : 0,
            total: r ? r.comments.length : 0,
-           checked, sec, frac: sec ? checked/sec : 0, readDone: sec>0 && checked>=sec };
+           checked: p.doneN, sec: p.secN, frac: p.frac, readDone: p.done };
 }
 function enterHome(){
   stopOwnerLiveSync();
