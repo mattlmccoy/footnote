@@ -175,6 +175,7 @@ const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;
 const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
 let DATA_REPO = '';        // populated from footnote.config.json at boot
 let CHAPTERS = [];         // the adopter's chapter manifest (config.chapters), populated at boot
+let HAS_OUTLINE = false;   // whether the data repo ships an outline.json with chapters — gates the home outline card (journals have none)
 // whole-document ("read the whole paper") view: WHOLE active; _reviews holds every RELEASED unit's review
 // (per-chapter files stay separate); comments resolve within their own #wd-<id> segment and route back to
 // the owning chapter's advisor/<id>/<ch>.json. Live sync off in this view (v1).
@@ -1240,11 +1241,11 @@ function enterHome(){
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Read the whole ${escapeHtml(DOC)}</div>
         <div style="font-size:11.5px;color:var(--text-2)">Every released ${escapeHtml(UNIT)} as one continuous read — comment anywhere</div></div>
         <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>`:''}
-      <button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
+      ${HAS_OUTLINE ? `<button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed ${DOC} outline</div>
         <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it, available before ${UNIT}s are released.</div></div>
-        <span style="margin-left:auto;font-size:11.5px;color:var(--text-2);white-space:nowrap">${ocn?ocn+' comment'+(ocn>1?'s':''):'open to review'} <i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>
+        <span style="margin-left:auto;font-size:11.5px;color:var(--text-2);white-space:nowrap">${ocn?ocn+' comment'+(ocn>1?'s':''):'open to review'} <i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>` : ''}
       ${responsesReleased ? `<button id="responses-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--success);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--success-bg);cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-message-check" style="font-size:22px;color:var(--success)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Responses to your comments</div>
@@ -1255,7 +1256,7 @@ function enterHome(){
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
         <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
-  document.getElementById('outline-card').onclick=loadOutline;
+  document.getElementById('outline-card')?.addEventListener('click', loadOutline);   // absent when the doc has no outline (e.g. a journal article)
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
   renderAdvisorDownloads();
 }
@@ -1390,6 +1391,36 @@ async function embedChangedFigures(groups){
   document.querySelectorAll('.resp-fig:empty').forEach(s=>s.remove());
 }
 // ---------- proposed outline (available before chapters are released) ----------
+// Boot probe: does this data repo ship a real outline (outline.json with chapters)? Journals typically
+// have none, so the home "Proposed outline" card must not appear for them. Returns false on any error/404.
+async function _outlineExists(){
+  const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  try{
+    let data=null;
+    if(dev){ const r=await fetch('./outline.json'); if(r.ok) data=await r.json(); }
+    if(!data){ const t=tok(); if(!t) return false; const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`,{headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'},cache:'no-store'}); if(!r.ok) return false; data=await r.json(); }
+    const nodes = data && (data.chapters||data.nodes||data.sections);
+    return !!(Array.isArray(nodes) && nodes.length);
+  }catch(e){ return false; }
+}
+// The document title shown in the reviewer header must come from the DATA REPO, not the app's instance
+// config (which is generic → "Untitled document"). Workspace: projects.json[<pid>].doc.title. Legacy:
+// outline.json.title. Returns '' when nothing is set, so the caller keeps the config fallback.
+async function _docTitleFromRepo(){
+  const t=tok(); if(!t) return '';
+  const raw = { headers:{Authorization:`Bearer ${t}`,Accept:'application/vnd.github.raw'}, cache:'no-store' };
+  if(_PREFIX){   // consolidated workspace — the per-project title lives in projects.json at the repo root
+    try{ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/projects.json?t=${Date.now()}`, raw);
+      if(r.ok){ const j=await r.json(); const ps=Array.isArray(j)?j:(j.projects||[]); const pid=_PREFIX.replace(/\/$/,'');
+        const p=ps.find(x=>x&&x.id===pid); const tt=p&&p.doc&&p.doc.title; if(tt&&tt.trim()) return tt.trim(); } }catch(e){}
+  }
+  try{ const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1'; let data=null;
+    if(dev){ const r=await fetch('./outline.json'); if(r.ok) data=await r.json(); }
+    if(!data){ const r=await _gfetch(`https://api.github.com/repos/${DATA_REPO}/contents/${_PREFIX}outline.json?t=${Date.now()}`, raw); if(r.ok) data=await r.json(); }
+    if(data && data.title && data.title.trim()) return data.title.trim();
+  }catch(e){}
+  return '';
+}
 async function loadOutline(){
   current='__outline__'; review=loadLocal('__outline__');
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='';
@@ -1595,6 +1626,9 @@ async function boot(){
   // the link is broken, so say so. Only on the cold no-&p=, no-root-chapters path (never the happy one).
   if (tok() && !_pid && !CHAPTERS.length && workspaceInviteBroken(_pid, CHAPTERS, await _repoTreePaths(tok()))){ showLinkBroken(); return; }
   keyBad = false; revoked = false; await loadRelease(); if (revoked){ showRevoked(); return; } if (keyBad && tok()){ showKeyExpired(); return; }
+  HAS_OUTLINE = await _outlineExists();   // gate the home outline card — hidden when the doc ships no outline (journals)
+  const _docTitle = await _docTitleFromRepo();   // real title from the data repo (config title is generic → "Untitled")
+  if (_docTitle){ _CFG = { ..._CFG, doc:{ ..._CFG.doc, title:_docTitle } }; setConfig(_CFG); }
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
@@ -1607,10 +1641,12 @@ async function boot(){
 function ensureTourButton(){
   if (document.getElementById('adv-tour-btn')) return;
   const b = document.createElement('button');
-  b.id = 'adv-tour-btn'; b.title = 'Tour'; b.className = 'icbtn';
+  b.id = 'adv-tour-btn'; b.title = 'How to review'; b.className = 'icbtn';
   b.style.cssText = 'position:fixed;right:14px;bottom:14px;z-index:40;width:36px;height:36px;border-radius:50%;background:var(--bg);border:.5px solid var(--border-2);box-shadow:0 4px 14px rgba(0,0,0,.14)';
   b.innerHTML = '<i class="ti ti-help-circle"></i>';
-  b.onclick = launchAdvisorTour;
+  // Open the click-through "how to leave comments" guide (static step modal), NOT the animated spotlight
+  // tour on demo content. The guide still offers "Show me" for anyone who wants the interactive walkthrough.
+  b.onclick = () => launchFirstRunGuide();
   document.body.appendChild(b);
 }
 // outbox heartbeat: retry any unconfirmed local edits on a timer, when the tab regains focus,
