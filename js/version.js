@@ -12,7 +12,10 @@ export function parseVersion(url) {
 // Find the deployed `<bundle>?v=<sha>` a freshly-fetched HTML page references (e.g. bundle 'advisor.js').
 // '' when the page doesn't reference it (or couldn't be read).
 export function latestFromHtml(html, bundle) {
-  const re = new RegExp(bundle.replace(/[.]/g, '\\.') + '\\?v=([^"&\\s#]+)');
+  // Match only the token charset so we stop at ANY delimiter — quote (single OR double), &, ;, <, whitespace.
+  // The single-quote case is real: advisor.html loads via `s.src = './js/x.js?v=<sha>';`, and the old
+  // [^"&\s#]+ swallowed the trailing ';</script>", so the token never equaled import.meta's clean sha.
+  const re = new RegExp(bundle.replace(/[.]/g, '\\.') + '\\?v=([A-Za-z0-9._-]+)');
   const m = re.exec(html || '');
   return m ? m[1] : '';
 }

@@ -18,6 +18,15 @@ test('latestFromHtml finds the deployed <script src=...?v=sha> for a given bundl
   assert.equal(latestFromHtml('<p>no scripts</p>', 'advisor.js'), '');
 });
 
+test('latestFromHtml stops at a single quote (the real bootstrap loader form)', () => {
+  // advisor.html loads the module from a single-quoted JS string, then a semicolon:
+  //   s.src = './js/advisor.js?v=2c6c493';
+  // the token must be exactly the sha, NOT "2c6c493';" — else it never equals import.meta's clean sha
+  // and the "newer version available" bar false-fires on every load.
+  const html = `<script>var s=document.createElement('script'); s.src = './js/advisor.js?v=2c6c493';</script>`;
+  assert.equal(latestFromHtml(html, 'advisor.js'), '2c6c493');
+});
+
 test('isStale only when both known and they differ', () => {
   assert.equal(isStale('abc', 'def'), true);
   assert.equal(isStale('abc', 'abc'), false);
