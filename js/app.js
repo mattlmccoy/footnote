@@ -6,7 +6,7 @@ import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from '.
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
-import { loadConfig, dataRepoParts, loadChapters, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=624ac4e';
+import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=624ac4e';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=f6958c2';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1965,6 +1965,7 @@ function enterHome(){
   refreshInbox();
   renderHomeDownloads();
   refreshSetup();
+  refreshEmptyState();
 }
 // ---------- take reviewer feedback back to Overleaf ----------
 function ensureOverleafPanel(){
@@ -2434,6 +2435,21 @@ async function refreshSetup(){
   if (line) line.innerHTML = _setupStep(allBuilt, 'Reading view built', detail);
   strip.style.display = allBuilt ? 'none' : '';   // all units rendered ⟹ source+parsed done → hide the strip
 }
+// No chapters on the home can mean two very different things: the document was never imported, OR the
+// app can't READ the data repo (a dropped GitHub-App repo permission / narrowed token — a private repo
+// returns 404 for both). The access case used to masquerade as the import gate and looked like the whole
+// document vanished. Now it says so plainly and links the fix, so a permissions slip self-diagnoses.
+async function refreshEmptyState(){
+  if (CHAPTERS.length) return;
+  const box = document.getElementById('home-empty'); if (!box) return;
+  const t = tok(); if (!t) return;                       // no token → existing "Add token" copy is correct
+  let state; try { state = await dataRepoReadable(t); } catch { return; }
+  if (state !== 'no-access') return;                     // readable-but-empty is a genuine import case
+  box.innerHTML = `<i class="ti ti-lock-off" style="font-size:30px;color:var(--danger)"></i>
+    <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Can't read your data repo</div>
+    <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Footnote can't read <code>${escapeHtml(DATA_REPO)}</code> with your current access. Your ${escapeHtml(UNIT)}s are safe: this is a permissions gap, not lost data. Give the Footnote GitHub App access to that repo (github.com/settings/installations, then Footnote, Repository access), then reload.</div>
+    <a class="btn btn-primary" href="https://github.com/settings/installations" target="_blank" rel="noopener" style="padding:8px 16px;text-decoration:none">Open GitHub App settings</a>`;
+}
 function homeHtml(){
   const last = localStorage.getItem('lastChapter');
   const lm = last && chMeta(last);
@@ -2460,7 +2476,7 @@ function homeHtml(){
   }).join('');
   const hasTok = !!localStorage.getItem('ghpat');
   // No chapters yet → the document hasn't been imported. Show an import call-to-action, not a blank grid.
-  const empty = `<div style="border:1px dashed var(--border-2);border-radius:var(--r-lg);padding:40px 28px;text-align:center;max-width:520px;margin:6vh auto 0">
+  const empty = `<div id="home-empty" style="border:1px dashed var(--border-2);border-radius:var(--r-lg);padding:40px 28px;text-align:center;max-width:520px;margin:6vh auto 0">
       <i class="ti ti-file-import" style="font-size:30px;color:var(--accent)"></i>
       <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Import your ${DOC}</div>
       <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Point Footnote at your LaTeX source (<code>main.tex</code>) or a Word <code>.docx</code>. Footnote parses it to find your ${UNIT}s — nothing is hardcoded.${hasTok ? '' : ' Add your access token first.'}</div>

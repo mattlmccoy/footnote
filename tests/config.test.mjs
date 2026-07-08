@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import {
   normalizeConfig, ConfigError, dataRepoParts, storageKey,
   chapterMeta, daysToDeadline, advisorShellConfig, loadConfig,
-  getConfig, _resetConfigCache, loadChapters,
+  getConfig, _resetConfigCache, loadChapters, setConfig,
   normalizeProject, resolveProject, loadProjects, dataRepoFromParams,
   writeProjectPatch, assistantEnabled, dataPath, advisorInviteUrl,
-  sendMenuActions, workspaceInviteBroken,
+  sendMenuActions, workspaceInviteBroken, dataRepoReadable,
 } from '../js/config.js';
 
 const MIN = { owner: 'alice', dataRepo: 'alice/data' };   // chapters are NOT required — they come from parsing the user's document
@@ -351,4 +351,28 @@ test('workspaceInviteBroken: fresh/empty data repo (no chapters, no subfolders) 
 test('workspaceInviteBroken: subfolders without chapters.json (figures/etc) don\'t count as projects', () => {
   const tree = ['content/intro.html', 'figures/f1.png', 'markups/m.png'];
   assert.equal(workspaceInviteBroken('', [], tree), false);
+});
+
+// dataRepoReadable — distinguish "app can't READ your data repo (403/404 no-access)" from
+// "repo readable but nothing imported yet", so the owner UI stops faking a vanished document.
+test('dataRepoReadable: no token → no-token', async () => {
+  setConfig(normalizeConfig(MIN));
+  assert.equal(await dataRepoReadable('', async () => ({ ok: true, status: 200 })), 'no-token');
+});
+test('dataRepoReadable: repo readable (200) → readable (not-imported, not an access problem)', async () => {
+  setConfig(normalizeConfig(MIN));
+  const f = async (url) => { assert.match(url, /\/repos\/alice\/data(\?|$)/); return { ok: true, status: 200 }; };
+  assert.equal(await dataRepoReadable('tok', f), 'readable');
+});
+test('dataRepoReadable: repo 404 (private, no access) → no-access', async () => {
+  setConfig(normalizeConfig(MIN));
+  assert.equal(await dataRepoReadable('tok', async () => ({ ok: false, status: 404 })), 'no-access');
+});
+test('dataRepoReadable: repo 403 → no-access', async () => {
+  setConfig(normalizeConfig(MIN));
+  assert.equal(await dataRepoReadable('tok', async () => ({ ok: false, status: 403 })), 'no-access');
+});
+test('dataRepoReadable: transient error (500) → error', async () => {
+  setConfig(normalizeConfig(MIN));
+  assert.equal(await dataRepoReadable('tok', async () => ({ ok: false, status: 500 })), 'error');
 });
