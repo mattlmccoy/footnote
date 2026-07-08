@@ -365,6 +365,13 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     """
     if claude_fn is None:
         claude_fn = run_claude_cli
+    # HARD GATE: cloud apply runs ONLY when this project is explicitly in cloud mode. A missing/local
+    # <prefix>mode.json (the default) makes the cloud engine inert so it can never collide with the
+    # local process-reviews.py round-trip (the 2026-07-08 both-routes-live corruption). Clean skip, not
+    # a failure — no red X, no email.
+    if not R.cloud_enabled(prefix):
+        print(f"[apply] {prefix or '(root)'}: processing mode is local — cloud apply inert (skipped)")
+        return 0
     # agent_fn is left as passed: None means "use the catalog-aware default", which needs the loaded
     # catalog + per-job field bound in the run-agents branch below (an injected fake is used as-is).
     jobs = R.load_json(R.jobs_path(prefix), [])

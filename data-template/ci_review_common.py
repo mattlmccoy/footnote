@@ -87,6 +87,37 @@ def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
     return False, ""
 
 
+# ------------------------------------------------------- local/cloud processing hard gate
+
+def resolve_processing_mode(marker):
+    """Resolve a parsed ``mode.json`` marker to ``"cloud"`` or ``"local"``.
+
+    Returns ``"cloud"`` ONLY when the marker is a dict that explicitly says so; a missing
+    (None), malformed, or local marker resolves to ``"local"``. Default-local is deliberate:
+    a repo with no marker keeps the cloud write CI inert until cloud is explicitly chosen, so
+    the two routes can never both be live (the 2026-07-08 collision). Pure — the caller reads
+    ``<prefix>mode.json`` and passes the parsed value in.
+    """
+    if isinstance(marker, dict) and str(marker.get("processingMode", "")).strip().lower() == "cloud":
+        return "cloud"
+    return "local"
+
+
+def cloud_enabled_marker(marker):
+    """True iff a parsed marker selects cloud processing (see resolve_processing_mode)."""
+    return resolve_processing_mode(marker) == "cloud"
+
+
+def processing_mode(prefix=""):
+    """The processing mode for a project from its committed ``<prefix>mode.json`` (default local)."""
+    return resolve_processing_mode(load_json(f"{prefix}mode.json", None))
+
+
+def cloud_enabled(prefix=""):
+    """True iff this project is in cloud mode — the gate every cloud write workflow checks."""
+    return processing_mode(prefix) == "cloud"
+
+
 # --------------------------------------------------------------- job / comment plumbing
 
 def remove_job(jobs, job_id):

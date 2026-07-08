@@ -45,6 +45,9 @@ def workspace_repo(tmp_path):
 
     (data / "proj" / "source").mkdir(parents=True)
     (data / "proj" / "source" / "methods.tex").write_text("x = \\alpha + 1\n")
+    # these integration tests exercise the CLOUD apply engine, so opt the project into cloud mode
+    # (the hard gate defaults to local = cloud inert).
+    (data / "proj" / "mode.json").write_text(json.dumps({"processingMode": "cloud"}))
     (data / "proj" / "chapters.json").write_text(json.dumps(
         [{"id": "02-methods", "sourceFile": "methods.tex"}]))
     (data / "proj" / "reviews").mkdir()
