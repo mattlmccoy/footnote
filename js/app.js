@@ -2047,9 +2047,11 @@ async function loadOwnerOutline(){
   document.getElementById('comments').style.display = '';
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
-    <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place" style="margin-left:auto"><i class="ti ti-refresh"></i></button>
+    <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+    <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
+  document.getElementById('btn-send').onclick = openSendMenu;   // structure comments → apply-edits on review-edits/__outline__ (parity with chapters)
   document.getElementById('btn-theme').onclick = toggleTheme;
   read.innerHTML = `<div class="empty">Loading outline…</div>`;
   let data = null; const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
