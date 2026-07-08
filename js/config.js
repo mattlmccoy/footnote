@@ -269,6 +269,25 @@ export async function loadChapters(token, fetchImpl) {
   return Array.isArray(data) ? data : (data.chapters || []);
 }
 
+// When chapters come back empty, say WHY. A private data repo the token can't read returns 404 for a
+// MISSING file AND for no-access, so probe the repo itself to tell them apart. Lets the owner UI show
+// "can't read your data repo — check the app's repository access" instead of a misleading import gate.
+// Returns 'no-token' | 'no-access' | 'readable' | 'error'.
+export async function dataRepoReadable(token, fetchImpl) {
+  if (!token) return 'no-token';
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null);
+  if (!f) return 'no-token';
+  const { owner, repo } = dataRepoParts(getConfig());
+  let r;
+  try {
+    r = await f(`https://api.github.com/repos/${owner}/${repo}?t=${Date.now()}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+  } catch { return 'error'; }
+  if (r && r.ok) return 'readable';
+  if (r && (r.status === 401 || r.status === 403 || r.status === 404)) return 'no-access';
+  return 'error';
+}
+
 // F7 — a workspace invite that lost its project. A consolidated workspace data repo holds every project
 // under <id>/…; the reviewer link must carry &p=<id> so _PREFIX='<id>/'. If &p= is missing, the reviewer
 // reads the repo ROOT, where a workspace repo has NO chapters.json — so it degrades to the misleading
