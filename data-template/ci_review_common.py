@@ -59,6 +59,34 @@ def literal_replace(text, find, replacement):
     return text.replace(find, replacement)
 
 
+def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
+    """Guard a freshly-built ``content/<unit>.html`` before it replaces the last-good file.
+
+    Returns ``(degenerate: bool, reason: str)``. The 2026-07-08 incident published 253-byte
+    stub files ("5") over real chapters because the build exited 0 but produced garbage — the
+    exit code cannot catch that; only inspecting the OUTPUT can. A build is degenerate when:
+      - it is empty / whitespace-only, or
+      - a last-good version exists and the new output lost more than ``max_shrink`` of it
+        (the incident: KB/MB chapter -> 253 bytes), or
+      - there is no last-good and the output is below ``min_bytes`` (a real rendered unit
+        fragment is a heading + prose; a sub-200-byte first build is almost certainly broken).
+    A similar-size or larger rebuild is never degenerate. Thresholds are parameters so callers
+    (and tests) can tune strictness. Pure — the caller does build-to-temp then swap-or-keep.
+    """
+    new = new_text or ""
+    if not new.strip():
+        return True, "empty output"
+    prev = prev_text or ""
+    if prev.strip():
+        floor = len(prev) * (1.0 - max_shrink)
+        if len(new) < floor:
+            pct = int((1.0 - len(new) / len(prev)) * 100)
+            return True, f"shrank {pct}% (from {len(prev)} to {len(new)} bytes) vs last-good"
+    elif len(new) < min_bytes:
+        return True, f"suspiciously small first build ({len(new)} bytes < {min_bytes})"
+    return False, ""
+
+
 # --------------------------------------------------------------- job / comment plumbing
 
 def remove_job(jobs, job_id):

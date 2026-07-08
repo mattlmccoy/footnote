@@ -101,7 +101,9 @@ def test_apply_direct_builds_preview_from_the_branch(workspace_repo, monkeypatch
     fake = tmp_path / "fake-chapter-html.sh"
     fake.write_text(
         '#!/usr/bin/env bash\nset -e\nprintf "<h1>%s</h1>" "$1" > "$2"\n'
-        'cat "$SOURCE_DIR/methods.tex" >> "$2"\n')
+        'cat "$SOURCE_DIR/methods.tex" >> "$2"\n'
+        # pad to a realistic content size so the degenerate-build guard (min 200 bytes) accepts it
+        'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
     fake.chmod(0o755)
     import ci_render
     monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
@@ -140,7 +142,9 @@ def test_apply_edits_end_to_end_with_mocked_claude(workspace_repo, monkeypatch, 
 
     # stub the renderer so preview needs no pandoc
     fake = tmp_path / "fake.sh"
-    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n')
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    # pad past the degenerate-build guard's 200-byte floor with realistic filler
+                    'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
     fake.chmod(0o755)
     import ci_render
     monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
@@ -218,7 +222,9 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     _git(["push", "origin", "review-edits/02-methods"], data)
 
     fake = tmp_path / "fake.sh"
-    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n')
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    # pad past the degenerate-build guard's 200-byte floor with realistic filler
+                    'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
     fake.chmod(0o755)
     import ci_render
     monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))

@@ -231,21 +231,17 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
 def _build_unit(prefix, unit_id, source_dir, out_path, workdir, label):
     """Render one unit to ``out_path`` via the SAME export/chapter-html.sh the render pipeline uses —
     so preview (branch) and published content (merged) are byte-for-byte the same renderer, differing
-    only in source tree and output path. Best-effort: a failed build leaves any prior output."""
+    only in source tree and output path. Goes through ci_render.build_guarded, so a failed OR
+    degenerate build (the 2026-07-08 253-byte incident) keeps the last-good file instead of
+    destroying it. Returns True when a new build was published."""
     rows = ci_render.load_units(prefix)
     entry = ci_render.derive_entry(rows)
-    out = Path(out_path)
-    out.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ,
                SOURCE_DIR=str(Path(source_dir).resolve()),
                CHAPTERS_JSON=str(Path(f"{prefix}chapters.json").resolve()),
                RENDER_ENTRY=entry,
                BUILD_DIR=str((Path(workdir) / "build" / (prefix.rstrip("/") or "root")).resolve()))
-    try:
-        subprocess.run(["bash", str(ci_render.CHAPTER_HTML), unit_id, str(out.resolve())],
-                       check=True, env=env, stdout=sys.stderr, stderr=sys.stderr)
-    except subprocess.CalledProcessError as e:
-        print(f"[apply] {label} {prefix}{unit_id}: build failed ({e}) — leaving prior output", file=sys.stderr)
+    return ci_render.build_guarded(unit_id, out_path, env, workdir, label)
 
 
 def build_preview(prefix, unit_id, source_dir, workdir):
