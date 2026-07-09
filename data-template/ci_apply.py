@@ -596,7 +596,12 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
                 if st == "conflict":
                     conflicts += 1
                 break
-            undefined = R.verify_refs("\n".join(trial_files.values()))
+            # DELTA gate: only references the EDIT newly breaks should block. A chapter routinely
+            # \cref's labels defined in OTHER source files (and preambles wrap \ref in macros), so the
+            # single-tree scan reports pre-existing "undefined" refs the edit never touched — blocking on
+            # those makes every prose edit a false-positive conflict. Compare against the pre-edit baseline.
+            baseline_undef = set(R.verify_refs("\n".join(work.values())))
+            undefined = [k for k in R.verify_refs("\n".join(trial_files.values())) if k not in baseline_undef]
             if undefined:
                 ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}).",
                    comment=cid, agent="verify_refs", status="conflict")

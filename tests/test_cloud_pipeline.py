@@ -123,3 +123,15 @@ def test_responder_agent_present_for_response_jobs():
     # the Review-Response Writer (responder) doer exists in the catalog with a real prompt
     entry = ci_agents.builtin_catalog().get("responder")
     assert entry and entry.get("category") == "doer" and (entry.get("systemPrompt") or "").strip()
+
+
+# ---- verify_refs must not treat LaTeX macro parameters (\cref{#1} in a \newcommand) as references ----
+
+def test_verify_refs_ignores_macro_parameters():
+    tex = r"\newcommand{\myref}[1]{\cref{#1}}\label{eq:a} see \eqref{eq:a}"
+    assert R.verify_refs(tex) == []          # #1 is a macro param, not an undefined label
+
+
+def test_verify_refs_still_catches_real_undefined_with_macros_present():
+    tex = r"\newcommand{\myref}[1]{\cref{#1}} \cref{eq:missing}"
+    assert R.verify_refs(tex) == ["eq:missing"]
