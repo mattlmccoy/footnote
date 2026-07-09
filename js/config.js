@@ -170,6 +170,7 @@ export function resolveProject(appCfg, projects, projectId) {
     deadline: p.deadline || null,
     advisors: p.advisors || [],
     reviewAgents: p.reviewAgents || appCfg.reviewAgents,
+    processingMode: String(p.processingMode || '').toLowerCase() === 'cloud' ? 'cloud' : 'local',
     projectId: p.id,
     projectName: p.name,
   });
