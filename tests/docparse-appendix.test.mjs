@@ -1,6 +1,22 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexChapters } from '../js/docparse.js';
+import { parseLatexChapters, appendixBoundary } from '../js/docparse.js';
+
+// ---- appendixBoundary: the single, policy-free boundary detector shared by parseLatexOutline (drops
+//      at/after) and parseLatexChapters (keeps, labels A-E). Returns the index, or Infinity when none. ----
+test('appendixBoundary finds \\appendix', () => {
+  assert.equal(appendixBoundary('a\nb\n\\appendix\nc'), 4);
+});
+test('appendixBoundary finds \\begin{theappendices} (GaTech thesis env)', () => {
+  const t = 'a\n\\begin{theappendices}\nc';
+  assert.equal(appendixBoundary(t), t.indexOf('\\begin'));
+});
+test('appendixBoundary finds a bare \\begin{appendices}', () => {
+  assert.equal(appendixBoundary('\\begin{appendices}'), 0);
+});
+test('appendixBoundary returns Infinity when there is no appendix boundary', () => {
+  assert.equal(appendixBoundary('\\chapter{One}\n\\chapter{Two}'), Infinity);
+});
 
 // chapter mode: \appendix in main.tex before the appendix \include(s)
 test('chapter mode: units after \\appendix are marked appendix with reset letters', () => {
