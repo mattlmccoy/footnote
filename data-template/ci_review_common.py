@@ -118,6 +118,57 @@ def cloud_enabled(prefix=""):
     return processing_mode(prefix) == "cloud"
 
 
+# ------------------------------------------------------- local operator changelist (pure)
+
+_CHANGELIST_TYPES = ("apply-edits", "apply-direct", "run-agents", "merge", "export")
+
+
+def changelist(jobs, reviews_by_unit, source_exists):
+    """Structured view of the queued jobs for the local operator CLI (the `list` command).
+
+    Pure port of process-reviews.py cmd_list: the CLI colors/prints; this decides WHAT to show.
+    ``jobs`` is jobs.json; ``reviews_by_unit`` maps unit id -> its review dict; ``source_exists``
+    is ``fn(unit_id) -> bool`` (does the unit's source file exist). Returns a list of row dicts
+    (only queued, known-type jobs), each: ``{id, unit, type, source_ok}`` plus, per type,
+    ``comments`` (apply-edits/apply-direct — each {id, tag, section, quote, edit, body, ask}),
+    ``agents`` (run-agents), or ``formats`` (export).
+    """
+    rows = []
+    for j in jobs or []:
+        if not isinstance(j, dict) or j.get("status") == "done":
+            continue
+        jtype = j.get("type")
+        if jtype not in _CHANGELIST_TYPES:
+            continue
+        unit = j.get("chapter") or j.get("unit")
+        row = {"id": j.get("id"), "unit": unit, "type": jtype,
+               "source_ok": bool(source_exists(unit))}
+        if jtype == "run-agents":
+            row["agents"] = list(j.get("agents") or [])
+        elif jtype == "export":
+            row["formats"] = list(j.get("formats") or [])
+        elif jtype in ("apply-edits", "apply-direct"):
+            review = reviews_by_unit.get(unit) or {}
+            wanted = set(j.get("comment_ids") or [])
+            out = []
+            for c in review.get("comments", []):
+                if wanted and c.get("id") not in wanted:
+                    continue
+                anchor = c.get("anchor") or {}
+                out.append({
+                    "id": c.get("id"),
+                    "tag": c.get("tag", "?"),
+                    "section": anchor.get("section", ""),
+                    "quote": (anchor.get("quote", "") or "").replace("\n", " ")[:90],
+                    "edit": c.get("edit"),
+                    "body": (c.get("body", "") or "").strip(),
+                    "ask": (c.get("body", "") or "").strip() if not c.get("edit") else "",
+                })
+            row["comments"] = out
+        rows.append(row)
+    return rows
+
+
 # --------------------------------------------------------------- job / comment plumbing
 
 def remove_job(jobs, job_id):
