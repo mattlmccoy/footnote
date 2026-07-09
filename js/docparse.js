@@ -135,6 +135,11 @@ function _firstSentence(tex) {
 export function parseLatexOutline(mainTex, resolveFile = () => null) {
   const clean = stripComments(String(mainTex || ''));
   const full = _assembleDoc(clean, resolveFile);
+  // Appendices are NOT chapters. Standard LaTeX marks the boundary with \appendix; thesis classes (e.g.
+  // GaTech) use a \begin{...appendices} environment. Headings at/after the boundary are appendices — drop
+  // them so the outline shows the real chapters, matching an \appendix-aware chapter count.
+  const _appM = /\\appendix\b|\\begin\s*\{[a-zA-Z]*appendices\}/.exec(full);
+  const _appPos = _appM ? _appM.index : Infinity;
   const ALL = ['chapter', 'section', 'subsection', 'subsubsection'];
   const topIdx = ALL.findIndex(lvl => firstSectioning(full, lvl));
   const root = { title: parseDocTitle(mainTex, resolveFile), intro: '', chapters: [] };
@@ -143,7 +148,10 @@ export function parseLatexOutline(mainTex, resolveFile = () => null) {
   const nodes = [];
   LEVELS.forEach((lvl, li) => {
     let pos = 0, hit;
-    while ((hit = firstSectioning(full, lvl, pos))) { nodes.push({ level: li, title: hit.title, start: hit.start, bodyStart: hit.end + 1 }); pos = hit.end + 1; }
+    while ((hit = firstSectioning(full, lvl, pos))) {
+      if (hit.start < _appPos) nodes.push({ level: li, title: hit.title, start: hit.start, bodyStart: hit.end + 1 });
+      pos = hit.end + 1;
+    }
   });
   nodes.sort((a, b) => a.start - b.start);
   nodes.forEach((n, i) => { const nextStart = i + 1 < nodes.length ? nodes[i + 1].start : full.length; n.synopsis = _firstSentence(full.slice(n.bodyStart, nextStart)); });

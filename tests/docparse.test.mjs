@@ -2,6 +2,16 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseLatexOutline } from '../js/docparse.js';
 
+test('parseLatexOutline excludes appendices (\\begin{theappendices} boundary)', () => {
+  const tex = '\\chapter{Real One}\nText here now.\n\\chapter{Real Two}\nMore text now.\n\\begin{theappendices}\n\\chapter{Appendix A}\nApp text.\n\\end{theappendices}';
+  const o = parseLatexOutline(tex);
+  assert.equal(o.chapters.length, 2);
+  assert.equal(o.chapters.map(c=>c.title).join(','), 'Real One,Real Two');
+});
+test('parseLatexOutline excludes appendices (\\appendix boundary)', () => {
+  const tex = '\\chapter{One}\nx.\n\\appendix\n\\chapter{App}\ny.';
+  assert.equal(parseLatexOutline(tex).chapters.length, 1);
+});
 test('parseLatexOutline nests chapters > sections > subsections with n', () => {
   const tex = `\\title{My Doc}
 \\chapter{Introduction}
