@@ -4,8 +4,8 @@
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=9f87c88';
 import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=2df623a';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=806c2aa';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=80b984a';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=f90238a';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=e7b0cc7';
 import { startWatch as startNetWatch } from './netstatus.js?v=9c958aa';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 startNetWatch();
