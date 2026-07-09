@@ -248,7 +248,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
-      <span class="pm-pill" title="Review processing: ${processingMode(_CFG)}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}</span>
+      <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
       <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
@@ -2105,7 +2105,7 @@ async function loadOwnerOutline(){
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
     <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
-    <span class="pm-pill" title="Review processing: ${processingMode(_CFG)}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}</span>
+    <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
     <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
@@ -4071,6 +4071,14 @@ function setupMobileSheet(){
 // ---------- boot ----------
 setupMobileSheet();
 document.addEventListener('click', e => { if (e.target.closest('#btn-refresh')) doRefresh(); });   // refresh buttons across every topbar
+// The Cloud pill doubles as the entry to the live activity view: click it (in cloud mode) to open/reopen
+// the latest cloud job's narrated console — the affordance most people reach for first.
+document.addEventListener('click', e => {
+  if (!(e.target.closest && e.target.closest('.pm-pill'))) return;
+  if (typeof processingMode !== 'function' || processingMode(_CFG) !== 'cloud') return;
+  const j = localStorage.getItem('footnote:lastcloud:' + (_projectId || DATA_REPO));
+  if (j) openCloudActivity(j); else flash('No cloud job yet — use “Send to Claude” to start one.');
+});
 (() => { const r = sessionStorage.getItem('_resume'); if (r){ sessionStorage.removeItem('_resume'); enterChapter(r); } else enterHome(); })();   // a refresh returns you to where you were
 document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });
 document.addEventListener('mouseout', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border)'; });
