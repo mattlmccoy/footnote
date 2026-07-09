@@ -59,6 +59,116 @@ def literal_replace(text, find, replacement):
     return text.replace(find, replacement)
 
 
+def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
+    """Guard a freshly-built ``content/<unit>.html`` before it replaces the last-good file.
+
+    Returns ``(degenerate: bool, reason: str)``. The 2026-07-08 incident published 253-byte
+    stub files ("5") over real chapters because the build exited 0 but produced garbage — the
+    exit code cannot catch that; only inspecting the OUTPUT can. A build is degenerate when:
+      - it is empty / whitespace-only, or
+      - a last-good version exists and the new output lost more than ``max_shrink`` of it
+        (the incident: KB/MB chapter -> 253 bytes), or
+      - there is no last-good and the output is below ``min_bytes`` (a real rendered unit
+        fragment is a heading + prose; a sub-200-byte first build is almost certainly broken).
+    A similar-size or larger rebuild is never degenerate. Thresholds are parameters so callers
+    (and tests) can tune strictness. Pure — the caller does build-to-temp then swap-or-keep.
+    """
+    new = new_text or ""
+    if not new.strip():
+        return True, "empty output"
+    prev = prev_text or ""
+    if prev.strip():
+        floor = len(prev) * (1.0 - max_shrink)
+        if len(new) < floor:
+            pct = int((1.0 - len(new) / len(prev)) * 100)
+            return True, f"shrank {pct}% (from {len(prev)} to {len(new)} bytes) vs last-good"
+    elif len(new) < min_bytes:
+        return True, f"suspiciously small first build ({len(new)} bytes < {min_bytes})"
+    return False, ""
+
+
+# ------------------------------------------------------- local/cloud processing hard gate
+
+def resolve_processing_mode(marker):
+    """Resolve a parsed ``mode.json`` marker to ``"cloud"`` or ``"local"``.
+
+    Returns ``"cloud"`` ONLY when the marker is a dict that explicitly says so; a missing
+    (None), malformed, or local marker resolves to ``"local"``. Default-local is deliberate:
+    a repo with no marker keeps the cloud write CI inert until cloud is explicitly chosen, so
+    the two routes can never both be live (the 2026-07-08 collision). Pure — the caller reads
+    ``<prefix>mode.json`` and passes the parsed value in.
+    """
+    if isinstance(marker, dict) and str(marker.get("processingMode", "")).strip().lower() == "cloud":
+        return "cloud"
+    return "local"
+
+
+def cloud_enabled_marker(marker):
+    """True iff a parsed marker selects cloud processing (see resolve_processing_mode)."""
+    return resolve_processing_mode(marker) == "cloud"
+
+
+def processing_mode(prefix=""):
+    """The processing mode for a project from its committed ``<prefix>mode.json`` (default local)."""
+    return resolve_processing_mode(load_json(f"{prefix}mode.json", None))
+
+
+def cloud_enabled(prefix=""):
+    """True iff this project is in cloud mode — the gate every cloud write workflow checks."""
+    return processing_mode(prefix) == "cloud"
+
+
+# ------------------------------------------------------- local operator changelist (pure)
+
+_CHANGELIST_TYPES = ("apply-edits", "apply-direct", "run-agents", "merge", "export")
+
+
+def changelist(jobs, reviews_by_unit, source_exists):
+    """Structured view of the queued jobs for the local operator CLI (the `list` command).
+
+    Pure port of process-reviews.py cmd_list: the CLI colors/prints; this decides WHAT to show.
+    ``jobs`` is jobs.json; ``reviews_by_unit`` maps unit id -> its review dict; ``source_exists``
+    is ``fn(unit_id) -> bool`` (does the unit's source file exist). Returns a list of row dicts
+    (only queued, known-type jobs), each: ``{id, unit, type, source_ok}`` plus, per type,
+    ``comments`` (apply-edits/apply-direct — each {id, tag, section, quote, edit, body, ask}),
+    ``agents`` (run-agents), or ``formats`` (export).
+    """
+    rows = []
+    for j in jobs or []:
+        if not isinstance(j, dict) or j.get("status") == "done":
+            continue
+        jtype = j.get("type")
+        if jtype not in _CHANGELIST_TYPES:
+            continue
+        unit = j.get("chapter") or j.get("unit")
+        row = {"id": j.get("id"), "unit": unit, "type": jtype,
+               "source_ok": bool(source_exists(unit))}
+        if jtype == "run-agents":
+            row["agents"] = list(j.get("agents") or [])
+        elif jtype == "export":
+            row["formats"] = list(j.get("formats") or [])
+        elif jtype in ("apply-edits", "apply-direct"):
+            review = reviews_by_unit.get(unit) or {}
+            wanted = set(j.get("comment_ids") or [])
+            out = []
+            for c in review.get("comments", []):
+                if wanted and c.get("id") not in wanted:
+                    continue
+                anchor = c.get("anchor") or {}
+                out.append({
+                    "id": c.get("id"),
+                    "tag": c.get("tag", "?"),
+                    "section": anchor.get("section", ""),
+                    "quote": (anchor.get("quote", "") or "").replace("\n", " ")[:90],
+                    "edit": c.get("edit"),
+                    "body": (c.get("body", "") or "").strip(),
+                    "ask": (c.get("body", "") or "").strip() if not c.get("edit") else "",
+                })
+            row["comments"] = out
+        rows.append(row)
+    return rows
+
+
 # --------------------------------------------------------------- job / comment plumbing
 
 def remove_job(jobs, job_id):
@@ -330,6 +440,100 @@ def answer_comment(comment, ts, response):
     out = dict(comment)
     out["status"] = "answered"
     out["claude"] = {**(comment.get("claude") or {}), "response": response, "ts": ts}
+    return out
+
+
+def note_comment(comment, ts, response, before="", after=""):
+    """Attach an explanation to a comment WITHOUT changing its status (e.g. how a staged edit was
+    made). Optionally records the in-context ``staged_edit`` diff the reviewer renders inline.
+    Pure — input not mutated. Port of process-reviews.py cmd_note."""
+    out = dict(comment)
+    out["claude"] = {**(comment.get("claude") or {}), "response": response, "ts": ts}
+    if before or after:
+        out["staged_edit"] = {"before": before, "after": after}
+    return out
+
+
+def decide_comment(comment, ts, decision, note=""):
+    """Record an owner decision (approve|reject|revise) on a comment. Pure — input not mutated.
+    Port of process-reviews.py cmd_decide."""
+    out = dict(comment)
+    out["decision"] = decision
+    out["decision_ts"] = ts
+    if note:
+        out["decision_note"] = note
+    return out
+
+
+def resolve_advisor_comment(comment, ts, state, note, before="", after=""):
+    """Record how an advisor comment was addressed (addressed|declined|noted), shown on the advisor's
+    portal. Optional before/after captures the change. Pure — input not mutated. Port of
+    process-reviews.py cmd_advisor_resolve."""
+    out = dict(comment)
+    res = {"state": state, "note": note, "ts": ts}
+    if before:
+        res["before"] = before
+    if after:
+        res["after"] = after
+    out["resolution"] = res
+    return out
+
+
+def _norm_ws(s):
+    import re
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+
+def annex_md(unit, comments):
+    """The "Reviewer comments" markdown annex appended to an exported unit (pure). Port of
+    process-reviews.py _annex_md: numbered, per comment shows author/date, the quoted passage, the
+    body, any suggested edit, and any author resolution. So no comment is ever dropped from an export."""
+    lines = [f"# Reviewer comments — {unit}", ""]
+    if not comments:
+        lines.append("_No comments._")
+        return "\n".join(lines)
+    for n, c in enumerate(comments, 1):
+        who = (c.get("author", "") or "") + (f", {c['date'][:10]}" if c.get("date") else "")
+        quote = _norm_ws(c.get("quote", ""))[:90]
+        lines.append(f"**{n}. [{who}]**" + (f' on *“{quote}”*' if c.get("quote") else ""))
+        lines.append("")
+        lines.append(c.get("body", "") or "")
+        e = c.get("edit")
+        if e:
+            lines.append(f"\n> _Suggested {e.get('op')}:_ “{e.get('find', '')}” → “{e.get('replacement', '')}”")
+        r = c.get("resolution")
+        if r:
+            lines.append(f"\n> _{r.get('state')} by the author:_ {r.get('note', '')}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def export_comment_list(review, advisor_reviews=None):
+    """Flatten owner + advisor comments for a unit into the annotate_docx.py / annex COMMENTS shape:
+    ``[{author, date, quote, body, edit, resolution, kind}]``. ``advisor_reviews`` is a list of
+    (advisor_id, review_dict). Pure."""
+    out = []
+    for c in (review or {}).get("comments", []):
+        out.append({
+            "author": c.get("author", "owner"),
+            "date": (c.get("claude") or {}).get("ts") or c.get("date", ""),
+            "quote": (c.get("anchor") or {}).get("quote", "") or c.get("quote", ""),
+            "body": c.get("body", ""),
+            "edit": c.get("edit"),
+            "resolution": c.get("resolution"),
+            "kind": c.get("kind", "text"),
+        })
+    for advisor, arev in (advisor_reviews or []):
+        for c in (arev or {}).get("comments", []):
+            out.append({
+                "author": advisor,
+                "date": c.get("date", ""),
+                "quote": (c.get("anchor") or {}).get("quote", "") or c.get("quote", ""),
+                "body": c.get("body", ""),
+                "edit": c.get("edit"),
+                "resolution": c.get("resolution"),
+                "kind": c.get("kind", "text"),
+            })
     return out
 
 

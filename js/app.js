@@ -7,6 +7,7 @@ import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=d639eef';
+import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=pm1';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=bd17a11';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -246,6 +247,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+      <span class="pm-pill" title="Review processing: ${processingMode(_CFG)}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}</span>
       <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
     </div>`;
@@ -2048,6 +2050,7 @@ async function loadOwnerOutline(){
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
     <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+    <span class="pm-pill" title="Review processing: ${processingMode(_CFG)}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}</span>
     <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
@@ -2986,18 +2989,58 @@ function renderSettingsAgents(pane, t) {
 }
 // Claude / AI section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
 // ON: status card (connected via <secret> / not connected) + Connect / Manage → dialog, + Run apply.
+// Local/Cloud review-processing toggle (lives in the Claude/AI settings section). Writes the mode to
+// projects.json AND commits <prefix>mode.json — the exact marker the CI engine's hard gate reads — so
+// flipping it mechanically works: Local makes cloud apply inert, Cloud arms it (experimental until parity).
+function pmToggleCard() {
+  const isCloud = processingMode(_CFG) === 'cloud';
+  return `<div class="set-card">
+    <style>.pm-seg{display:inline-flex;border:.5px solid var(--border);border-radius:8px;overflow:hidden}
+      .pm-b{border:none;background:var(--bg);padding:6px 13px;cursor:pointer;font:inherit;font-size:12.5px;color:var(--text);border-right:.5px solid var(--border)}
+      .pm-b:last-child{border-right:none}.pm-b.on{background:var(--accent,#2c64c4);color:#fff}</style>
+    <h4>Review processing</h4>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Where queued review work runs. <b>Local</b> (default): you run it on your machine (<code>process_reviews.py</code> + Claude Code) — the trusted route. <b>Cloud</b>: GitHub Actions runs it — experimental, not yet at local parity.</div>
+    <div class="pm-seg" id="pm-seg">
+      <button type="button" class="pm-b${isCloud ? '' : ' on'}" data-mode="local">Local · Claude Code</button>
+      <button type="button" class="pm-b${isCloud ? ' on' : ''}" data-mode="cloud">Cloud · Actions</button>
+    </div>
+    <div id="pm-stat" style="font-size:11.5px;color:var(--text-3);margin-top:8px"></div>
+  </div>`;
+}
+function wirePmToggle(pane, t) {
+  const seg = pane.querySelector('#pm-seg'); if (!seg) return;
+  seg.querySelectorAll('.pm-b').forEach(b => b.onclick = async () => {
+    const mode = b.dataset.mode;
+    if (mode === processingMode(_CFG)) return;
+    const stat = pane.querySelector('#pm-stat'); stat.style.color = 'var(--text-3)'; stat.textContent = 'Switching…';
+    try {
+      if (_projectId && _CFG.hubRepo) await writeProjectPatch(_CFG, _projectId, processingModePatch(mode), t);
+      _CFG.processingMode = mode;
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(modeMarker(mode), null, 2))));
+      await putFile(t, dataPath(_CFG, 'mode.json'), content, `mode: switch to ${mode} processing`);
+      seg.querySelectorAll('.pm-b').forEach(x => x.classList.toggle('on', x.dataset.mode === mode));
+      stat.style.color = 'var(--success)';
+      stat.textContent = mode === 'cloud'
+        ? 'Cloud mode — GitHub Actions will process reviews (experimental).'
+        : 'Local mode — run process_reviews.py to process; cloud CI is inert.';
+      if (document.getElementById('btn-send')) renderTopbar();   // refresh the Send-to-Claude pill
+    } catch (e) { stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + escapeHtml((e && e.message) || 'error'); }
+  });
+}
+
 async function renderSettingsAI(pane, t) {
   const on = assistantOn();
   if (!on) {
-    pane.innerHTML = `<div class="set-card">
+    pane.innerHTML = pmToggleCard() + `<div class="set-card">
       <h4>AI assistant</h4>
       <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Off by default. The core review flow — comment → stage → approve → merge — works fully without AI. Turn on to send comments to Claude on your own GitHub Actions + credentials.</div>
       <button class="btn" id="set-ai-toggle" style="padding:5px 14px">Turn on</button>
     </div>`;
+    wirePmToggle(pane, t);
     pane.querySelector('#set-ai-toggle').onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
     return;
   }
-  pane.innerHTML = `<div class="set-card"><div id="set-ai-conn" class="set-status">Checking…</div>
+  pane.innerHTML = pmToggleCard() + `<div class="set-card"><div id="set-ai-conn" class="set-status">Checking…</div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn btn-primary" id="set-ai-connect" style="padding:5px 12px">Connect / manage Claude</button>
         <button class="btn" id="set-ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
@@ -3020,6 +3063,7 @@ async function renderSettingsAI(pane, t) {
     catch(e){ stat.style.color='var(--warn)'; stat.textContent = (e.message==='workflow-scope'||isScopeError(e)) ? 'Your access token needs Actions + Workflows access to run apply — update it under Access token (or use a classic repo+workflow token).' : 'Failed: '+escapeHtml((e && e.message)||'error'); }
   };
   const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
+  wirePmToggle(pane, t);
 }
 // Connect Claude dialog: primary = paste the `claude setup-token` value (CLAUDE_CODE_OAUTH_TOKEN);
 // Advanced = Anthropic API key fallback. Save seals via setAiSecrets + self-heals the engine.

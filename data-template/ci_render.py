@@ -28,9 +28,50 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_notify_common as C  # noqa: E402
+import ci_review_common as R  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 CHAPTER_HTML = HERE / "export" / "chapter-html.sh"
+
+
+def build_guarded(unit_id, out_html, env, workdir, label="content"):
+    """Render one unit to a TEMP file, then replace ``out_html`` (and its .srcmap.json sidecar)
+    ONLY if the result is not degenerate (R.is_degenerate_content vs the current last-good).
+
+    This is the P0 anti-corruption guard (2026-07-08 incident): chapter-html.sh can exit 0 yet
+    emit a stub, so a plain "build straight to out" destroys the last-good content. Building to a
+    temp .html (srcmap lands beside it as <tmp>.srcmap.json) and swapping both only on success
+    means a failed OR degenerate build always keeps the previous good files. Returns True when a
+    new build was published, False when the last-good was kept.
+    """
+    out_html = Path(out_html)
+    out_html.parent.mkdir(parents=True, exist_ok=True)
+    out_map = Path(str(out_html)[:-5] + ".srcmap.json") if str(out_html).endswith(".html") else None
+    prev = out_html.read_text(encoding="utf-8") if out_html.exists() else ""
+    gdir = Path(workdir) / "guard"
+    gdir.mkdir(parents=True, exist_ok=True)
+    tmp_html = gdir / f"{unit_id}.html"
+    tmp_map = gdir / f"{unit_id}.srcmap.json"
+    for p in (tmp_html, tmp_map):
+        if p.exists():
+            p.unlink()
+    try:
+        subprocess.run(["bash", str(CHAPTER_HTML), unit_id, str(tmp_html.resolve())],
+                       check=True, env=env, stdout=sys.stderr, stderr=sys.stderr)
+    except subprocess.CalledProcessError as e:
+        print(f"[build] {label} {unit_id}: build FAILED ({e}) — kept last-good", file=sys.stderr)
+        return False
+    new = tmp_html.read_text(encoding="utf-8") if tmp_html.exists() else ""
+    degenerate, why = R.is_degenerate_content(new, prev)
+    if degenerate:
+        print(f"[build] {label} {unit_id}: REJECTED degenerate build ({why}) — kept last-good",
+              file=sys.stderr)
+        return False
+    tmp_html.replace(out_html)
+    if out_map is not None and tmp_map.exists():
+        out_map.parent.mkdir(parents=True, exist_ok=True)
+        tmp_map.replace(out_map)
+    return True
 
 
 # --------------------------------------------------------------------------- pure helpers
@@ -145,12 +186,8 @@ def render_project(prefix, this_repo, token, workdir):
                    CHAPTERS_JSON=chapters_json,
                    RENDER_ENTRY=entry,
                    BUILD_DIR=str((workdir / "build" / (prefix.rstrip("/") or "root")).resolve()))
-        try:
-            subprocess.run(["bash", str(CHAPTER_HTML), uid, out], check=True, env=env,
-                           stdout=sys.stderr, stderr=sys.stderr)
+        if build_guarded(uid, out, env, workdir, "content"):
             built += 1
-        except subprocess.CalledProcessError as e:
-            print(f"[render] {prefix}{uid}: render failed ({e}) — leaving prior output", file=sys.stderr)
     print(f"[render] {prefix or '(root)'}: built {built}/{len(rows)} units")
     return built
 
