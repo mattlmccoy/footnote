@@ -97,6 +97,43 @@ export function outlineFromFiles(files) {
   return parseLatexOutline(entryText, p => (p in map ? map[p] : null));
 }
 
+// Normalize a heading for prev-matching: lowercase, collapse whitespace, trim (matches outline_gen.py).
+const _normHead = t => String(t || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+// Index every prior node that HAS a synopsis key (even '') by normalized heading text, so regeneration can
+// re-attach exactly the curated notes. Presence matters: a section with no synopsis key stays keyless.
+function _priorSynopsisIndex(prev) {
+  const idx = {};
+  const walk = nodes => (nodes || []).forEach(n => {
+    if (n && Object.prototype.hasOwnProperty.call(n, 'synopsis')) idx[_normHead(n.title)] = n.synopsis;
+    walk(n.sections); walk(n.subsections);
+  });
+  if (prev) walk(prev.chapters);
+  return idx;
+}
+
+// Merge a freshly-generated outline with a prior outline.json so human curation survives structural
+// regeneration (mirrors phd-dissertation/export/outline_gen.py, the behavior it replaces). The prior outline
+// is authoritative for annotations: synopses are NEVER invented — a node gets the prior synopsis for its
+// heading text (including an empty one), and any generated synopsis with no prior match is DROPPED so
+// regeneration never injects auto-text into a curated outline. title = prev.title || generated.title;
+// intro = prev.intro when present. Pure: returns `generated` unchanged when prev is null/empty. Mutates
+// `generated` in place and returns it.
+export function mergeOutlinePrev(generated, prev) {
+  if (!generated || !prev) return generated;
+  const idx = _priorSynopsisIndex(prev);
+  const apply = nodes => (nodes || []).forEach(n => {
+    const key = _normHead(n.title);
+    if (Object.prototype.hasOwnProperty.call(idx, key)) n.synopsis = idx[key];
+    else delete n.synopsis;
+    apply(n.sections); apply(n.subsections);
+  });
+  apply(generated.chapters);
+  if (prev.title) generated.title = prev.title;
+  if (prev.intro !== undefined) generated.intro = prev.intro;
+  return generated;
+}
+
 // ---- source-repo I/O (injectable fetch; default global fetch in the browser) ----
 // These write to the ADOPTER's OWN source repo with their OWN token — no Footnote-held credential.
 

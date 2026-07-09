@@ -1,17 +1,21 @@
 #!/usr/bin/env node
 // Regenerate the "Proposed outline" from a LaTeX source directory — a source-true extraction, never a
 // hand-kept copy. Reads every .tex under <source-dir>, runs outlineFromFiles (→ parseLatexOutline), and
-// writes the nested outline JSON to stdout (or --out <file>). Used by refresh-source so an updated main.tex
-// auto-regenerates outline.json. Reuses the SAME parser the browser import uses (one source of truth).
+// writes the nested outline JSON to stdout (or --out <file>). Used by refresh-source AND the dissertation
+// outline-sync workflow so an updated main.tex auto-regenerates outline.json. Reuses the SAME parser the
+// browser import uses (one source of truth). --prev <outline.json> preserves curated synopses/intro/title.
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
-import { outlineFromFiles } from '../js/importdoc.js';
+import { outlineFromFiles, mergeOutlinePrev } from '../js/importdoc.js';
 
 const args = process.argv.slice(2);
 const outIdx = args.indexOf('--out');
 const outFile = outIdx >= 0 ? args[outIdx + 1] : null;
-const dir = args.find((a, i) => !a.startsWith('--') && !(outIdx >= 0 && i === outIdx + 1));
-if (!dir) { console.error('usage: gen-outline.mjs <source-dir> [--out outline.json]'); process.exit(2); }
+const prevIdx = args.indexOf('--prev');
+const prevFile = prevIdx >= 0 ? args[prevIdx + 1] : null;
+const optVal = i => (outIdx >= 0 && i === outIdx + 1) || (prevIdx >= 0 && i === prevIdx + 1);
+const dir = args.find((a, i) => !a.startsWith('--') && !optVal(i));
+if (!dir) { console.error('usage: gen-outline.mjs <source-dir> [--prev outline.json] [--out outline.json]'); process.exit(2); }
 
 function walk(d, base, out) {
   for (const e of readdirSync(d)) {
@@ -26,6 +30,12 @@ function walk(d, base, out) {
 const files = walk(dir, dir, []);
 const outline = outlineFromFiles(files);
 if (!outline || !outline.chapters.length) { console.error(`gen-outline: no chapters found in ${dir}`); process.exit(1); }
+if (prevFile) {
+  let prev = null;
+  try { prev = JSON.parse(readFileSync(prevFile, 'utf8')); }
+  catch (e) { console.error(`gen-outline: --prev ${prevFile} unreadable (${e.message}); generating without preservation`); }
+  mergeOutlinePrev(outline, prev);
+}
 const json = JSON.stringify(outline, null, 2);
 if (outFile) { writeFileSync(outFile, json); console.error(`gen-outline: wrote ${outFile} (${outline.chapters.length} chapters)`); }
 else process.stdout.write(json + '\n');
