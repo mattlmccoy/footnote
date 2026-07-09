@@ -416,49 +416,64 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
     kept_review = review
     staged = 0
     conflicts = 0
+    max_attempts = int(os.environ.get("REVISE_MAX", "2"))
     for cid in ids:
         comment = next((c for c in review.get("comments", []) if c.get("id") == cid), None)
         if comment is None:
             continue
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
-        spec = edits.get(cid) or {}
-        trial_review, trial_files, branch, applied = R.process_apply_edits_job(
-            {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
-        diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
-        ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
-           comment=cid, agent="writer", status="running", edit=diff)
-        if not applied:
-            kept_review = trial_review   # process_apply_edits_job already marked it conflict/answered
-            st = next((c for c in trial_review["comments"] if c["id"] == cid), {}).get("status")
-            ev("stage", "No source change staged (answered or could not anchor the edit).",
-               comment=cid, status="conflict" if st == "conflict" else "ok")
-            if st == "conflict":
+        revise_note, attempt, outcome = "", 1, None
+        while outcome is None:
+            # attempt 1 uses the upfront batch edit; revisions re-ask the writer with the feedback so it
+            # can fix undefined refs / satisfy the critics — the same writer↔critic iteration as local.
+            if attempt == 1:
+                spec = edits.get(cid) or {}
+            else:
+                ev("agent", "Revising the edit based on the feedback…", comment=cid, agent="writer", status="running")
+                rtask = R.build_apply_task({**job, "comment_ids": [cid], "revision": True, "revise_note": revise_note},
+                                           kept_review, R.author_source(work))
+                spec = (claude_fn(rtask) or {}).get(cid) or {}
+            trial_review, trial_files, branch, applied = R.process_apply_edits_job(
+                {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
+            diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
+            ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
+               comment=cid, agent="writer", status="running", edit=diff)
+            if not applied:
+                kept_review = trial_review   # already marked conflict (couldn't anchor) or answered (question)
+                st = next((c for c in trial_review["comments"] if c["id"] == cid), {}).get("status")
+                ev("stage", "No source change staged (answered, or the edit could not be anchored).",
+                   comment=cid, status="conflict" if st == "conflict" else "ok")
+                if st == "conflict":
+                    conflicts += 1
+                break
+            undefined = R.verify_refs("\n".join(trial_files.values()))
+            if undefined:
+                ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}).",
+                   comment=cid, agent="verify_refs", status="conflict")
+                approved, reason = False, "undefined references: " + ", ".join(undefined)
+            else:
+                ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
+                verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
+                for v in verdicts:
+                    ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
+                       status="ok" if v["approved"] else "conflict")
+                tally = R.critics_verdict(verdicts)
+                approved = tally["approved"]
+                reason = "; ".join(r["say"] for r in tally["rejections"])
+            dec = R.revise_decision(approved, attempt, max_attempts)
+            if dec == "stage":
+                work, kept_review = trial_files, trial_review
+                staged += 1
+                ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
+                outcome = "staged"
+            elif dec == "revise":
+                revise_note, attempt = reason, attempt + 1
+            else:
+                kept_review = _mark_conflict(kept_review, cid, reason)
                 conflicts += 1
-            continue
-        undefined = R.verify_refs("\n".join(trial_files.values()))
-        if undefined:
-            ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}) — not staging.",
-               comment=cid, agent="verify_refs", status="conflict")
-            kept_review = _mark_conflict(kept_review, cid, "undefined references: " + ", ".join(undefined))
-            conflicts += 1
-            continue
-        ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
-        verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
-        for v in verdicts:
-            ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
-               status="ok" if v["approved"] else "conflict")
-        tally = R.critics_verdict(verdicts)
-        if R.revise_decision(tally["approved"], attempt=1, max_attempts=1) == "stage":
-            work = trial_files
-            kept_review = trial_review
-            staged += 1
-            ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
-        else:
-            reasons = "; ".join(r["say"] for r in tally["rejections"])
-            kept_review = _mark_conflict(kept_review, cid, "reviewer agents flagged it: " + reasons)
-            conflicts += 1
-            ev("stage", f"A review agent objected, so this edit was NOT staged — flagged for you: {reasons}",
-               comment=cid, status="conflict")
+                ev("stage", f"Couldn't satisfy the review after {attempt} attempt(s) — flagged for you: {reason}",
+                   comment=cid, status="conflict")
+                outcome = "conflict"
 
     if staged:
         src_rel = os.path.relpath(source_dir, repo_dir)
