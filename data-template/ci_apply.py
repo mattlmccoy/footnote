@@ -77,6 +77,36 @@ CLAUDE_INSTRUCTIONS = (
     "comment is a question, return only id + response."
 )
 
+# The outline (__outline__ pseudo-unit) carries comments on the document's STRUCTURE — headings and their
+# organization — not prose. Claude should resolve them by editing the corresponding sectioning commands in
+# the source, keeping the identical machine-readable output contract so the deterministic apply/stage path
+# is unchanged.
+OUTLINE_INSTRUCTIONS = (
+    "You are a LaTeX structural editor addressing reviewer comments on a document's PROPOSED OUTLINE — its "
+    "chapter/section/subsection structure (the headings and how they're organized), NOT the prose. The "
+    "source files and the comments are provided as JSON in the piped input (stdin) under TASK; each comment "
+    "is anchored to a heading (its quote is the heading text). For EACH comment, resolve it by editing the "
+    "corresponding \\chapter{...}, \\section{...}, or \\subsection{...} command in the source (rename or "
+    "reword a heading; for a reorder/add/remove you can express as a single verbatim substring edit, do so, "
+    "otherwise explain it in your response). Do NOT edit any files yourself and do NOT merge anything — only "
+    "return the specs; a deterministic tool applies them and the author approves before anything lands.\n\n"
+    "Return ONLY a JSON array, one object per comment you act on, with keys:\n"
+    "  id            the comment id\n"
+    "  response      a short plain-language note to the author on how you addressed it\n"
+    "  source_before EXACT existing LaTeX substring to replace, e.g. \\section{Old Heading} (omit if only answering)\n"
+    "  source_after  its replacement LaTeX, e.g. \\section{New Heading} (omit if only answering)\n"
+    "  prose_before  the heading text before your change (for the track-changes diff)\n"
+    "  prose_after   the heading text after your change\n"
+    "source_before must appear VERBATIM exactly once in the source, or the edit is rejected. If a comment "
+    "only asks a question or can't be expressed as one verbatim substring edit, return only id + response."
+)
+
+
+def apply_instructions(unit_id):
+    """The Claude directive for an apply-edits job: the structural-editor prompt for the outline
+    (structure comments -> sectioning edits), else the copy-editor prompt for a prose unit. Pure."""
+    return OUTLINE_INSTRUCTIONS if unit_id == "__outline__" else CLAUDE_INSTRUCTIONS
+
 
 def claude_context(task):
     """The apply-edits task (unit id, source files, comments) as the piped-stdin context. Pure/testable."""
@@ -174,7 +204,7 @@ def run_claude_cli(task, model=None):
     """Invoke Claude Code (headless) to produce edit specs for one apply-edits task. This is the thin,
     live-CI-gated boundary; the parse/prompt logic around it is pure and unit-tested. The directive is
     the -p arg and the manuscript is piped stdin; auth is the adopter's own Claude Code credential."""
-    out = _run_claude(CLAUDE_INSTRUCTIONS, claude_context(task), model, "apply-edits")
+    out = _run_claude(apply_instructions(task.get("chapter")), claude_context(task), model, "apply-edits")
     return parse_claude_edits(out) if out is not None else {}
 
 

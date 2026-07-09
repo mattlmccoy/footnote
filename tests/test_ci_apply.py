@@ -489,3 +489,14 @@ def test_parse_claude_edits_accepts_a_bare_json_object_map():
 def test_parse_claude_edits_returns_empty_on_garbage():
     import ci_apply as A
     assert A.parse_claude_edits("not json at all") == {}
+
+
+# ------------------------------------------- apply_instructions: outline structure vs unit copy-edit
+def test_apply_instructions_uses_a_structure_prompt_for_outline():
+    p = A.apply_instructions("__outline__")
+    assert "structure" in p.lower()
+    assert ("\\chapter" in p) or ("\\section" in p)
+    assert "source_before" in p and "source_after" in p   # same machine-readable output contract
+
+def test_apply_instructions_uses_the_copyeditor_prompt_for_a_normal_unit():
+    assert A.apply_instructions("ch_introduction") == A.CLAUDE_INSTRUCTIONS
