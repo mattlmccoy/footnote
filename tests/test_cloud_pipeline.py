@@ -94,3 +94,19 @@ def test_edit_in_source_false():
 
 def test_edit_in_source_whitespace_tolerant():
     assert R.edit_in_source("a   b\n c", {"after": "a b c"}) is True
+
+
+# ---- the cloud writer uses the configured Writer/Editor agent's persona, not a generic call ----
+import ci_apply  # noqa: E402
+import ci_agents  # noqa: E402
+
+
+def test_writer_directive_uses_configured_writer_persona():
+    d = ci_apply.writer_directive(ci_agents.builtin_catalog(), field="RF heating", writer_id="writer")
+    assert "Writer/Editor agent" in d          # spoken in the writer agent's voice
+    assert "draft" in d.lower()                # the agent's persona is present
+    assert "output contract" in d.lower()      # still enforces the parseable edit format
+
+
+def test_writer_directive_falls_back_to_generic_when_absent():
+    assert ci_apply.writer_directive({}, writer_id="nope") == ci_apply.CLAUDE_INSTRUCTIONS
