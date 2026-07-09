@@ -323,7 +323,56 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent", "export")
+
+
+def _run_export_job(prefix, job, review, source_dir):
+    """Cloud export (parity with the local `export` command): build docx (+md) of a unit WITH the
+    reviewer comments, mirroring process_reviews.cmd_export. Reuses export/export-chapter.sh +
+    annotate_docx.py + R.export_comment_list/annex_md. Writes artifacts under <prefix>exports/<unit>/;
+    PDF is intentionally unsupported. Needs pandoc (+lxml for docx) — live-gated like render. Returns the
+    artifact paths."""
+    import json as _json
+    import tempfile
+    unit = job.get("chapter")
+    formats = [f.strip() for f in (job.get("formats") or ["docx"]) if f.strip() and f.strip() != "pdf"]
+    exportdir = ci_render.HERE / "export"
+    advisor = []
+    abase = Path(f"{prefix}advisor")
+    if abase.is_dir():
+        for adir in sorted(p for p in abase.iterdir() if p.is_dir()):
+            f = adir / f"{unit}.json"
+            if f.exists():
+                advisor.append((adir.name, R.load_json(str(f), {"comments": []})))
+    comments = R.export_comment_list(review, advisor)
+    build = Path(tempfile.mkdtemp(prefix="footnote-export-"))
+    env = dict(os.environ, SOURCE_DIR=str(source_dir),
+               CHAPTERS_JSON=str(Path(f"{prefix}chapters.json").resolve()), BUILD_DIR=str(build))
+    bib = Path(source_dir) / "references.bib"
+    if bib.exists():
+        env["BIB"] = str(bib)
+    outdir = Path(f"{prefix}exports/{unit}")
+    outdir.mkdir(parents=True, exist_ok=True)
+    base = build / f"{unit}.docx"
+    arts = []
+    try:
+        subprocess.run(["bash", str(exportdir / "export-chapter.sh"), unit, str(base)],
+                       env=env, check=True, stdout=sys.stderr, stderr=sys.stderr)
+        cj = build / "comments.json"
+        cj.write_text(_json.dumps(comments), encoding="utf-8")
+        if "docx" in formats:
+            out = outdir / f"{unit}.docx"
+            subprocess.run(["python3", str(exportdir / "annotate_docx.py"), str(base), str(cj), str(out)],
+                           check=True, stdout=sys.stderr, stderr=sys.stderr)
+            arts.append(str(out))
+        if "md" in formats:
+            body = subprocess.run(["pandoc", str(base), "-t", "gfm", "--wrap=none"], capture_output=True, text=True)
+            (outdir / f"{unit}.md").write_text((body.stdout or "") + "\n\n---\n\n" + R.annex_md(unit, comments) + "\n",
+                                               encoding="utf-8")
+            arts.append(str(outdir / f"{unit}.md"))
+    except Exception as e:
+        print(f"[export] {unit}: failed ({e}) — leaving job for retry", file=sys.stderr)
+    return arts
 
 
 def _run_author_agent_jobs(prefix, author_jobs, jobs):
@@ -563,6 +612,16 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                                        source_dir, repo_dir, remote_repo, token, base_branch, build_root)
             _write_json(R.review_path(prefix, ch), new_review)
             jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
+
+        if job.get("type") == "export":
+            arts = _run_export_job(prefix, job, review, source_dir)
+            jobs = [{**j, "status": "done", "done_ts": _now_iso(),
+                     "artifacts": [{"path": a} for a in arts]} if j.get("id") == job.get("id") else j
+                    for j in jobs]
+            _write_json(R.jobs_path(prefix), jobs)
+            print(f"[export] {prefix}{ch}: built {len(arts)} artifact(s)")
             done += 1
             continue
 
