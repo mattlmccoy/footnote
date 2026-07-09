@@ -119,3 +119,22 @@ def test_render_prefixes_legacy_root(tmp_path, monkeypatch):
 def test_render_prefixes_empty_when_no_units(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     assert R.render_prefixes() == []
+
+
+# ---- source resolution via the committed source.json marker (no Actions variable needed) ----
+def test_resolve_source_marker_preferred_over_env_var():
+    assert R.resolve_source(None, "", "me/data", env_source_repo="me/from-var",
+                            marker_source_repo="me/from-marker") == ("clone", "me/from-marker")
+
+
+def test_resolve_source_project_beats_marker():
+    assert R.resolve_source({"sourceRepo": "me/proj"}, "", "me/data",
+                            marker_source_repo="me/marker") == ("clone", "me/proj")
+
+
+def test_resolve_source_marker_only_clones():
+    assert R.resolve_source(None, "", "me/data", marker_source_repo="me/ext") == ("clone", "me/ext")
+
+
+def test_resolve_source_inrepo_when_nothing_set():
+    assert R.resolve_source(None, "", "me/data")[0] == "inrepo"

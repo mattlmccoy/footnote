@@ -124,19 +124,28 @@ def project_entry(prefix):
     return None
 
 
-def resolve_source(project, prefix, this_repo, env_source_repo=""):
+def source_marker(prefix):
+    """The external source repo declared in a committed ``<prefix>source.json`` ({"sourceRepo": "…"}).
+    This is the document-agnostic way to point a data repo at an external source: the APP writes it with
+    its own Contents token (the app cannot set Actions variables, but it can commit a file), so a legacy
+    single-project data repo no longer needs a manually-set SOURCE_REPO variable. '' when absent."""
+    m = C.load_json(f"{prefix}source.json", {})
+    return (m.get("sourceRepo") if isinstance(m, dict) else "") or ""
+
+
+def resolve_source(project, prefix, this_repo, env_source_repo="", marker_source_repo=""):
     """Decide where a project's LaTeX lives.
 
     Returns ("inrepo", path) when the source is checked into THIS data repo (a workspace
     project keeps it under ``<id>/source/``; a legacy root falls back to ``source``), or
     ("clone", "owner/repo") when it is an external source repo to clone read-only.
 
-    The external repo comes from the project's ``sourceRepo`` (workspace repos carry
-    projects.json), else from the ``SOURCE_REPO`` Actions variable (``env_source_repo``) —
-    a legacy data repo has no projects.json, so its external source is configured as a repo
-    variable alongside the SOURCE_TOKEN secret.
+    Priority for the external repo: the project's ``sourceRepo`` (workspace repos carry projects.json)
+    → the committed ``<prefix>source.json`` marker (``marker_source_repo``, app-written) → the
+    ``SOURCE_REPO`` Actions variable (``env_source_repo``). The marker is preferred over the variable so
+    an adopter never has to touch Actions config — the app records the source with the token it already has.
     """
-    src_repo = (project or {}).get("sourceRepo") or env_source_repo
+    src_repo = (project or {}).get("sourceRepo") or marker_source_repo or env_source_repo
     external = bool(src_repo) and src_repo != this_repo
     if external:
         return ("clone", src_repo)
@@ -160,7 +169,7 @@ def render_project(prefix, this_repo, token, workdir):
         print(f"[render] {prefix or '(root)'}: no chapters.json / no units — skipping")
         return 0
     project = project_entry(prefix)
-    kind, ref = resolve_source(project, prefix, this_repo, os.environ.get("SOURCE_REPO", ""))
+    kind, ref = resolve_source(project, prefix, this_repo, os.environ.get("SOURCE_REPO", ""), source_marker(prefix))
     if kind == "clone":
         source_dir = workdir / (prefix.rstrip("/") or "root")
         if not source_dir.exists():

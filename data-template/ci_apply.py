@@ -664,7 +664,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
 
     project = ci_render.project_entry(prefix)
     kind, ref = ci_render.resolve_source(project, prefix, this_repo,
-                                         os.environ.get("SOURCE_REPO", ""))
+                                         os.environ.get("SOURCE_REPO", ""), ci_render.source_marker(prefix))
     if kind == "clone":
         workdir = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / f"src-{prefix.rstrip('/') or 'root'}"
         if not workdir.exists():
