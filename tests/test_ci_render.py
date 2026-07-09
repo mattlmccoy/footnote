@@ -138,3 +138,22 @@ def test_resolve_source_marker_only_clones():
 
 def test_resolve_source_inrepo_when_nothing_set():
     assert R.resolve_source(None, "", "me/data")[0] == "inrepo"
+
+
+# ---- an unreachable/unauthorized source clone must NOT crash the whole render (protects last-good) ----
+def test_render_project_survives_a_failed_source_clone(tmp_path, monkeypatch):
+    import json as _json
+    d = tmp_path / "data"; d.mkdir()
+    (d / "chapters.json").write_text(_json.dumps([{"id": "ch1", "sourceFile": "ch1.tex"}]))
+    (d / "projects.json").write_text(_json.dumps([{"id": "", "sourceRepo": "owner/no-access"}]))
+    (d / "source.json").write_text(_json.dumps({"sourceRepo": "owner/no-access"}))
+    monkeypatch.chdir(d)
+
+    def _boom(*a, **k):
+        import subprocess
+        raise subprocess.CalledProcessError(128, ["git", "clone"])
+    monkeypatch.setattr(R, "_clone", _boom)
+
+    # must return 0 (skipped) rather than raising — a 403 on an external source can't take down render
+    n = R.render_project("", "owner/data", "ro-token", tmp_path / "wd")
+    assert n == 0
