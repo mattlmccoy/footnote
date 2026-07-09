@@ -103,3 +103,20 @@ def test_full_local_round_trip(repos, tmp_path, monkeypatch):
                           cwd=source, capture_output=True).returncode != 0   # branch dropped
     # source main actually carries the edit
     assert "\\beta" in (source / "ch1.tex").read_text()
+
+
+def test_respond_note_decide_cli(repos):
+    source, data = repos
+    base = ["--source", str(source), "--data", str(data)]
+    PR.main(base + ["respond", "ch1", "c1", "resolved: renamed the term"])
+    c = json.loads((data / "reviews" / "ch1.json").read_text())["comments"][0]
+    assert c["status"] == "answered" and c["claude"]["response"] == "resolved: renamed the term"
+
+    PR.main(base + ["note", "ch1", "c1", "did it verbatim", "--before", "alpha", "--after", "beta"])
+    c = json.loads((data / "reviews" / "ch1.json").read_text())["comments"][0]
+    assert c["status"] == "answered"                       # note keeps status
+    assert c["staged_edit"] == {"before": "alpha", "after": "beta"}
+
+    PR.main(base + ["decide", "ch1", "c1", "approve", "looks good"])
+    c = json.loads((data / "reviews" / "ch1.json").read_text())["comments"][0]
+    assert c["decision"] == "approve" and c["decision_note"] == "looks good"

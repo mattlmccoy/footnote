@@ -276,6 +276,45 @@ def cmd_merge(a):
     print(f"Merged {branch} -> main; rebuilt content/{unit}.html; {n} comment(s) marked merged.")
 
 
+def _mutate_comment(a, unit, comment_id, fn, msg):
+    """Load reviews/<unit>.json, replace the matching comment via ``fn(comment)`` (a pure helper),
+    write + push. Shared by respond/note/decide."""
+    _pull(a.data)
+    rp = _dpath(a, f"reviews/{unit}.json")
+    review = R.load_json(rp, None)
+    if review is None:
+        sys.exit(f"no review file at {rp}")
+    hit = False
+    for i, c in enumerate(review.get("comments", [])):
+        if c.get("id") == comment_id:
+            review["comments"][i] = fn(c)
+            hit = True
+    if not hit:
+        sys.exit(f"comment {comment_id} not in {unit}")
+    _write_json(rp, review)
+    _push_data(a.data, msg)
+
+
+def cmd_respond(a):
+    _mutate_comment(a, a.unit, a.comment_id, lambda c: R.answer_comment(c, _now(), a.text),
+                    f"review: answer {a.comment_id} in {a.unit}")
+    print(f"Answered {a.comment_id} in {a.unit} (status 'answered').")
+
+
+def cmd_note(a):
+    _mutate_comment(a, a.unit, a.comment_id,
+                    lambda c: R.note_comment(c, _now(), a.text, before=a.before, after=a.after),
+                    f"review: note on {a.comment_id} in {a.unit}")
+    print(f"Noted {a.comment_id} in {a.unit} (status kept).")
+
+
+def cmd_decide(a):
+    _mutate_comment(a, a.unit, a.comment_id,
+                    lambda c: R.decide_comment(c, _now(), a.decision, note=a.note),
+                    f"review: decide {a.comment_id} {a.decision}")
+    print(f"Recorded {a.decision} on {a.comment_id}.")
+
+
 def cmd_done(a):
     _pull(a.data)
     jobs = R.load_json(_dpath(a, "jobs.json"), [])
@@ -310,6 +349,9 @@ def build_parser():
     sp = sub.add_parser("stage", help="mark comments staged + job done"); sp.add_argument("job_id"); sp.add_argument("--force", action="store_true"); sp.set_defaults(fn=cmd_stage)
     sp = sub.add_parser("preview", help="build preview/<unit>.html from the branch"); sp.add_argument("unit"); sp.set_defaults(fn=cmd_preview)
     sp = sub.add_parser("merge", help="merge review-edits/<unit> -> main, republish, mark merged"); sp.add_argument("unit"); sp.set_defaults(fn=cmd_merge)
+    sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
+    sp = sub.add_parser("note", help="attach an explanation (+optional staged-edit diff), keep status"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_note)
+    sp = sub.add_parser("decide", help="record an owner decision on a comment"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("decision", choices=["approve", "reject", "revise"]); sp.add_argument("note", nargs="?", default=""); sp.set_defaults(fn=cmd_decide)
     sp = sub.add_parser("done", help="mark any job done"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     return p
 

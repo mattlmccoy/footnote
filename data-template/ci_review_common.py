@@ -443,6 +443,28 @@ def answer_comment(comment, ts, response):
     return out
 
 
+def note_comment(comment, ts, response, before="", after=""):
+    """Attach an explanation to a comment WITHOUT changing its status (e.g. how a staged edit was
+    made). Optionally records the in-context ``staged_edit`` diff the reviewer renders inline.
+    Pure — input not mutated. Port of process-reviews.py cmd_note."""
+    out = dict(comment)
+    out["claude"] = {**(comment.get("claude") or {}), "response": response, "ts": ts}
+    if before or after:
+        out["staged_edit"] = {"before": before, "after": after}
+    return out
+
+
+def decide_comment(comment, ts, decision, note=""):
+    """Record an owner decision (approve|reject|revise) on a comment. Pure — input not mutated.
+    Port of process-reviews.py cmd_decide."""
+    out = dict(comment)
+    out["decision"] = decision
+    out["decision_ts"] = ts
+    if note:
+        out["decision_note"] = note
+    return out
+
+
 def process_apply_edits_job(job, review, files, edits_by_id, ts):
     """Apply Claude's edit specs for one apply-edits job. For each referenced comment:
       * a spec with a source change → apply source_before→source_after via literal_replace on the
