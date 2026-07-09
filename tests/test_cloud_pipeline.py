@@ -110,3 +110,16 @@ def test_writer_directive_uses_configured_writer_persona():
 
 def test_writer_directive_falls_back_to_generic_when_absent():
     assert ci_apply.writer_directive({}, writer_id="nope") == ci_apply.CLAUDE_INSTRUCTIONS
+
+
+def test_figure_drafter_is_a_usable_writer_persona():
+    # figure comments route to the Figure Drafter doer as the writer — its persona composes the same way
+    d = ci_apply.writer_directive(ci_agents.builtin_catalog(), field="RF heating", writer_id="figure-drafter")
+    assert "figure" in d.lower() and "output contract" in d.lower()
+    assert d != ci_apply.CLAUDE_INSTRUCTIONS
+
+
+def test_responder_agent_present_for_response_jobs():
+    # the Review-Response Writer (responder) doer exists in the catalog with a real prompt
+    entry = ci_agents.builtin_catalog().get("responder")
+    assert entry and entry.get("category") == "doer" and (entry.get("systemPrompt") or "").strip()
