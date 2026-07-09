@@ -157,13 +157,21 @@ def build_label_map(read_tex, rows, entry):
     labels = {}
     chap = sec = subsec = subsubsec = 0
     figc = tabc = eqc = 0
-    env_stack = []
+    env_stack = []   # list of (env_name, starred)
     last = None
+    # Equations follow the report/book class: one number per numbered ROW (align rows count
+    # individually), reset per chapter (chapter mode) or flat across the document (article mode),
+    # formatted (chap.N) or (N). Nested \\-using envs (matrix, cases, aligned, …) are tracked so
+    # their row breaks don't count as equation rows.
+    NUM_ENVS = {"equation", "align", "gather", "multline", "eqnarray"}
+    ROW_ENVS = {"align", "gather", "eqnarray"}
+    NEST = "matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|smallmatrix|cases|array|aligned|split|gathered|subarray"
     token = re.compile(
         r"\\(chapter|section|subsection|subsubsection)\*?\{|"
-        r"\\begin\{(figure|table|equation|align|gather|multline|eqnarray)\*?\}|"
-        r"\\end\{(figure|table|equation|align|gather|multline|eqnarray)\*?\}|"
-        r"\\label\{([^}]+)\}")
+        r"\\begin\{(figure|table|equation|align|gather|multline|eqnarray|" + NEST + r")(\*?)\}|"
+        r"\\end\{(figure|table|equation|align|gather|multline|eqnarray|" + NEST + r")\*?\}|"
+        r"\\label\{([^}]+)\}|"
+        r"(\\\\)")
 
     def secnum():
         # In article mode there is no chapter: sections are the top level.
@@ -174,42 +182,45 @@ def build_label_map(read_tex, rows, entry):
     def fignum(counter):
         return f"{chap}.{counter}" if has_chapter else f"{counter}"
 
+    def eqnum(counter):
+        return f"({chap}.{counter})" if has_chapter else f"({counter})"
+
     for m in token.finditer(full):
         if m.group(1):
             lvl = m.group(1)
             if lvl == "chapter":
-                chap += 1; sec = subsec = subsubsec = 0; figc = tabc = 0; last = "chapter"
+                chap += 1; sec = subsec = subsubsec = 0; figc = tabc = eqc = 0; last = "chapter"
             elif lvl == "section":
                 sec += 1; subsec = subsubsec = 0; last = "section"
-                if not has_chapter:               # article: sections reset floats
+                if not has_chapter:               # article: sections reset floats (not equations)
                     figc = tabc = 0
             elif lvl == "subsection":
                 subsec += 1; subsubsec = 0; last = "section"
             elif lvl == "subsubsection":
                 subsubsec += 1; last = "section"
         elif m.group(2):
-            e = m.group(2)
+            e = m.group(2); starred = bool(m.group(3))
             if e == "figure": figc += 1
             elif e == "table": tabc += 1
-            # equation-type: number is assigned per \label below, not per environment, so an
-            # unlabeled numbered block (e.g. Maxwell's equations) consumes no number and a multi-row
-            # align with a label on each row gets consecutive numbers instead of one shared number.
-            env_stack.append(e)
-        elif m.group(3):
-            if env_stack: env_stack.pop()
+            elif e in NUM_ENVS and not starred: eqc += 1   # first (or only) numbered row
+            env_stack.append((e, starred))
         elif m.group(4):
-            lbl = m.group(4).strip()
+            if env_stack: env_stack.pop()
+        elif m.group(5):
+            lbl = m.group(5).strip()
             if env_stack:
-                e = env_stack[-1]
+                e, starred = env_stack[-1]
                 if e == "figure":  labels[lbl] = ("Figure", fignum(figc))
                 elif e == "table": labels[lbl] = ("Table", fignum(tabc))
-                else:
-                    eqc += 1
-                    labels[lbl] = ("Equation", f"({eqc})")
+                elif e in NUM_ENVS and not starred: labels[lbl] = ("Equation", eqnum(eqc))
             elif last == "chapter":
                 labels[lbl] = ("Chapter", f"{chap}")
             else:
                 labels[lbl] = ("Section", secnum())
+        elif m.group(6):   # row break: a new numbered row inside an align-family environment
+            if env_stack:
+                e, starred = env_stack[-1]
+                if e in ROW_ENVS and not starred: eqc += 1
     return labels
 
 
@@ -280,44 +291,84 @@ def resolve_cref(t, labels):
 # surface equation numbers on labeled display equations (pandoc --katex drops LaTeX numbering)
 # ---------------------------------------------------------------------------
 
-def tag_equations(t, labels):
-    """Surface the equation number on labeled display equations so KaTeX shows the (N) that
-    in-text \\cref/\\eqref already point at. build_label_map() computed the numbers; the reader
-    (pandoc --katex) does not auto-number equation environments, so without an explicit \\tag the
-    cross-reference has no visible target.
+_NEST = "matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|smallmatrix|cases|array|aligned|split|gathered|subarray"
 
-    `labels` stores the number with parens, e.g. "(2)"; KaTeX's \\tag adds its OWN parens, so the
-    tag content must be the bare number ("2") or the reader shows "((2))". align/eqnarray blocks ARE
-    auto-numbered by KaTeX, per-render-instance (a counter that resets every block and never matches
-    the document numbering), so they are converted to the starred form to suppress that and an
-    explicit \\tag is injected on each labeled row."""
-    def bare(num): return num.strip("()")
 
-    # equation/gather/multline: the reader does not auto-number these, so a single explicit \tag is
-    # all that is needed. Only single-label, non-starred, currently-untagged blocks are touched.
-    def repl_eq(m):
-        begin, env, body, end = m.group(1), m.group(2), m.group(3), m.group(4)
-        labs = re.findall(r"\\label\{([^}]+)\}", body)
-        if len(labs) != 1 or r"\tag" in body:
-            return m.group(0)
-        kind, num = labels.get(labs[0], ("", ""))
-        if kind != "Equation" or not num:
-            return m.group(0)
-        return f"{begin}{body}\\tag{{{bare(num)}}}{end}"
-    t = re.sub(r"(\\begin\{(equation|gather|multline)\})(.*?)(\\end\{\2\})", repl_eq, t, flags=re.S)
+def _count_eq_rows(text):
+    """Number of numbered equation rows in `text` (equation/multline = 1; align/gather/eqnarray =
+    one per row), ignoring starred environments and nested matrix/cases \\ breaks."""
+    total = 0
+    for m in re.finditer(r"\\begin\{(equation|align|gather|multline|eqnarray)(\*?)\}(.*?)\\end\{\1\*?\}",
+                         text, re.S):
+        env, star, body = m.group(1), m.group(2), m.group(3)
+        if star:
+            continue
+        if env in {"align", "gather", "eqnarray"}:
+            masked = re.sub(r"\\begin\{(" + _NEST + r")\*?\}.*?\\end\{\1\*?\}", " ", body, flags=re.S)
+            parts = re.split(r"\\\\(?:\[[^\]]*\])?", masked)
+            total += sum(1 for p in parts if p.strip() and not re.search(r"\\nonumber|\\notag", p))
+        else:
+            total += 1
+    return total
 
-    # align/eqnarray: star the environment to kill KaTeX's colliding auto-numbers, then tag each
-    # labeled row from `labels`. Unlabeled aligns (e.g. Maxwell's equations) become cleanly unnumbered.
-    def repl_align(m):
-        env, body = m.group(1), m.group(2)
-        if r"\tag" in body:
+
+def unit_equation_context(rows, unit_id, read_tex, entry):
+    """(prefix, offset) for numbering one unit's equations. Chapter mode: prefix '<chap>.' and
+    offset 0 (the equation counter resets each chapter). Article mode: prefix '' and offset = the
+    count of numbered equation rows in all preceding units (equations run flat across the doc)."""
+    full = assemble_full(rows, read_tex, entry)
+    has_chapter = detect_level(full) == "chapter"
+    chap_before = eq_before = 0
+    for row in rows:
+        rid = row.get("id")
+        body = unit_body(rows, rid, read_tex, entry)
+        if rid == unit_id:
+            return (f"{chap_before + 1}.", 0) if has_chapter else ("", eq_before)
+        chap_before += len(re.findall(r"\\chapter\b", strip_comments(body)))
+        eq_before += _count_eq_rows(body)
+    return ("", 0)
+
+
+def tag_equations(t, prefix, offset=0):
+    """Number labeled AND unlabeled display equations as the source class does: one number per
+    numbered ROW (align rows individually), formatted <prefix>N starting at offset+1. The bare
+    number goes in \\tag; KaTeX adds the parens. align/gather/eqnarray are starred to suppress
+    KaTeX's per-block auto-numbering; every numbered row is tagged explicitly. Starred environments
+    stay unnumbered."""
+    n = [offset]
+    def nxt():
+        n[0] += 1
+        return f"{prefix}{n[0]}"
+
+    def tag_rows(body):
+        masks = []
+        masked = re.sub(r"\\begin\{(" + _NEST + r")\*?\}.*?\\end\{\1\*?\}",
+                        lambda mm: (masks.append(mm.group(0)), f"\x00{len(masks)-1}\x00")[1], body, flags=re.S)
+        parts = re.split(r"(\\\\(?:\[[^\]]*\])?)", masked)
+        out = []
+        for i, seg in enumerate(parts):
+            if i % 2 == 1:                       # a \\ row-break delimiter
+                out.append(seg); continue
+            if seg.strip() and not re.search(r"\\nonumber|\\notag", seg):
+                rs = seg.rstrip()
+                out.append(rs + f"\\tag{{{nxt()}}}" + seg[len(rs):])
+            else:
+                out.append(seg)
+        res = "".join(out)
+        for i, orig in enumerate(masks):
+            res = res.replace(f"\x00{i}\x00", orig)
+        return res
+
+    ROW_ENVS = {"align", "gather", "eqnarray"}
+    def repl(m):
+        env, star, body = m.group(1), m.group(2), m.group(3)
+        if star or r"\tag" in body:            # starred = unnumbered; already-tagged = leave alone
             return m.group(0)
-        def tag_label(lm):
-            kind, num = labels.get(lm.group(1), ("", ""))
-            return lm.group(0) + (f"\\tag{{{bare(num)}}}" if kind == "Equation" and num else "")
-        body = re.sub(r"\\label\{([^}]+)\}", tag_label, body)
-        return f"\\begin{{{env}*}}{body}\\end{{{env}*}}"
-    return re.sub(r"\\begin\{(align|eqnarray)\}(.*?)\\end\{\1\}", repl_align, t, flags=re.S)
+        if env in ROW_ENVS:
+            return f"\\begin{{{env}*}}{tag_rows(body)}\\end{{{env}*}}"
+        return f"\\begin{{{env}}}{body}\\tag{{{nxt()}}}\\end{{{env}}}"   # equation/multline: one number
+    return re.sub(r"\\begin\{(equation|align|gather|multline|eqnarray)(\*?)\}(.*?)\\end\{\1\*?\}",
+                  repl, t, flags=re.S)
 
 
 # ---------------------------------------------------------------------------
@@ -499,8 +550,9 @@ def main():
     t = unit_body(rows, unit_id, read_tex, entry)
     t = strip_si_optionals(t)
     t = expand_gls(t, acr)
+    prefix, offset = unit_equation_context(rows, unit_id, read_tex, entry)
     t = resolve_cref(t, labels)
-    t = tag_equations(t, labels)
+    t = tag_equations(t, prefix, offset)
     t = number_captions(t, labels)
     t = rasterize_tikz(t, read_tex, build_dir, build_ref)
     t = strip_boxes(t)
