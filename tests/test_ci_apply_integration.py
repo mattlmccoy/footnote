@@ -429,3 +429,42 @@ def test_process_project_survives_a_failed_source_clone(workspace_repo, monkeypa
     assert n == 0
     jobs = json.load(open(data / "proj" / "jobs.json"))
     assert [j for j in jobs if j["id"] == "j1" and j["status"] == "queued"]   # still queued
+
+
+def test_apply_edits_prose_edit_not_blocked_by_preexisting_undefined_ref(workspace_repo, monkeypatch, tmp_path):
+    """A prose edit that introduces NO new references must STAGE even when the chapter already
+    contains an undefined reference (e.g. a \\cref to a label defined in another source file the
+    single-file scan can't see). Only refs the EDIT newly breaks should block — otherwise every
+    prose edit to a cross-referencing chapter is a false-positive conflict (the ch_background case)."""
+    data, bare = workspace_repo
+    # pre-existing dangling ref: label lives 'elsewhere', so verify_refs on this file alone flags it
+    (data / "proj" / "source" / "methods.tex").write_text("x = \\alpha + 1\nSee \\cref{eq:elsewhere}.\n")
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "queued", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "rename alpha to beta"}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
+    fake = tmp_path / "fake.sh"
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    def fake_claude(task):
+        return {"c1": {"id": "c1", "response": "Renamed.",
+                       "source_before": "\\alpha", "source_after": "\\beta",
+                       "prose_before": "the alpha term", "prose_after": "the beta term"}}
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("REVIEW_AGENTS", raising=False)
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude)
+
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["status"] == "staged"    # the pre-existing eq:elsewhere must NOT block this ref-free edit
+    events = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
+    assert any(e.get("agent") == "verify_refs" and e["status"] == "ok" for e in events)

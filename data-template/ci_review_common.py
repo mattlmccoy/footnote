@@ -530,7 +530,10 @@ def verify_refs(tex):
     for m in re.findall(r"\\(?:ref|cref|Cref|eqref|autoref|labelcref)\{([^}]*)\}", tex or ""):
         for k in m.split(","):
             k = k.strip()
-            if k:
+            # skip macro parameters: \newcommand{\myref}[1]{\cref{#1}} references "#1", which is a
+            # parameter placeholder, not a label — treating it as an undefined ref is a false positive
+            # that would block any prose edit to a document whose preamble wraps \ref/\cref in a macro.
+            if k and "#" not in k:
                 refs.add(k)
     return sorted(refs - labels)
 
