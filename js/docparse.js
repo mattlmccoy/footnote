@@ -16,8 +16,11 @@ export function latexTitleText(tex) {
     .replace(/\\\\\s*(\[[^\]]*\])?/g, ' ')             // LaTeX \\ line break (opt [2ex]) → space
     .replace(/\\[a-zA-Z]+\*?\s*\{([^{}]*)\}/g, '$1')   // \cmd{arg} → arg (one level)
     .replace(/\\([&%$#_])/g, '$1')                     // LaTeX escapes \& \% \$ \# \_ → literal char
+    .replace(/\\[ ,;:!]/g, ' ')                        // control / thin spaces (\  \, \; \: \!) → space
     .replace(/\\[a-zA-Z]+\*?/g, '')                    // bare \cmd
-    .replace(/[{}]/g, '')
+    .replace(/[{}~]/g, ' ')                            // braces + ~ non-breaking space → space
+    .replace(/---/g, '—')                         // em-dash ligature
+    .replace(/--/g, '–')                          // en-dash ligature
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -103,10 +106,22 @@ export function parseLatexTitle(tex) {
 }
 
 // Inline one level of \input/\include content so a chapter's heading and its body text are contiguous.
-function _assembleDoc(clean, resolveFile) {
+function _assembleDoc(clean, resolveFile, _seen, _depth) {
+  // Recursively inline \input / \include. A chapter wrapper may \input subfiles that themselves
+  // \input the files holding the sections, so a single pass loses the nested structure. Guard against
+  // include cycles (via _seen) and pathological depth.
+  const seen = _seen || new Set();
+  const depth = _depth || 0;
+  if (depth > 40) return clean;
   return clean.replace(/\\(?:input|include)\s*\{([^{}]+)\}/g, (m, name) => {
-    const f = resolveFile(name.trim()) ?? resolveFile(name.trim().replace(/\.tex$/i, ''));
-    return f != null ? `\n${stripComments(String(f))}\n` : m;
+    const key = name.trim();
+    const f = resolveFile(key) ?? resolveFile(key.replace(/\.tex$/i, ''));
+    if (f == null) return m;
+    if (seen.has(key)) return '';
+    seen.add(key);
+    const inlined = _assembleDoc(stripComments(String(f)), resolveFile, seen, depth + 1);
+    seen.delete(key);
+    return `\n${inlined}\n`;
   });
 }
 
