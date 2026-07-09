@@ -333,9 +333,10 @@ export function parseLatexChapters(mainTex, resolveFile = () => null) {
   const clean = stripComments(mainTex);
   const includes = resolveIncludes(clean, resolveFile);
   const level = pickLevel(clean, includes.map(i => i.content));
-  // \appendix marks the boundary: units at/after it are appendices. We look for it in the main file
-  // (the common pattern: \appendix sits in main.tex before the appendix \include's / \section's).
-  const appM = /\\appendix\b/.exec(clean);
+  // The appendix boundary: units at/after it are appendices. Standard LaTeX marks it with \appendix;
+  // thesis classes (e.g. GaTech) wrap appendices in a \begin{...appendices} environment. We look for
+  // either in the main file (the boundary sits in main.tex before the appendix \include's / \section's).
+  const appM = /\\appendix\b|\\begin\s*\{[a-zA-Z]*appendices\}/.exec(clean);
   const appPos = appM ? appM.index : -1;
   const raw = [];
   for (const inc of includes) {
