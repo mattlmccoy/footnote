@@ -409,6 +409,55 @@ def cmd_publish_srcmaps(a):
     print(f"Published {built} source map(s).")
 
 
+def _gather_advisor(a, unit):
+    base = Path(_dpath(a, "advisor"))
+    out = []
+    if base.is_dir():
+        for adir in sorted(p for p in base.iterdir() if p.is_dir()):
+            f = adir / f"{unit}.json"
+            if f.exists():
+                out.append((adir.name, R.load_json(str(f), {"comments": []})))
+    return out
+
+
+def cmd_export(a):
+    """Export a unit to .docx (native Word comments via annotate_docx.py) and/or .md (pandoc + a
+    Reviewer-comments annex). PDF is intentionally unsupported. Needs pandoc (+ lxml for docx) — its
+    live run is environment-gated like render; the comment gathering + annex are pure + tested."""
+    _pull(a.data)
+    unit = a.unit
+    formats = [f.strip() for f in (a.formats or "docx,md").split(",") if f.strip() and f.strip() != "pdf"]
+    src = _source_root(a)
+    review = R.load_json(_dpath(a, f"reviews/{unit}.json"), {"comments": []})
+    comments = R.export_comment_list(review, _gather_advisor(a, unit))
+    outdir = Path(a.outdir) if a.outdir else Path(_dpath(a, "export"))
+    outdir.mkdir(parents=True, exist_ok=True)
+    exportdir = ci_render.HERE / "export"
+    build = Path(a.data) / ".export-build"
+    build.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ, SOURCE_DIR=str(src),
+               CHAPTERS_JSON=str(Path(_dpath(a, "chapters.json"))), BUILD_DIR=str(build))
+    bib = src / "references.bib"
+    if bib.exists():
+        env["BIB"] = str(bib)
+    base = build / f"{unit}.docx"
+    subprocess.run(["bash", str(exportdir / "export-chapter.sh"), unit, str(base)], env=env, check=True)
+    cj = build / "comments.json"
+    _write_json(str(cj), comments)
+    made = []
+    if "docx" in formats:
+        out = outdir / f"{unit}.docx"
+        subprocess.run(["python3", str(exportdir / "annotate_docx.py"), str(base), str(cj), str(out)], check=True)
+        made.append(str(out))
+    if "md" in formats:
+        body = subprocess.run(["pandoc", str(base), "-t", "gfm", "--wrap=none"], capture_output=True, text=True)
+        md = (body.stdout or "") + "\n\n---\n\n" + R.annex_md(unit, comments) + "\n"
+        out = outdir / f"{unit}.md"
+        out.write_text(md, encoding="utf-8")
+        made.append(str(out))
+    print("exported: " + ", ".join(made))
+
+
 def cmd_advisor_list(a):
     """List advisor-submitted comments + any recorded resolution (advisor/<id>/<unit>.json)."""
     _pull(a.data)
@@ -489,6 +538,7 @@ def build_parser():
     sp = sub.add_parser("apply-direct", help="apply owner direct-edits literally to source on review-edits/<unit>"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_apply_direct)
     sp = sub.add_parser("refresh-source", help="materialize source main.tex -> data source/main.tex (title source)"); sp.add_argument("--dry-run", action="store_true"); sp.set_defaults(fn=cmd_refresh_source)
     sub.add_parser("publish-srcmaps", help="build content/<unit>.srcmap.json for all units (in-context editing)").set_defaults(fn=cmd_publish_srcmaps)
+    sp = sub.add_parser("export", help="export a unit to docx/md with reviewer comments (no pdf)"); sp.add_argument("unit"); sp.add_argument("--formats", default="docx,md"); sp.add_argument("--outdir", default=""); sp.set_defaults(fn=cmd_export)
     sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
     sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed", "declined", "noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
     sp = sub.add_parser("done", help="mark any job done"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)

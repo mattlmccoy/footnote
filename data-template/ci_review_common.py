@@ -479,6 +479,64 @@ def resolve_advisor_comment(comment, ts, state, note, before="", after=""):
     return out
 
 
+def _norm_ws(s):
+    import re
+    return re.sub(r"\s+", " ", (s or "").strip())
+
+
+def annex_md(unit, comments):
+    """The "Reviewer comments" markdown annex appended to an exported unit (pure). Port of
+    process-reviews.py _annex_md: numbered, per comment shows author/date, the quoted passage, the
+    body, any suggested edit, and any author resolution. So no comment is ever dropped from an export."""
+    lines = [f"# Reviewer comments — {unit}", ""]
+    if not comments:
+        lines.append("_No comments._")
+        return "\n".join(lines)
+    for n, c in enumerate(comments, 1):
+        who = (c.get("author", "") or "") + (f", {c['date'][:10]}" if c.get("date") else "")
+        quote = _norm_ws(c.get("quote", ""))[:90]
+        lines.append(f"**{n}. [{who}]**" + (f' on *“{quote}”*' if c.get("quote") else ""))
+        lines.append("")
+        lines.append(c.get("body", "") or "")
+        e = c.get("edit")
+        if e:
+            lines.append(f"\n> _Suggested {e.get('op')}:_ “{e.get('find', '')}” → “{e.get('replacement', '')}”")
+        r = c.get("resolution")
+        if r:
+            lines.append(f"\n> _{r.get('state')} by the author:_ {r.get('note', '')}")
+        lines.append("")
+    return "\n".join(lines)
+
+
+def export_comment_list(review, advisor_reviews=None):
+    """Flatten owner + advisor comments for a unit into the annotate_docx.py / annex COMMENTS shape:
+    ``[{author, date, quote, body, edit, resolution, kind}]``. ``advisor_reviews`` is a list of
+    (advisor_id, review_dict). Pure."""
+    out = []
+    for c in (review or {}).get("comments", []):
+        out.append({
+            "author": c.get("author", "owner"),
+            "date": (c.get("claude") or {}).get("ts") or c.get("date", ""),
+            "quote": (c.get("anchor") or {}).get("quote", "") or c.get("quote", ""),
+            "body": c.get("body", ""),
+            "edit": c.get("edit"),
+            "resolution": c.get("resolution"),
+            "kind": c.get("kind", "text"),
+        })
+    for advisor, arev in (advisor_reviews or []):
+        for c in (arev or {}).get("comments", []):
+            out.append({
+                "author": advisor,
+                "date": c.get("date", ""),
+                "quote": (c.get("anchor") or {}).get("quote", "") or c.get("quote", ""),
+                "body": c.get("body", ""),
+                "edit": c.get("edit"),
+                "resolution": c.get("resolution"),
+                "kind": c.get("kind", "text"),
+            })
+    return out
+
+
 def process_apply_edits_job(job, review, files, edits_by_id, ts):
     """Apply Claude's edit specs for one apply-edits job. For each referenced comment:
       * a spec with a source change → apply source_before→source_after via literal_replace on the
