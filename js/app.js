@@ -8,6 +8,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
+import { parseEvents, groupByComment, isTerminal, summaryLine } from './cloudprogress.js?v=cp1';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=a1734d0';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1756,6 +1757,50 @@ function openSendMenu(){
     el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else sendJob(el.dataset.type); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
+// Live "watch it work" view for a cloud review job. Polls <prefix>progress/<job>.jsonl every ~2.5s and
+// renders a narrated, per-comment activity feed (the say lines are primary; a "details" toggle shows the
+// raw machine fields). Stops on a terminal done/error event. Serverless — just the data-repo + token.
+function openCloudActivity(jobId){
+  document.getElementById('cloud-activity')?.remove();
+  const panel = document.createElement('div'); panel.id = 'cloud-activity';
+  panel.style.cssText = 'position:fixed;top:0;right:0;height:100vh;width:min(460px,92vw);z-index:60;background:var(--bg);border-left:.5px solid var(--border-2);box-shadow:-14px 0 44px rgba(0,0,0,.14);display:flex;flex-direction:column';
+  panel.innerHTML = `<div style="padding:13px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px">
+      <i class="ti ti-robot-face"></i><b style="flex:1">Cloud activity</b>
+      <label style="font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="ca-debug">details</label>
+      <button class="btn" id="ca-x" style="padding:3px 10px">Close</button></div>
+    <div id="ca-head" style="padding:10px 16px;font-size:12.5px;color:var(--text-2);border-bottom:.5px solid var(--border)">Waiting for the cloud job to start…</div>
+    <div id="ca-feed" style="flex:1;overflow:auto;padding:8px 12px"></div>`;
+  document.body.appendChild(panel);
+  let stop = false, debug = false, lastEvents = [];
+  panel.querySelector('#ca-x').onclick = () => { stop = true; panel.remove(); };
+  panel.querySelector('#ca-debug').onchange = e => { debug = e.target.checked; render(lastEvents); };
+  const glyph = e => e.status === 'conflict' ? '⚠' : (e.phase === 'stage' || e.phase === 'done' || e.phase === 'merge') ? '✓' : (e.status === 'ok' ? '·' : '…');
+  const rowFor = e => `<div style="display:flex;gap:7px;padding:2px 0;font-size:12.5px${e.status === 'conflict' ? ';color:var(--warn)' : ''}">
+      <span style="width:12px;text-align:center">${glyph(e)}</span><div style="min-width:0">
+      <div>${e.agent ? `<b>${escapeHtml(e.agent)}:</b> ` : ''}${escapeHtml(e.say || '')}</div>
+      ${e.edit && (e.edit.before || e.edit.after) ? `<details style="margin-top:2px"><summary style="cursor:pointer;color:var(--text-3);font-size:11px">diff</summary><div style="font-family:var(--mono);font-size:11px;white-space:pre-wrap"><span style="color:var(--warn)">- ${escapeHtml(e.edit.before || '')}</span>\n<span style="color:var(--success)">+ ${escapeHtml(e.edit.after || '')}</span></div></details>` : ''}
+      ${debug ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-3)">${escapeHtml(JSON.stringify({ seq: e.seq, phase: e.phase, status: e.status }))}</div>` : ''}</div></div>`;
+  function render(events){
+    lastEvents = events;
+    panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
+    const g = groupByComment(events);
+    const block = c => `<div style="margin:8px 0;border:.5px solid var(--border);border-radius:9px;padding:8px 10px">
+        <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${escapeHtml(c.comment)}${c.done ? '' : ' · in progress'}</div>
+        ${c.events.map(rowFor).join('')}</div>`;
+    panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(rowFor).join('') + g.comments.map(block).join('');
+  }
+  async function poll(){
+    if (stop) return;
+    try {
+      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('progress/' + jobId + '.jsonl')}?t=${Date.now()}`,
+        { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+      if (r.ok){ const evs = parseEvents(await r.text()); render(evs); if (isTerminal(evs)){ stop = true; return; } }
+    } catch(e){}
+    if (!stop) setTimeout(poll, 2500);
+  }
+  poll();
+}
+
 async function sendJob(type){
   const t = tok(); if (!t){ flash(`Add your access token first (click a ${UNIT} → connect).`); return; }
   try {
@@ -1774,12 +1819,16 @@ async function sendJob(type){
     const open = review.comments.filter(c => c.status === 'open');
     if (!open.length){ flash('No open comments to send.'); return; }
     flash('Sending…');
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current,
-      comment_ids: open.map(c => c.id), status:'queued', requested_ts:new Date().toISOString() });
+    const jid = 'j_'+Date.now().toString(36);
+    jobs.push({ id:jid, type:'apply-edits', chapter:current,
+      comment_ids: open.map(c => c.id), review_agents:_CFG.reviewAgents, field:(_CFG.doc && _CFG.doc.field) || '',
+      status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, sha, 'review: queue '+current);
     open.forEach(c => { review = updateComment(review, c.id, { status:'queued' }); });
     save(); await syncUp(); renderComments(); buildNav(); paintHighlights();
     flash(`Queued ${open.length} comment${open.length>1?'s':''} → review-edits/${current}`);
+    // Cloud mode: open the live "watch it work" view so the user sees the agents process each comment.
+    if (processingMode(_CFG) === 'cloud') openCloudActivity(jid);
   } catch(e){ flash('Send failed: '+e.message); }
 }
 function flash(msg){ const t = document.createElement('div'); t.textContent = msg;

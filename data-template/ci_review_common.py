@@ -484,6 +484,67 @@ def _norm_ws(s):
     return re.sub(r"\s+", " ", (s or "").strip())
 
 
+# ------------------------------------------------ cloud parity + live progress (pure)
+
+def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit=None, ts=""):
+    """Build one narrated progress event for <prefix>progress/<job>.jsonl. ``say`` is the human
+    sentence the live view shows; phase/status/agent/comment drive the row's visual state; ``edit`` is
+    an optional before/after diff. Empty optionals are omitted so the stream stays lean. Pure."""
+    e = {"job": job, "seq": seq, "phase": phase, "status": status, "say": say}
+    if ts:
+        e["ts"] = ts
+    if comment:
+        e["comment"] = comment
+    if agent:
+        e["agent"] = agent
+    if edit:
+        e["edit"] = edit
+    return e
+
+
+def critics_verdict(verdicts):
+    """Tally critic/adversary verdicts for a proposed edit. Conservative (author-oversight): the edit is
+    approved ONLY if no critic rejects it. ``verdicts`` = [{agent, approved, say}]. Returns
+    {approved, rejections:[{agent, say}]}. No critics → approved (the writer's edit stands). Pure."""
+    rejections = [{"agent": v.get("agent", "?"), "say": v.get("say", "")}
+                  for v in (verdicts or []) if not v.get("approved")]
+    return {"approved": not rejections, "rejections": rejections}
+
+
+def revise_decision(approved, attempt, max_attempts=2):
+    """Route the per-comment pipeline: approved → 'stage'; else 'revise' while attempts remain, else
+    'conflict'. Bounds the writer↔critic loop so a stubborn edit becomes a conflict, never an infinite
+    loop or a silent stub. Pure."""
+    if approved:
+        return "stage"
+    return "revise" if attempt < max_attempts else "conflict"
+
+
+def verify_refs(tex):
+    """Undefined-reference check: every key in \\ref/\\cref/\\Cref/\\eqref/\\autoref/\\labelcref must have a
+    matching \\label. Returns the sorted list of undefined keys ([] = clean). Comma-lists in \\cref{a,b}
+    expand. Pure text scan — the generic verify_refs gate for the cloud pipeline (Item 2)."""
+    import re
+    labels = set(re.findall(r"\\label\{([^}]*)\}", tex or ""))
+    refs = set()
+    for m in re.findall(r"\\(?:ref|cref|Cref|eqref|autoref|labelcref)\{([^}]*)\}", tex or ""):
+        for k in m.split(","):
+            k = k.strip()
+            if k:
+                refs.add(k)
+    return sorted(refs - labels)
+
+
+def edit_in_source(source_text, edit):
+    """Truthful-merge assertion (Item 5): the edit's ``after`` text actually appears in the (merged)
+    source. Whitespace-tolerant. Returns False when the edit did not land, so the caller marks the
+    comment conflict instead of falsely 'merged'. Pure."""
+    after = _norm_ws((edit or {}).get("after", ""))
+    if not after:
+        return False
+    return after in _norm_ws(source_text or "")
+
+
 def annex_md(unit, comments):
     """The "Reviewer comments" markdown annex appended to an exported unit (pure). Port of
     process-reviews.py _annex_md: numbered, per comment shows author/date, the quoted passage, the

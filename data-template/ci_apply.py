@@ -356,6 +356,130 @@ def _run_author_agent_jobs(prefix, author_jobs, jobs):
     return jobs, done
 
 
+def _emit(prefix, job_id, seq, phase, say, push=True, **kw):
+    """Append one narrated progress event to <prefix>progress/<job>.jsonl in the DATA repo (CWD) and
+    commit+push it [skip ci] so the portal's live view sees it as the job runs. progress/** is excluded
+    from every workflow trigger, so this never loops. Best-effort: a failed push never fails the job."""
+    import json
+    ev = R.progress_event(job_id, seq, phase, say, ts=_now_iso(), **kw)
+    path = f"{prefix}progress/{job_id}.jsonl"
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(ev, ensure_ascii=False) + "\n")
+    if push:
+        _git(["add", path], ".", check=False)
+        if _git(["diff", "--cached", "--quiet"], ".", check=False).returncode != 0:
+            _git(["commit", "-m", f"progress: {job_id} #{seq} [skip ci]"], ".", check=False)
+            _git(["push", "origin", "HEAD"], ".", check=False)
+    return ev
+
+
+def _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field):
+    """Run each configured critic/adversary agent read-only over a proposed edit and return verdicts
+    [{agent, approved, say}]. A critic that returns any finding is treated as raising a concern
+    (approved=False); an empty finding list = approved. Reuses the existing agent boundary — no schema
+    change. The agent_fn is injectable for tests."""
+    verdicts = []
+    task = {"chapter": ch, "proposed_edit": spec}
+    for a in review_agents or []:
+        try:
+            findings = agent_fn(a, task) if agent_fn else run_agent_cli(a, task, catalog=catalog, field=field)
+        except Exception as e:  # a broken agent must not sink the whole job
+            findings = [{"body": f"agent error: {e}"}]
+        findings = findings or []
+        say = (findings[0].get("body") if findings else "no concerns")
+        verdicts.append({"agent": a, "approved": not findings, "say": (say or "")[:200]})
+    return verdicts
+
+
+def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
+                          base_branch, build_root, claude_fn, agent_fn, catalog, review_agents, field):
+    """Cloud apply-edits with agent parity + a narrated progress stream. Per comment: the writer edit is
+    trial-applied, verify_refs gates it, the critic/adversary stack reviews it, and it is STAGED only if
+    it applies + verifies + no critic objects — otherwise the comment is a per-comment CONFLICT (never a
+    silent stub). Every step emits a human-narrated event. Author-oversight preserved: staged edits only
+    land on review-edits/<unit>. Returns (new_review, applied_count)."""
+    ch = job.get("chapter")
+    jid = job.get("id")
+    ids = job.get("comment_ids") or []
+    seq = [0]
+
+    def ev(phase, say, **kw):
+        e = _emit(prefix, jid, seq[0], phase, say, **kw)
+        seq[0] += 1
+        return e
+
+    ev("read", f"Starting review of {len(ids)} comment(s) on {ch}.")
+    task = R.build_apply_task(job, review, R.author_source(files))
+    edits = claude_fn(task) or {}
+    work = dict(files)
+    kept_review = review
+    staged = 0
+    conflicts = 0
+    for cid in ids:
+        comment = next((c for c in review.get("comments", []) if c.get("id") == cid), None)
+        if comment is None:
+            continue
+        ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
+        spec = edits.get(cid) or {}
+        trial_review, trial_files, branch, applied = R.process_apply_edits_job(
+            {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
+        diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
+        ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
+           comment=cid, agent="writer", status="running", edit=diff)
+        if not applied:
+            kept_review = trial_review   # process_apply_edits_job already marked it conflict/answered
+            st = next((c for c in trial_review["comments"] if c["id"] == cid), {}).get("status")
+            ev("stage", "No source change staged (answered or could not anchor the edit).",
+               comment=cid, status="conflict" if st == "conflict" else "ok")
+            if st == "conflict":
+                conflicts += 1
+            continue
+        undefined = R.verify_refs("\n".join(trial_files.values()))
+        if undefined:
+            ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}) — not staging.",
+               comment=cid, agent="verify_refs", status="conflict")
+            kept_review = _mark_conflict(kept_review, cid, "undefined references: " + ", ".join(undefined))
+            conflicts += 1
+            continue
+        ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
+        verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
+        for v in verdicts:
+            ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
+               status="ok" if v["approved"] else "conflict")
+        tally = R.critics_verdict(verdicts)
+        if R.revise_decision(tally["approved"], attempt=1, max_attempts=1) == "stage":
+            work = trial_files
+            kept_review = trial_review
+            staged += 1
+            ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
+        else:
+            reasons = "; ".join(r["say"] for r in tally["rejections"])
+            kept_review = _mark_conflict(kept_review, cid, "reviewer agents flagged it: " + reasons)
+            conflicts += 1
+            ev("stage", f"A review agent objected, so this edit was NOT staged — flagged for you: {reasons}",
+               comment=cid, status="conflict")
+
+    if staged:
+        src_rel = os.path.relpath(source_dir, repo_dir)
+        changed = {os.path.normpath(os.path.join(src_rel, rel)): txt
+                   for rel, txt in work.items() if files.get(rel) != txt}
+        ev("build", "Building a preview of the staged changes…")
+        commit_branch(repo_dir, R.branch_for(ch), changed, base_branch,
+                      f"apply-edits: stage {staged} agent-reviewed edit(s) on {ch}",
+                      token=token, remote_repo=remote_repo, push=True,
+                      after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
+    _write_json(R.review_path(prefix, ch), kept_review)
+    ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts.")
+    return kept_review, staged
+
+
+def _mark_conflict(review, cid, reason):
+    comments = [R.conflict_comment(c, reason, _now_iso()) if c.get("id") == cid else c
+                for c in review.get("comments", [])]
+    return {**review, "comments": comments}
+
+
 def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None, agent_fn=None):
     """Drain the review jobs for one project prefix: apply-direct (deterministic), apply-edits and
     run-agents (Claude), and merge (author-triggered publish).
@@ -461,15 +585,22 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: apply-edits queued but Claude not configured "
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
-            task = R.build_apply_task(job, review, R.author_source(files))
-            edits = claude_fn(task) or {}
-            new_review, new_files, branch, applied = R.process_apply_edits_job(
-                job, review, files, edits, _now_iso())
-            msg = f"apply-edits: stage Claude edits on {ch}"
-        else:
-            new_review, new_files, branch, applied = R.process_apply_direct_job(
-                job, review, files, _now_iso())
-            msg = f"apply-direct: stage edits on {ch}"
+            field = job.get("field") or os.environ.get("DOC_FIELD") or ""
+            # the critic/adversary stack for the agent gate: job-supplied or env REVIEW_AGENTS, kept to
+            # CI-runnable (non-local, non-doer) agents. Empty → no critic gate (verify + narration only).
+            review_agents = [a for a in (job.get("review_agents")
+                             or [s.strip() for s in os.environ.get("REVIEW_AGENTS", "").split(",") if s.strip()])
+                             if ci_agents.runnable_in_ci(a, catalog)]
+            _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
+                                  base_branch, build_root, claude_fn or run_claude_cli, agent_fn,
+                                  catalog, review_agents, field)
+            jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
+
+        new_review, new_files, branch, applied = R.process_apply_direct_job(
+            job, review, files, _now_iso())
+        msg = f"apply-direct: stage edits on {ch}"
 
         if applied:
             # read_text_files keys are source_dir-relative; the branch commit needs them repo_dir-

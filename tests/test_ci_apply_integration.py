@@ -285,3 +285,44 @@ def test_run_agents_appends_critique_comments(workspace_repo, monkeypatch):
     assert json.loads((data / "proj" / "jobs.json").read_text()) == []
     # agents never touch source
     assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
+
+
+def test_apply_edits_agent_gate_rejects_and_emits_progress(workspace_repo, monkeypatch, tmp_path):
+    """The cloud pipeline runs a critic over the writer's proposed edit: a critic that objects blocks
+    staging (per-comment CONFLICT, not a silent stub), and every step is narrated into
+    progress/<job>.jsonl for the live view."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "queued", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "rename alpha to beta"}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    def fake_claude(task):
+        return {"c1": {"id": "c1", "response": "Renamed alpha to beta.",
+                       "source_before": "\\alpha", "source_after": "\\beta",
+                       "prose_before": "the alpha term", "prose_after": "the beta term"}}
+
+    def fake_agent(agent_id, task):
+        return [{"body": "This rename changes the established symbol; reject."}]
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("REVIEW_AGENTS", "clarity")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude, agent_fn=fake_agent)
+
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["status"] == "conflict"
+    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/02-methods"],
+                       capture_output=True, text=True)
+    assert "review-edits/02-methods" not in r.stdout
+    prog = (data / "proj" / "progress" / "j9.jsonl").read_text()
+    events = [json.loads(l) for l in prog.splitlines() if l.strip()]
+    phases = [e["phase"] for e in events]
+    assert "agent" in phases and "verify" in phases and "done" in phases
+    assert any(e.get("agent") == "writer" for e in events)
+    assert any(e.get("agent") == "clarity" and e["status"] == "conflict" for e in events)
+    assert any("flagged" in e["say"].lower() or "objected" in e["say"].lower() for e in events)
