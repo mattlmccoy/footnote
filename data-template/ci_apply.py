@@ -694,7 +694,15 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     if kind == "clone":
         workdir = Path(os.environ.get("RUNNER_TEMP", "/tmp")) / f"src-{prefix.rstrip('/') or 'root'}"
         if not workdir.exists():
-            ci_render._clone(ref, workdir, token)
+            try:
+                ci_render._clone(ref, workdir, token)
+            except subprocess.CalledProcessError as e:
+                # a 403/unreachable source (SOURCE_TOKEN lacks access to ref) must NOT crash the whole
+                # apply run — leave the source-dependent jobs QUEUED so they process once access is granted.
+                print(f"[apply] {prefix or '(root)'}: could not clone source {ref} ({e}) — SOURCE_TOKEN "
+                      f"likely lacks access to the source repo. Leaving {len(todo)} job(s) queued.", file=sys.stderr)
+                _write_json(R.jobs_path(prefix), jobs)
+                return author_done
         repo_dir, source_dir, remote_repo = workdir, workdir, ref
     else:
         # in-repo (workspace) source: branch lives on THIS data repo, source under <prefix>source/

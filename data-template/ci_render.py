@@ -174,7 +174,14 @@ def render_project(prefix, this_repo, token, workdir):
         source_dir = workdir / (prefix.rstrip("/") or "root")
         if not source_dir.exists():
             print(f"[render] {prefix or '(root)'}: cloning source {ref} (read-only)")
-            _clone(ref, source_dir, token)
+            try:
+                _clone(ref, source_dir, token)
+            except subprocess.CalledProcessError as e:
+                # a 403/unreachable source (SOURCE_TOKEN lacks access to ref, or the repo is gone) must NOT
+                # crash the whole render run — skip this project and keep its last-good content.
+                print(f"[render] {prefix or '(root)'}: could not clone source {ref} ({e}) — "
+                      f"SOURCE_TOKEN likely lacks access. Skipping (kept last-good content).", file=sys.stderr)
+                return 0
     else:
         source_dir = Path(ref).resolve()
     if not source_dir.is_dir():

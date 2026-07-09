@@ -407,3 +407,25 @@ def test_commit_branch_external_push_failure_is_survivable(tmp_path, monkeypatch
     head = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
                           cwd=str(repo), capture_output=True, text=True).stdout.strip()
     assert head == "main"
+
+
+def test_process_project_survives_a_failed_source_clone(workspace_repo, monkeypatch):
+    """A 403/unreachable external source must not crash the apply run — the job stays QUEUED so it
+    processes once the source token is granted access."""
+    data, _ = workspace_repo
+    monkeypatch.chdir(data)
+    # point proj/ at an external source it can't reach, and make the clone 403 like a scope-less token
+    (data / "proj" / "source.json").write_text(json.dumps({"sourceRepo": "owner/no-access"}))
+    (data / "proj" / "jobs.json").write_text(json.dumps(
+        [{"id": "j1", "type": "apply-edits", "chapter": "02-methods",
+          "comment_ids": ["c1"], "status": "queued"}]))
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "x")   # get past the have-claude short-circuit
+
+    def _boom(*a, **k):
+        raise subprocess.CalledProcessError(128, ["git", "clone"])
+    monkeypatch.setattr(ci_apply.ci_render, "_clone", _boom)
+
+    n = ci_apply.process_project("proj/", "owner/data", "ro-token")   # must not raise
+    assert n == 0
+    jobs = json.load(open(data / "proj" / "jobs.json"))
+    assert [j for j in jobs if j["id"] == "j1" and j["status"] == "queued"]   # still queued
