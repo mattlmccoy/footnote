@@ -500,3 +500,54 @@ def test_apply_instructions_uses_a_structure_prompt_for_outline():
 
 def test_apply_instructions_uses_the_copyeditor_prompt_for_a_normal_unit():
     assert A.apply_instructions("ch_introduction") == A.CLAUDE_INSTRUCTIONS
+
+
+# --------------------------------------------------------------- whitespace-tolerant source anchoring
+# LaTeX prose is hard-wrapped at ~80 cols; Claude returns source_before with single spaces. The anchor
+# must treat any run of whitespace (incl. newlines) as equivalent, or NO wrapped passage can be edited.
+
+def test_flexible_replace_matches_across_a_hard_wrap():
+    src = "insulators and nearly transparent to RF, which\nis what allows selective heating."
+    find = "nearly transparent to RF, which is what allows selective heating."
+    assert R.flexible_replace(src, find, "REPLACED") == "insulators and REPLACED"
+
+
+def test_flexible_replace_exact_still_works():
+    assert R.flexible_replace("the cat sat", "cat", "dog") == "the dog sat"
+
+
+def test_flexible_replace_raises_when_absent():
+    with pytest.raises(R.EditConflict):
+        R.flexible_replace("hello world", "goodbye", "x")
+
+
+def test_flexible_replace_raises_when_ambiguous():
+    with pytest.raises(R.EditConflict):
+        R.flexible_replace("cat\ncat", "cat", "dog")
+
+
+def test_flexible_count_counts_wrapped_occurrences():
+    assert R.flexible_count("a nearly transparent b, which\nis c", "which is c") == 1
+    assert R.flexible_count("no match here", "which is c") == 0
+
+
+def test_process_apply_edits_job_anchors_a_hard_wrapped_passage():
+    # the ch_background reproduction: source_before is single-spaced, the .tex wraps it across 3 lines
+    src = ("Most thermoplastics are electrical insulators and nearly transparent to RF, which\n"
+           "is what allows selective heating: only the regions made lossy by a dopant absorb\n"
+           "energy.\n")
+    review = {"comments": [_comment("c1", quote="nearly transparent")]}
+    job = {"id": "j1", "type": "apply-edits", "chapter": "ch_bg", "comment_ids": ["c1"]}
+    before = ("Most thermoplastics are electrical insulators and nearly transparent to RF, "
+              "which is what allows selective heating: only the regions made lossy by a dopant "
+              "absorb energy.")
+    after = ("Most thermoplastics are electrical insulators and functionally transparent to RF, "
+             "which is what allows selective heating.")
+    edits = {"c1": {"id": "c1", "response": "Reworded.",
+                    "source_before": before, "source_after": after,
+                    "prose_before": "nearly transparent", "prose_after": "functionally transparent"}}
+    new_review, new_files, _, applied = R.process_apply_edits_job(
+        job, review, {"chapters/ch_fundamentals.tex": src}, edits, "t")
+    assert applied is True
+    assert new_files["chapters/ch_fundamentals.tex"] == after + "\n"   # wrapped span replaced by after
+    assert new_review["comments"][0]["status"] == "staged"
