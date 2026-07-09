@@ -465,6 +465,20 @@ def decide_comment(comment, ts, decision, note=""):
     return out
 
 
+def resolve_advisor_comment(comment, ts, state, note, before="", after=""):
+    """Record how an advisor comment was addressed (addressed|declined|noted), shown on the advisor's
+    portal. Optional before/after captures the change. Pure — input not mutated. Port of
+    process-reviews.py cmd_advisor_resolve."""
+    out = dict(comment)
+    res = {"state": state, "note": note, "ts": ts}
+    if before:
+        res["before"] = before
+    if after:
+        res["after"] = after
+    out["resolution"] = res
+    return out
+
+
 def process_apply_edits_job(job, review, files, edits_by_id, ts):
     """Apply Claude's edit specs for one apply-edits job. For each referenced comment:
       * a spec with a source change → apply source_before→source_after via literal_replace on the

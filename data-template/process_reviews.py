@@ -409,6 +409,46 @@ def cmd_publish_srcmaps(a):
     print(f"Published {built} source map(s).")
 
 
+def cmd_advisor_list(a):
+    """List advisor-submitted comments + any recorded resolution (advisor/<id>/<unit>.json)."""
+    _pull(a.data)
+    base = Path(_dpath(a, "advisor"))
+    if not base.is_dir():
+        print("No advisor comments yet.")
+        return
+    for advisor in sorted(p.name for p in base.iterdir() if p.is_dir()):
+        adir = base / advisor
+        for fn in sorted(f.name for f in adir.iterdir() if f.name.endswith(".json")):
+            unit = fn[:-5]
+            for c in R.load_json(str(adir / fn), {"comments": []}).get("comments", []):
+                res = c.get("resolution")
+                tail = f"  · resolved: {res.get('state')}" if res else ""
+                print(f"{advisor}/{unit} {c.get('id')} [{c.get('tag','?')}] "
+                      f"{c.get('anchor', {}).get('section', '')}{tail}")
+                print(f"   body: {(c.get('body', '') or '').strip()}")
+    print("Record one: process_reviews.py advisor-resolve <id> <unit> <comment_id> "
+          "<addressed|declined|noted> \"note\" [--before .. --after ..]")
+
+
+def cmd_advisor_resolve(a):
+    _pull(a.data)
+    p = _dpath(a, f"advisor/{a.advisor}/{a.unit}.json")
+    data = R.load_json(p, None)
+    if data is None:
+        sys.exit(f"no advisor file at {p}")
+    hit = False
+    for i, c in enumerate(data.get("comments", [])):
+        if c.get("id") == a.comment_id:
+            data["comments"][i] = R.resolve_advisor_comment(c, _now(), a.state, a.note,
+                                                             before=a.before, after=a.after)
+            hit = True
+    if not hit:
+        sys.exit(f"comment {a.comment_id} not in {a.advisor}/{a.unit}")
+    _write_json(p, data)
+    _push_data(a.data, f"resolution: {a.advisor} {a.unit} {a.comment_id} ({a.state})")
+    print(f"Recorded '{a.state}' on {a.advisor}/{a.unit}/{a.comment_id}.")
+
+
 def cmd_done(a):
     _pull(a.data)
     jobs = R.load_json(_dpath(a, "jobs.json"), [])
@@ -449,6 +489,8 @@ def build_parser():
     sp = sub.add_parser("apply-direct", help="apply owner direct-edits literally to source on review-edits/<unit>"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_apply_direct)
     sp = sub.add_parser("refresh-source", help="materialize source main.tex -> data source/main.tex (title source)"); sp.add_argument("--dry-run", action="store_true"); sp.set_defaults(fn=cmd_refresh_source)
     sub.add_parser("publish-srcmaps", help="build content/<unit>.srcmap.json for all units (in-context editing)").set_defaults(fn=cmd_publish_srcmaps)
+    sub.add_parser("advisor-list", help="list advisor-submitted comments + resolutions").set_defaults(fn=cmd_advisor_list)
+    sp = sub.add_parser("advisor-resolve", help="record how an advisor comment was addressed"); sp.add_argument("advisor"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("state", choices=["addressed", "declined", "noted"]); sp.add_argument("note"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_advisor_resolve)
     sp = sub.add_parser("done", help="mark any job done"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     return p
 

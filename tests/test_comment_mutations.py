@@ -44,3 +44,15 @@ def test_decide_does_not_mutate_input():
     c = {"id": "c1", "status": "staged"}
     R.decide_comment(c, "T", "reject")
     assert "decision" not in c
+
+
+def test_resolve_advisor_comment():
+    out = R.resolve_advisor_comment({"id": "a1", "body": "fix this"}, "T", "addressed",
+                                    "reworded per your note", before="x", after="y")
+    assert out["resolution"] == {"state": "addressed", "note": "reworded per your note",
+                                 "ts": "T", "before": "x", "after": "y"}
+
+
+def test_resolve_advisor_comment_no_diff():
+    out = R.resolve_advisor_comment({"id": "a1"}, "T", "declined", "out of scope")
+    assert out["resolution"] == {"state": "declined", "note": "out of scope", "ts": "T"}

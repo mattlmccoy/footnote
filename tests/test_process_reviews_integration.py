@@ -144,3 +144,16 @@ def test_refresh_source_cli(repos):
     source, data = repos
     PR.main(["--source", str(source), "--data", str(data), "refresh-source"])
     assert "\\title{My Paper}" in (data / "source" / "main.tex").read_text()
+
+
+def test_advisor_resolve_cli(repos):
+    source, data = repos
+    adir = data / "advisor" / "rev1"; adir.mkdir(parents=True)
+    (adir / "ch1.json").write_text(json.dumps({"comments": [
+        {"id": "a1", "tag": "clarity", "body": "tighten this", "anchor": {"section": "Intro"}}]}))
+    _git(["add", "-A"], data); _git(["commit", "-m", "advisor comment"], data); _git(["push", "origin", "main"], data)
+
+    PR.main(["--source", str(source), "--data", str(data),
+             "advisor-resolve", "rev1", "ch1", "a1", "addressed", "reworded it"])
+    res = json.loads((adir / "ch1.json").read_text())["comments"][0]["resolution"]
+    assert res["state"] == "addressed" and res["note"] == "reworded it"
