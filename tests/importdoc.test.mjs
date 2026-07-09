@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex, outlineFromFiles } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -244,4 +244,20 @@ test('migrateProjectToWorkspace skips source copy when it equals the data repo (
   };
   const res = await migrateProjectToWorkspace({ id: 'm', dataRepo: 'a/d', sourceRepo: 'a/d' }, 'a/ws', 'tok', null, fake);
   assert.equal(res.src, 0);
+});
+
+
+// ---- outlineFromFiles: nested outline from a folder's .tex files (entry + \input resolver) ----
+test('outlineFromFiles builds the nested outline from a folder, resolving \\input chapters', () => {
+  const files = [
+    { path:'main.tex', isText:true, text:'\\title{D}\n\\chapter{Intro}\nIntro text here.\n\\input{chapters/methods}' },
+    { path:'chapters/methods.tex', isText:true, text:'\\chapter{Methods}\nWe did things carefully.' },
+  ];
+  const o = outlineFromFiles(files);
+  assert.equal(o.chapters.length, 2);
+  assert.equal(o.chapters[0].title, 'Intro');
+  assert.equal(o.chapters[1].title, 'Methods');
+});
+test('outlineFromFiles returns null when there is no .tex entry', () => {
+  assert.equal(outlineFromFiles([{ path:'notes.md', isText:true, text:'hi' }]), null);
 });

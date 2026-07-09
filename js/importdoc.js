@@ -1,5 +1,6 @@
 // Pure helpers for the document import + convert flow. No I/O — unit-tested in tests/importdoc.test.mjs.
 // The import UI (app.js / hub.js) uses these to decide how to handle an uploaded file and where to put it.
+import { parseLatexOutline } from './docparse.js';
 
 // Which converter handles an uploaded file, by extension. 'tex' = commit as-is; 'docx' = pandoc Action.
 // Anything else (md/pdf/none) is unsupported → null.
@@ -85,6 +86,15 @@ export function folderTexIndex(files) {
   for (const f of texts) if (/\.tex$/i.test(f.path)) map[f.path.replace(/\.tex$/i, '')] = f.text;
   const entryText = entry ? (texts.find(f => f.path === entry)?.text ?? '') : '';
   return { entry, entryText, map };
+}
+
+// The nested "Proposed outline" tree from a folder's .tex files: reuses folderTexIndex's entry + \input
+// resolver, then parseLatexOutline. null when the folder has no .tex entry. Pure — one source-true
+// extraction used by both the reviewer import (browser) and the gen-outline CLI (refresh-source).
+export function outlineFromFiles(files) {
+  const { entry, entryText, map } = folderTexIndex(files);
+  if (!entry) return null;
+  return parseLatexOutline(entryText, p => (p in map ? map[p] : null));
 }
 
 // ---- source-repo I/O (injectable fetch; default global fetch in the browser) ----
