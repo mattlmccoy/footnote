@@ -184,6 +184,13 @@ test('latexTitleText strips formatting commands and collapses space', () => {
   assert.equal(latexTitleText('The \\textbf{RF} Method'), 'The RF Method');
   assert.equal(latexTitleText('A \\emph{b} c'), 'A b c');
 });
+test('latexTitleText renders -- / --- dash ligatures and control spaces', () => {
+  assert.equal(latexTitleText('Electrode--Part Load'), 'Electrode–Part Load');      // en-dash
+  assert.equal(latexTitleText('FGM --- Pre-Warp'), 'FGM — Pre-Warp');                // em-dash
+  assert.equal(latexTitleText('vs.\\ Spacing'), 'vs. Spacing');                            // control space
+  assert.equal(latexTitleText('A\\,B'), 'A B');                                            // thin space
+  assert.equal(latexTitleText('A~B'), 'A B');                                              // non-breaking space
+});
 
 test('parseLatexChapters follows \\include order across files, one chapter each', () => {
   const main = `\\documentclass{book}
