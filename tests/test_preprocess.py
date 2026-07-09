@@ -131,3 +131,52 @@ def test_expand_gls_falls_back_to_key_when_no_acronyms():
 def test_expand_gls_uses_defined_acronym():
     acr = {"rf": ("RF", "radio frequency")}
     assert P.expand_gls("\\gls{rf} and \\acrlong{rf}", acr) == "RF and radio frequency"
+
+
+# ---------------- equation numbering (reader \tag) ----------------
+# Ported from the dissertation reader: labeled display equations must show the (N) that
+# in-text \cref/\eqref point at, numbered per-\label (unlabeled blocks consume nothing,
+# multi-row aligns get consecutive numbers), with a bare-number \tag (KaTeX adds the parens)
+# and align/eqnarray starred so KaTeX's per-block auto-numbering can't collide.
+
+def _eqmap(body):
+    rows = [{"id": "m", "n": 1, "title": "M", "sourceFile": "main.tex"}]
+    files = {"main.tex": "\\section{M}\\label{sec:m}\n" + body}
+    return P.build_label_map(reader_from(files), rows, "main.tex")
+
+
+def test_label_map_numbers_labeled_equations_consecutively():
+    labels = _eqmap("\\begin{equation} a=b \\label{eq:one}\\end{equation}\n"
+                    "\\begin{equation} c=d \\label{eq:two}\\end{equation}\n")
+    assert labels["eq:one"] == ("Equation", "(1)")
+    assert labels["eq:two"] == ("Equation", "(2)")
+
+
+def test_unlabeled_align_consumes_no_number():
+    labels = _eqmap("\\begin{align} x=y \\\\ p=q \\end{align}\n"
+                    "\\begin{equation} a=b \\label{eq:one}\\end{equation}\n")
+    assert labels["eq:one"] == ("Equation", "(1)")   # unlabeled align must not eat number (1)
+
+
+def test_multi_label_align_rows_get_consecutive_numbers():
+    labels = _eqmap("\\begin{align} a=b, \\label{eq:r1}\\\\ c=d, \\label{eq:r2}\\end{align}\n")
+    assert labels["eq:r1"] == ("Equation", "(1)")
+    assert labels["eq:r2"] == ("Equation", "(2)")
+
+
+def test_tag_equations_bare_number_no_double_parens():
+    out = P.tag_equations("\\begin{equation} a=b \\label{eq:one}\\end{equation}",
+                          {"eq:one": ("Equation", "(1)")})
+    assert "\\tag{1}" in out and "((" not in out
+
+
+def test_tag_equations_stars_align_and_tags_labeled_rows():
+    out = P.tag_equations("\\begin{align} a=b, \\label{eq:r1}\\\\ c=d, \\label{eq:r2}\\end{align}",
+                          {"eq:r1": ("Equation", "(1)"), "eq:r2": ("Equation", "(2)")})
+    assert "\\begin{align*}" in out and "\\begin{align}" not in out
+    assert out.count("\\tag{") == 2 and "((" not in out
+
+
+def test_tag_equations_stars_unlabeled_align_untagged():
+    out = P.tag_equations("\\begin{align} a=b \\\\ c=d \\end{align}", {})
+    assert "\\begin{align*}" in out and "\\tag{" not in out

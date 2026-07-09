@@ -191,7 +191,9 @@ def build_label_map(read_tex, rows, entry):
             e = m.group(2)
             if e == "figure": figc += 1
             elif e == "table": tabc += 1
-            else: eqc += 1
+            # equation-type: number is assigned per \label below, not per environment, so an
+            # unlabeled numbered block (e.g. Maxwell's equations) consumes no number and a multi-row
+            # align with a label on each row gets consecutive numbers instead of one shared number.
             env_stack.append(e)
         elif m.group(3):
             if env_stack: env_stack.pop()
@@ -201,7 +203,9 @@ def build_label_map(read_tex, rows, entry):
                 e = env_stack[-1]
                 if e == "figure":  labels[lbl] = ("Figure", fignum(figc))
                 elif e == "table": labels[lbl] = ("Table", fignum(tabc))
-                else:              labels[lbl] = ("Equation", f"({eqc})")
+                else:
+                    eqc += 1
+                    labels[lbl] = ("Equation", f"({eqc})")
             elif last == "chapter":
                 labels[lbl] = ("Chapter", f"{chap}")
             else:
@@ -270,6 +274,50 @@ def resolve_cref(t, labels):
     t = re.sub(r"\\(?:autoref|ref|labelcref)\{([^}]+)\}",
                lambda m: _fmt_group([m.group(1)], True, labels), t)
     return t
+
+
+# ---------------------------------------------------------------------------
+# surface equation numbers on labeled display equations (pandoc --katex drops LaTeX numbering)
+# ---------------------------------------------------------------------------
+
+def tag_equations(t, labels):
+    """Surface the equation number on labeled display equations so KaTeX shows the (N) that
+    in-text \\cref/\\eqref already point at. build_label_map() computed the numbers; the reader
+    (pandoc --katex) does not auto-number equation environments, so without an explicit \\tag the
+    cross-reference has no visible target.
+
+    `labels` stores the number with parens, e.g. "(2)"; KaTeX's \\tag adds its OWN parens, so the
+    tag content must be the bare number ("2") or the reader shows "((2))". align/eqnarray blocks ARE
+    auto-numbered by KaTeX, per-render-instance (a counter that resets every block and never matches
+    the document numbering), so they are converted to the starred form to suppress that and an
+    explicit \\tag is injected on each labeled row."""
+    def bare(num): return num.strip("()")
+
+    # equation/gather/multline: the reader does not auto-number these, so a single explicit \tag is
+    # all that is needed. Only single-label, non-starred, currently-untagged blocks are touched.
+    def repl_eq(m):
+        begin, env, body, end = m.group(1), m.group(2), m.group(3), m.group(4)
+        labs = re.findall(r"\\label\{([^}]+)\}", body)
+        if len(labs) != 1 or r"\tag" in body:
+            return m.group(0)
+        kind, num = labels.get(labs[0], ("", ""))
+        if kind != "Equation" or not num:
+            return m.group(0)
+        return f"{begin}{body}\\tag{{{bare(num)}}}{end}"
+    t = re.sub(r"(\\begin\{(equation|gather|multline)\})(.*?)(\\end\{\2\})", repl_eq, t, flags=re.S)
+
+    # align/eqnarray: star the environment to kill KaTeX's colliding auto-numbers, then tag each
+    # labeled row from `labels`. Unlabeled aligns (e.g. Maxwell's equations) become cleanly unnumbered.
+    def repl_align(m):
+        env, body = m.group(1), m.group(2)
+        if r"\tag" in body:
+            return m.group(0)
+        def tag_label(lm):
+            kind, num = labels.get(lm.group(1), ("", ""))
+            return lm.group(0) + (f"\\tag{{{bare(num)}}}" if kind == "Equation" and num else "")
+        body = re.sub(r"\\label\{([^}]+)\}", tag_label, body)
+        return f"\\begin{{{env}*}}{body}\\end{{{env}*}}"
+    return re.sub(r"\\begin\{(align|eqnarray)\}(.*?)\\end\{\1\}", repl_align, t, flags=re.S)
 
 
 # ---------------------------------------------------------------------------
@@ -452,6 +500,7 @@ def main():
     t = strip_si_optionals(t)
     t = expand_gls(t, acr)
     t = resolve_cref(t, labels)
+    t = tag_equations(t, labels)
     t = number_captions(t, labels)
     t = rasterize_tikz(t, read_tex, build_dir, build_ref)
     t = strip_boxes(t)
