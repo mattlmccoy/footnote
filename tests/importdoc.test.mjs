@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex, outlineFromFiles } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex, outlineFromFiles, mergeOutlinePrev } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -260,4 +260,60 @@ test('outlineFromFiles builds the nested outline from a folder, resolving \\inpu
 });
 test('outlineFromFiles returns null when there is no .tex entry', () => {
   assert.equal(outlineFromFiles([{ path:'notes.md', isText:true, text:'hi' }]), null);
+});
+
+// ---- mergeOutlinePrev: preserve curated synopses/intro/title from a prior outline.json ----
+test('mergeOutlinePrev preserves synopses/intro/title by normalized heading text', () => {
+  const generated = {
+    title: 'Source Title',
+    intro: '',
+    chapters: [
+      { n:1, title:'Introduction', synopsis:'auto first sentence.', sections:[
+        { title:'Motivation', synopsis:'auto motivation.', subsections:[
+          { title:'Background', synopsis:'auto bg.' } ] } ] },
+    ],
+  };
+  const prev = {
+    title: 'Curated Outline Title',
+    intro: 'A hand-written intro.',
+    chapters: [
+      { n:1, title:'Introduction', sections:[
+        { title:'Motivation', synopsis:'why it matters, curated.', subsections:[
+          { title:'Background', synopsis:'curated background.' } ] } ] },
+    ],
+  };
+  const m = mergeOutlinePrev(generated, prev);
+  assert.equal(m.title, 'Curated Outline Title');          // prev title wins
+  assert.equal(m.intro, 'A hand-written intro.');          // prev intro wins
+  assert.equal(m.chapters[0].sections[0].synopsis, 'why it matters, curated.');
+  assert.equal(m.chapters[0].sections[0].subsections[0].synopsis, 'curated background.');
+});
+test('mergeOutlinePrev DROPS a generated synopsis when prev has no match (never invents); falls back to source title', () => {
+  const generated = { title:'Src', intro:'gen intro', chapters:[
+    { n:1, title:'New Chapter', synopsis:'generated syn.', sections:[] } ] };
+  const prev = { title:'', chapters:[ { n:1, title:'Old Chapter', synopsis:'stale.' } ] };
+  const m = mergeOutlinePrev(generated, prev);
+  assert.equal(m.title, 'Src');                            // empty prev title → source title
+  assert.equal(m.intro, 'gen intro');                      // prev has no intro key → keep generated
+  assert.equal('synopsis' in m.chapters[0], false);        // no heading match → synopsis dropped, not invented
+});
+test('mergeOutlinePrev re-attaches an empty prev synopsis (keeps a section keyless like outline_gen.py)', () => {
+  const generated = { title:'x', intro:'', chapters:[
+    { n:1, title:'C', synopsis:'auto ch.', sections:[
+      { title:'S', synopsis:'auto sec.', subsections:[] } ] } ] };
+  // prev: chapter carries a synopsis key (''), section carries NO synopsis key at all.
+  const prev = { title:'x', chapters:[ { n:1, title:'C', synopsis:'', sections:[ { title:'S', subsections:[] } ] } ] };
+  const m = mergeOutlinePrev(generated, prev);
+  assert.equal(m.chapters[0].synopsis, '');                // chapter key present in prev → set to ''
+  assert.equal('synopsis' in m.chapters[0].sections[0], false);  // section keyless in prev → dropped
+});
+test('mergeOutlinePrev matches headings case/space/dash-insensitively', () => {
+  const generated = { title:'x', intro:'', chapters:[
+    { n:1, title:'Electrode–Part  Load', synopsis:'gen.', sections:[] } ] };
+  const prev = { title:'x', chapters:[ { n:1, title:'electrode–part load', synopsis:'kept.' } ] };
+  assert.equal(mergeOutlinePrev(generated, prev).chapters[0].synopsis, 'kept.');
+});
+test('mergeOutlinePrev tolerates a null/empty prev (no-op)', () => {
+  const generated = { title:'T', intro:'i', chapters:[ { n:1, title:'C', synopsis:'s', sections:[] } ] };
+  assert.deepEqual(mergeOutlinePrev(generated, null), generated);
 });
