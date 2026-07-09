@@ -178,6 +178,29 @@ def run_claude_cli(task, model=None):
     return parse_claude_edits(out) if out is not None else {}
 
 
+def writer_directive(catalog=None, field="", writer_id="writer"):
+    """The apply-edits directive spoken in the configured Writer/Editor DOER agent's voice: that agent's
+    systemPrompt (its editing persona) prepended to the shared edit-output contract — so the CONFIGURED
+    writer agent does the drafting, not a generic copy-editor call, while still returning parseable edit
+    specs. Falls back to the generic directive when no writer agent is configured."""
+    cat = catalog if catalog is not None else ci_agents.builtin_catalog()
+    sp = ((cat.get(writer_id) or {}).get("systemPrompt") or "")
+    if ci_agents.FIELD_PLACEHOLDER in sp:
+        sp = sp.replace(ci_agents.FIELD_PLACEHOLDER, field or ci_agents.DEFAULT_FIELD)
+    if not sp.strip():
+        return CLAUDE_INSTRUCTIONS
+    return ("You are the document's Writer/Editor agent. Work in this persona:\n" + sp
+            + "\n\nNow do that editing to resolve the reviewer comments, following this EXACT output "
+              "contract:\n" + CLAUDE_INSTRUCTIONS)
+
+
+def run_writer_cli(task, catalog=None, field="", writer_id="writer", model=None):
+    """Produce apply-edits specs using the CONFIGURED Writer/Editor agent's prompt (not the generic
+    copy-editor). Live-CI-gated boundary; the parse is pure."""
+    out = _run_claude(writer_directive(catalog, field, writer_id), claude_context(task), model, "writer:" + writer_id)
+    return parse_claude_edits(out) if out is not None else {}
+
+
 def read_text_files(root):
     """Every text source file under ``root`` as ``{relpath: text}`` (skips binaries/figures)."""
     out = {}
@@ -660,13 +683,18 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                       f"(connect Claude Code: set CLAUDE_CODE_OAUTH_TOKEN) — leaving job", file=sys.stderr)
                 continue
             field = job.get("field") or os.environ.get("DOC_FIELD") or ""
-            # the critic/adversary stack for the agent gate: job-supplied or env REVIEW_AGENTS, kept to
-            # CI-runnable (non-local, non-doer) agents. Empty → no critic gate (verify + narration only).
-            review_agents = [a for a in (job.get("review_agents")
-                             or [s.strip() for s in os.environ.get("REVIEW_AGENTS", "").split(",") if s.strip()])
-                             if ci_agents.runnable_in_ci(a, catalog)]
+            configured = (job.get("review_agents")
+                          or [s.strip() for s in os.environ.get("REVIEW_AGENTS", "").split(",") if s.strip()])
+            # the critic/adversary gate: the configured agents that are CI-runnable (non-local, non-doer).
+            review_agents = [a for a in configured if ci_agents.runnable_in_ci(a, catalog)]
+            # the WRITER that drafts the edits = the configured Writer/Editor DOER agent (prefer the
+            # builtin "writer", else the first configured doer) — its persona drives the edit, NOT a
+            # generic Claude call. An injected claude_fn (tests) wins.
+            writer_id = "writer" if "writer" in configured else next(
+                (a for a in configured if (catalog.get(a) or {}).get("category") == "doer"), "writer")
+            writer_fn = claude_fn or (lambda t, wid=writer_id, f=field: run_writer_cli(t, catalog, f, wid))
             _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
-                                  base_branch, build_root, claude_fn or run_claude_cli, agent_fn,
+                                  base_branch, build_root, writer_fn, agent_fn,
                                   catalog, review_agents, field)
             jobs = R.remove_job(jobs, job.get("id"))
             done += 1
