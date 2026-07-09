@@ -8,7 +8,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, isTerminal, summaryLine } from './cloudprogress.js?v=cp1';
+import { parseEvents, groupByComment, isTerminal, summaryLine } from './cloudprogress.js?v=6179fd2';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=a1734d0';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
