@@ -315,6 +315,100 @@ def cmd_decide(a):
     print(f"Recorded {a.decision} on {a.comment_id}.")
 
 
+def _checkout_review_branch(a, branch):
+    if _git(["rev-parse", "--verify", branch], a.source, check=False, capture=True).returncode == 0:
+        _git(["checkout", branch], a.source)
+    elif _git(["checkout", "-b", branch, "origin/main"], a.source, check=False, capture=True).returncode != 0:
+        _git(["checkout", "-b", branch], a.source)
+
+
+def cmd_apply_direct(a):
+    """Apply owner direct-edits literally to source on review-edits/<unit> — deterministic, no AI.
+    Reuses the SAME pure core as the cloud apply-direct, so the two routes can't diverge."""
+    _pull(a.data)
+    _pull(a.source)
+    job = _find_job(a, a.job_id)
+    unit = job.get("chapter") or job.get("unit")
+    branch = R.branch_for(unit)
+    _checkout_review_branch(a, branch)
+    src = _source_root(a)
+    review = R.load_json(_dpath(a, f"reviews/{unit}.json"), {"comments": []})
+    files = ci_apply.read_text_files(str(src))
+    new_review, new_files, branch, applied = R.process_apply_direct_job(job, review, files, _now())
+    for rel, txt in new_files.items():
+        if files.get(rel) != txt:
+            (src / rel).write_text(txt, encoding="utf-8")
+    _write_json(_dpath(a, f"reviews/{unit}.json"), new_review)
+    staged = sum(1 for c in new_review.get("comments", []) if c.get("status") == "staged")
+    flagged = sum(1 for c in new_review.get("comments", []) if c.get("status") == "conflict")
+    if applied:
+        _git(["add", "-A"], src if str(src) == a.source else Path(a.source), check=False)
+        _git(["commit", "-m", f"direct edits on {unit} from reviewer app"], a.source, check=False, capture=True)
+        _git(["push", "-u", "origin", branch], a.source, check=False, capture=True)
+    jobs = R.load_json(_dpath(a, "jobs.json"), [])
+    for j in jobs:
+        if isinstance(j, dict) and j.get("id") == a.job_id:
+            j["status"] = "done"
+            j["done_ts"] = _now()
+    _write_json(_dpath(a, "jobs.json"), jobs)
+    _push_data(a.data, f"direct: {unit} — {staged} applied, {flagged} flagged")
+    print(f"apply-direct {unit}: {staged} applied, {flagged} flagged. Preview, then merge {unit}.")
+
+
+def cmd_refresh_source(a):
+    """Materialize the source entry main.tex into the data repo as <prefix>source/main.tex, so the
+    reviewer header parses the real \\title from the source of truth. Idempotent; --dry-run reports."""
+    src = _source_root(a) / "main.tex"
+    if not src.exists():
+        sys.exit(f"main.tex not found at {src}")
+    new = src.read_text(encoding="utf-8")
+    dst = Path(a.data) / (_P(a) + "source/main.tex")
+    old = dst.read_text(encoding="utf-8") if dst.exists() else None
+    if new == old:
+        print("source/main.tex already up to date.")
+        return
+    if a.dry_run:
+        print(f"[dry-run] would refresh source/main.tex ({len(new)} bytes) from {src}")
+        return
+    _pull(a.data)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    dst.write_text(new, encoding="utf-8")
+    _push_data(a.data, "refresh: source/main.tex from source of truth")
+    print(f"Refreshed source/main.tex ({len(new)} bytes).")
+
+
+def cmd_publish_srcmaps(a):
+    """Generate <prefix>content/<unit>.srcmap.json for every unit with published content, so the app
+    can offer in-context editing. Reuses export/preprocess.py + export/srcmap.py (needs TeX/pandoc env)."""
+    _pull(a.data)
+    src = _source_root(a)
+    exportdir = ci_render.HERE / "export"
+    built = 0
+    cwd0 = os.getcwd()
+    try:
+        os.chdir(a.data)
+        for r in ci_render.load_units(_P(a)):
+            unit = r.get("id")
+            html = Path(_dpath(a, f"content/{unit}.html"))
+            if not unit or not html.exists():
+                continue
+            env = dict(os.environ, SOURCE_DIR=str(src), CHAPTERS_JSON=str(Path(_P(a) + "chapters.json").resolve()))
+            pre = Path(a.data) / ".render-build" / f"{unit}.pre.tex"
+            pre.parent.mkdir(parents=True, exist_ok=True)
+            with open(pre, "w", encoding="utf-8") as f:
+                subprocess.run(["python3", str(exportdir / "preprocess.py"), unit],
+                               stdout=f, env=env, cwd=str(src), check=False)
+            out = _dpath(a, f"content/{unit}.srcmap.json")
+            subprocess.run(["python3", str(exportdir / "srcmap.py"), unit, str(pre), str(html), out],
+                           env=env, cwd=str(src), check=False)
+            if os.path.exists(out):
+                built += 1
+    finally:
+        os.chdir(cwd0)
+    _push_data(a.data, f"srcmaps: published {built} unit map(s)")
+    print(f"Published {built} source map(s).")
+
+
 def cmd_done(a):
     _pull(a.data)
     jobs = R.load_json(_dpath(a, "jobs.json"), [])
@@ -352,6 +446,9 @@ def build_parser():
     sp = sub.add_parser("respond", help="answer a question-comment (status=answered)"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.set_defaults(fn=cmd_respond)
     sp = sub.add_parser("note", help="attach an explanation (+optional staged-edit diff), keep status"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("text"); sp.add_argument("--before", default=""); sp.add_argument("--after", default=""); sp.set_defaults(fn=cmd_note)
     sp = sub.add_parser("decide", help="record an owner decision on a comment"); sp.add_argument("unit"); sp.add_argument("comment_id"); sp.add_argument("decision", choices=["approve", "reject", "revise"]); sp.add_argument("note", nargs="?", default=""); sp.set_defaults(fn=cmd_decide)
+    sp = sub.add_parser("apply-direct", help="apply owner direct-edits literally to source on review-edits/<unit>"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_apply_direct)
+    sp = sub.add_parser("refresh-source", help="materialize source main.tex -> data source/main.tex (title source)"); sp.add_argument("--dry-run", action="store_true"); sp.set_defaults(fn=cmd_refresh_source)
+    sub.add_parser("publish-srcmaps", help="build content/<unit>.srcmap.json for all units (in-context editing)").set_defaults(fn=cmd_publish_srcmaps)
     sp = sub.add_parser("done", help="mark any job done"); sp.add_argument("job_id"); sp.set_defaults(fn=cmd_done)
     return p
 

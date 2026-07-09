@@ -36,6 +36,7 @@ def repos(tmp_path):
     src_bare = tmp_path / "source.git"
     _init_repo_with_remote(source, src_bare)
     (source / "ch1.tex").write_text("\\section{Intro}\nThe \\alpha term matters.\n")
+    (source / "main.tex").write_text("\\title{My Paper}\n\\input{ch1}\n")
     _git(["add", "-A"], source); _git(["commit", "-m", "init source"], source)
     _git(["remote", "add", "origin", str(src_bare)], source)
     _git(["push", "-u", "origin", "main"], source)
@@ -120,3 +121,26 @@ def test_respond_note_decide_cli(repos):
     PR.main(base + ["decide", "ch1", "c1", "approve", "looks good"])
     c = json.loads((data / "reviews" / "ch1.json").read_text())["comments"][0]
     assert c["decision"] == "approve" and c["decision_note"] == "looks good"
+
+
+def test_apply_direct_cli(repos):
+    source, data = repos
+    # queue an apply-direct job for c1 (its edit replaces \alpha -> \beta, literally, no AI)
+    (data / "jobs.json").write_text(json.dumps([
+        {"id": "jd", "type": "apply-direct", "chapter": "ch1", "comment_ids": ["c1"]}]))
+    _git(["commit", "-am", "queue apply-direct"], data); _git(["push", "origin", "main"], data)
+
+    PR.main(["--source", str(source), "--data", str(data), "apply-direct", "jd"])
+
+    # branch created + source literally edited on it
+    _git(["checkout", "review-edits/ch1"], source)
+    assert "\\beta" in (source / "ch1.tex").read_text()
+    c = json.loads((data / "reviews" / "ch1.json").read_text())["comments"][0]
+    assert c["status"] == "staged" and c["claude"]["branch"] == "review-edits/ch1"
+    assert json.loads((data / "jobs.json").read_text())[0]["status"] == "done"
+
+
+def test_refresh_source_cli(repos):
+    source, data = repos
+    PR.main(["--source", str(source), "--data", str(data), "refresh-source"])
+    assert "\\title{My Paper}" in (data / "source" / "main.tex").read_text()
