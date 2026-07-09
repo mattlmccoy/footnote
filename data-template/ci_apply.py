@@ -245,13 +245,15 @@ def _build_unit(prefix, unit_id, source_dir, out_path, workdir, label):
 
 
 def build_preview(prefix, unit_id, source_dir, workdir):
-    """Branch preview → ``<prefix>preview/<unit>.html`` (the review-edits view, distinct from content/)."""
-    _build_unit(prefix, unit_id, source_dir, R.preview_out(prefix, unit_id), workdir, "preview")
+    """Branch preview → ``<prefix>preview/<unit>.html`` (the review-edits view, distinct from content/).
+    Returns True when a new (non-degenerate) preview was published, else keeps last-good."""
+    return _build_unit(prefix, unit_id, source_dir, R.preview_out(prefix, unit_id), workdir, "preview")
 
 
 def build_content(prefix, unit_id, source_dir, workdir):
-    """Published reading view → ``<prefix>content/<unit>.html`` (rebuilt from merged main source)."""
-    _build_unit(prefix, unit_id, source_dir, ci_render.content_out(prefix, unit_id), workdir, "content")
+    """Published reading view → ``<prefix>content/<unit>.html`` (rebuilt from merged main source).
+    Returns True when a new (non-degenerate) content file was published, else keeps last-good."""
+    return _build_unit(prefix, unit_id, source_dir, ci_render.content_out(prefix, unit_id), workdir, "content")
 
 
 def _delete_branch(repo_dir, branch, token=None, remote_repo=None):
