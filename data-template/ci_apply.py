@@ -323,7 +323,56 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent", "export")
+
+
+def _run_export_job(prefix, job, review, source_dir):
+    """Cloud export (parity with the local `export` command): build docx (+md) of a unit WITH the
+    reviewer comments, mirroring process_reviews.cmd_export. Reuses export/export-chapter.sh +
+    annotate_docx.py + R.export_comment_list/annex_md. Writes artifacts under <prefix>exports/<unit>/;
+    PDF is intentionally unsupported. Needs pandoc (+lxml for docx) — live-gated like render. Returns the
+    artifact paths."""
+    import json as _json
+    import tempfile
+    unit = job.get("chapter")
+    formats = [f.strip() for f in (job.get("formats") or ["docx"]) if f.strip() and f.strip() != "pdf"]
+    exportdir = ci_render.HERE / "export"
+    advisor = []
+    abase = Path(f"{prefix}advisor")
+    if abase.is_dir():
+        for adir in sorted(p for p in abase.iterdir() if p.is_dir()):
+            f = adir / f"{unit}.json"
+            if f.exists():
+                advisor.append((adir.name, R.load_json(str(f), {"comments": []})))
+    comments = R.export_comment_list(review, advisor)
+    build = Path(tempfile.mkdtemp(prefix="footnote-export-"))
+    env = dict(os.environ, SOURCE_DIR=str(source_dir),
+               CHAPTERS_JSON=str(Path(f"{prefix}chapters.json").resolve()), BUILD_DIR=str(build))
+    bib = Path(source_dir) / "references.bib"
+    if bib.exists():
+        env["BIB"] = str(bib)
+    outdir = Path(f"{prefix}exports/{unit}")
+    outdir.mkdir(parents=True, exist_ok=True)
+    base = build / f"{unit}.docx"
+    arts = []
+    try:
+        subprocess.run(["bash", str(exportdir / "export-chapter.sh"), unit, str(base)],
+                       env=env, check=True, stdout=sys.stderr, stderr=sys.stderr)
+        cj = build / "comments.json"
+        cj.write_text(_json.dumps(comments), encoding="utf-8")
+        if "docx" in formats:
+            out = outdir / f"{unit}.docx"
+            subprocess.run(["python3", str(exportdir / "annotate_docx.py"), str(base), str(cj), str(out)],
+                           check=True, stdout=sys.stderr, stderr=sys.stderr)
+            arts.append(str(out))
+        if "md" in formats:
+            body = subprocess.run(["pandoc", str(base), "-t", "gfm", "--wrap=none"], capture_output=True, text=True)
+            (outdir / f"{unit}.md").write_text((body.stdout or "") + "\n\n---\n\n" + R.annex_md(unit, comments) + "\n",
+                                               encoding="utf-8")
+            arts.append(str(outdir / f"{unit}.md"))
+    except Exception as e:
+        print(f"[export] {unit}: failed ({e}) — leaving job for retry", file=sys.stderr)
+    return arts
 
 
 def _run_author_agent_jobs(prefix, author_jobs, jobs):
@@ -416,49 +465,64 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
     kept_review = review
     staged = 0
     conflicts = 0
+    max_attempts = int(os.environ.get("REVISE_MAX", "2"))
     for cid in ids:
         comment = next((c for c in review.get("comments", []) if c.get("id") == cid), None)
         if comment is None:
             continue
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
-        spec = edits.get(cid) or {}
-        trial_review, trial_files, branch, applied = R.process_apply_edits_job(
-            {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
-        diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
-        ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
-           comment=cid, agent="writer", status="running", edit=diff)
-        if not applied:
-            kept_review = trial_review   # process_apply_edits_job already marked it conflict/answered
-            st = next((c for c in trial_review["comments"] if c["id"] == cid), {}).get("status")
-            ev("stage", "No source change staged (answered or could not anchor the edit).",
-               comment=cid, status="conflict" if st == "conflict" else "ok")
-            if st == "conflict":
+        revise_note, attempt, outcome = "", 1, None
+        while outcome is None:
+            # attempt 1 uses the upfront batch edit; revisions re-ask the writer with the feedback so it
+            # can fix undefined refs / satisfy the critics — the same writer↔critic iteration as local.
+            if attempt == 1:
+                spec = edits.get(cid) or {}
+            else:
+                ev("agent", "Revising the edit based on the feedback…", comment=cid, agent="writer", status="running")
+                rtask = R.build_apply_task({**job, "comment_ids": [cid], "revision": True, "revise_note": revise_note},
+                                           kept_review, R.author_source(work))
+                spec = (claude_fn(rtask) or {}).get(cid) or {}
+            trial_review, trial_files, branch, applied = R.process_apply_edits_job(
+                {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
+            diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
+            ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
+               comment=cid, agent="writer", status="running", edit=diff)
+            if not applied:
+                kept_review = trial_review   # already marked conflict (couldn't anchor) or answered (question)
+                st = next((c for c in trial_review["comments"] if c["id"] == cid), {}).get("status")
+                ev("stage", "No source change staged (answered, or the edit could not be anchored).",
+                   comment=cid, status="conflict" if st == "conflict" else "ok")
+                if st == "conflict":
+                    conflicts += 1
+                break
+            undefined = R.verify_refs("\n".join(trial_files.values()))
+            if undefined:
+                ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}).",
+                   comment=cid, agent="verify_refs", status="conflict")
+                approved, reason = False, "undefined references: " + ", ".join(undefined)
+            else:
+                ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
+                verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
+                for v in verdicts:
+                    ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
+                       status="ok" if v["approved"] else "conflict")
+                tally = R.critics_verdict(verdicts)
+                approved = tally["approved"]
+                reason = "; ".join(r["say"] for r in tally["rejections"])
+            dec = R.revise_decision(approved, attempt, max_attempts)
+            if dec == "stage":
+                work, kept_review = trial_files, trial_review
+                staged += 1
+                ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
+                outcome = "staged"
+            elif dec == "revise":
+                revise_note, attempt = reason, attempt + 1
+            else:
+                kept_review = _mark_conflict(kept_review, cid, reason)
                 conflicts += 1
-            continue
-        undefined = R.verify_refs("\n".join(trial_files.values()))
-        if undefined:
-            ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}) — not staging.",
-               comment=cid, agent="verify_refs", status="conflict")
-            kept_review = _mark_conflict(kept_review, cid, "undefined references: " + ", ".join(undefined))
-            conflicts += 1
-            continue
-        ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
-        verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
-        for v in verdicts:
-            ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
-               status="ok" if v["approved"] else "conflict")
-        tally = R.critics_verdict(verdicts)
-        if R.revise_decision(tally["approved"], attempt=1, max_attempts=1) == "stage":
-            work = trial_files
-            kept_review = trial_review
-            staged += 1
-            ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
-        else:
-            reasons = "; ".join(r["say"] for r in tally["rejections"])
-            kept_review = _mark_conflict(kept_review, cid, "reviewer agents flagged it: " + reasons)
-            conflicts += 1
-            ev("stage", f"A review agent objected, so this edit was NOT staged — flagged for you: {reasons}",
-               comment=cid, status="conflict")
+                ev("stage", f"Couldn't satisfy the review after {attempt} attempt(s) — flagged for you: {reason}",
+                   comment=cid, status="conflict")
+                outcome = "conflict"
 
     if staged:
         src_rel = os.path.relpath(source_dir, repo_dir)
@@ -548,6 +612,16 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                                        source_dir, repo_dir, remote_repo, token, base_branch, build_root)
             _write_json(R.review_path(prefix, ch), new_review)
             jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
+
+        if job.get("type") == "export":
+            arts = _run_export_job(prefix, job, review, source_dir)
+            jobs = [{**j, "status": "done", "done_ts": _now_iso(),
+                     "artifacts": [{"path": a} for a in arts]} if j.get("id") == job.get("id") else j
+                    for j in jobs]
+            _write_json(R.jobs_path(prefix), jobs)
+            print(f"[export] {prefix}{ch}: built {len(arts)} artifact(s)")
             done += 1
             continue
 

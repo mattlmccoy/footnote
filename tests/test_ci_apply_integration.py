@@ -326,3 +326,48 @@ def test_apply_edits_agent_gate_rejects_and_emits_progress(workspace_repo, monke
     assert any(e.get("agent") == "writer" for e in events)
     assert any(e.get("agent") == "clarity" and e["status"] == "conflict" for e in events)
     assert any("flagged" in e["say"].lower() or "objected" in e["say"].lower() for e in events)
+
+
+def test_apply_edits_revise_loop_recovers(workspace_repo, monkeypatch, tmp_path):
+    """Writer↔critic iteration: the first edit is rejected by a critic, the writer revises with the
+    feedback, the revision is approved and STAGED — matching the local agent loop."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "queued", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "rename alpha"}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    fake = tmp_path / "fake.sh"
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    'printf "<p>rendered padding to a realistic size.</p>%.0s" {1..12} >> "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+
+    calls = {"n": 0}
+    def fake_claude(task):
+        calls["n"] += 1
+        after = "\\gamma" if calls["n"] == 1 else "\\beta"   # bad first, good on revise
+        return {"c1": {"id": "c1", "response": f"changed to {after}", "source_before": "\\alpha",
+                       "source_after": after, "prose_before": "the alpha term", "prose_after": f"the {after} term"}}
+    def fake_agent(agent_id, task):
+        return [] if task["proposed_edit"].get("source_after") == "\\beta" else [{"body": "wrong symbol; use beta"}]
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("REVIEW_AGENTS", "clarity")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude, agent_fn=fake_agent)
+
+    assert calls["n"] == 2   # writer called twice (initial + one revision)
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["status"] == "staged"
+    branched = subprocess.run(["git", "--git-dir", str(bare), "show",
+                               "review-edits/02-methods:proj/source/methods.tex"],
+                              capture_output=True, text=True, check=True).stdout
+    assert "\\beta" in branched and "\\gamma" not in branched
+    prog = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
+    assert any("revis" in e["say"].lower() for e in prog)   # narrated the revision
