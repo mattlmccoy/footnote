@@ -346,7 +346,33 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent", "export")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent", "export", "response")
+
+
+def _run_response_job(prefix, job, review, field, catalog):
+    """Cloud response-letter job in the Review-Response Writer (responder) doer's voice: drafts a
+    point-by-point, evidence-grounded response to the unit's reviewer comments and writes it to
+    <prefix>responses/<unit>.md. Returns the path or None. Live-CI-gated (needs Claude)."""
+    import json as _json
+    unit = job.get("chapter")
+    rid = job.get("responder") or "responder"
+    sp = ((catalog.get(rid) or {}).get("systemPrompt") or "")
+    if ci_agents.FIELD_PLACEHOLDER in sp:
+        sp = sp.replace(ci_agents.FIELD_PLACEHOLDER, field or ci_agents.DEFAULT_FIELD)
+    directive = ((sp or "You draft point-by-point, evidence-grounded responses to reviewer comments.")
+                 + "\n\nWrite a clear point-by-point response letter in Markdown for the reviewer comments in "
+                   "the piped input. For each comment: summarize it, then state how it was (or will be) "
+                   "addressed, grounded in the document. Output ONLY the Markdown letter.")
+    comments = [{"id": c.get("id"), "tag": c.get("tag"), "quote": (c.get("anchor") or {}).get("quote", ""),
+                 "body": c.get("body", ""), "status": c.get("status")} for c in review.get("comments", [])]
+    out = _run_claude(directive, _json.dumps({"unit": unit, "comments": comments}, ensure_ascii=False),
+                      None, "responder:" + rid)
+    if not out:
+        return None
+    path = Path(f"{prefix}responses/{unit}.md")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(out, encoding="utf-8")
+    return str(path)
 
 
 def _run_export_job(prefix, job, review, source_dir):
@@ -465,11 +491,12 @@ def _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field):
 
 
 def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
-                          base_branch, build_root, claude_fn, agent_fn, catalog, review_agents, field):
-    """Cloud apply-edits with agent parity + a narrated progress stream. Per comment: the writer edit is
-    trial-applied, verify_refs gates it, the critic/adversary stack reviews it, and it is STAGED only if
-    it applies + verifies + no critic objects — otherwise the comment is a per-comment CONFLICT (never a
-    silent stub). Every step emits a human-narrated event. Author-oversight preserved: staged edits only
+                          base_branch, build_root, writer_call, agent_fn, catalog, review_agents, field):
+    """Cloud apply-edits with agent parity + a narrated progress stream. Per comment: the configured
+    writer agent drafts the edit (``writer_call(comment, task)`` picks the right doer — Figure Drafter for
+    a figure comment, Writer/Editor otherwise), verify_refs gates it, the critic/adversary stack reviews
+    it, and it is STAGED only if it applies + verifies + no critic objects — otherwise a per-comment
+    CONFLICT (never a silent stub). Every step is narrated. Author-oversight preserved: staged edits only
     land on review-edits/<unit>. Returns (new_review, applied_count)."""
     ch = job.get("chapter")
     jid = job.get("id")
@@ -482,8 +509,6 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         return e
 
     ev("read", f"Starting review of {len(ids)} comment(s) on {ch}.")
-    task = R.build_apply_task(job, review, R.author_source(files))
-    edits = claude_fn(task) or {}
     work = dict(files)
     kept_review = review
     staged = 0
@@ -496,15 +521,16 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
         revise_note, attempt, outcome = "", 1, None
         while outcome is None:
-            # attempt 1 uses the upfront batch edit; revisions re-ask the writer with the feedback so it
-            # can fix undefined refs / satisfy the critics — the same writer↔critic iteration as local.
-            if attempt == 1:
-                spec = edits.get(cid) or {}
-            else:
+            # the configured writer DOER drafts this comment's edit (Figure Drafter for a figure comment,
+            # else Writer/Editor); revisions re-ask it with the feedback — the same writer↔critic iteration
+            # the local route runs.
+            if attempt > 1:
                 ev("agent", "Revising the edit based on the feedback…", comment=cid, agent="writer", status="running")
-                rtask = R.build_apply_task({**job, "comment_ids": [cid], "revision": True, "revise_note": revise_note},
-                                           kept_review, R.author_source(work))
-                spec = (claude_fn(rtask) or {}).get(cid) or {}
+            wjob = {**job, "comment_ids": [cid]}
+            if attempt > 1:
+                wjob = {**wjob, "revision": True, "revise_note": revise_note}
+            wtask = R.build_apply_task(wjob, kept_review, R.author_source(work))
+            spec = (writer_call(comment, wtask) or {}).get(cid) or {}
             trial_review, trial_files, branch, applied = R.process_apply_edits_job(
                 {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
             diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
@@ -648,6 +674,19 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             done += 1
             continue
 
+        if job.get("type") == "response":
+            if not have_claude:
+                print(f"[response] {prefix}{ch}: needs Claude — leaving job", file=sys.stderr)
+                continue
+            path = _run_response_job(prefix, job, review, job.get("field") or os.environ.get("DOC_FIELD") or "", catalog)
+            if path:
+                jobs = [{**j, "status": "done", "done_ts": _now_iso(), "artifacts": [{"path": path}]}
+                        if j.get("id") == job.get("id") else j for j in jobs]
+                _write_json(R.jobs_path(prefix), jobs)
+                print(f"[response] {prefix}{ch}: wrote {path}")
+                done += 1
+            continue
+
         if job.get("type") == "run-agents":
             if not have_claude:
                 print(f"[apply] {prefix}{ch}: run-agents queued but Claude not configured "
@@ -687,14 +726,20 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                           or [s.strip() for s in os.environ.get("REVIEW_AGENTS", "").split(",") if s.strip()])
             # the critic/adversary gate: the configured agents that are CI-runnable (non-local, non-doer).
             review_agents = [a for a in configured if ci_agents.runnable_in_ci(a, catalog)]
-            # the WRITER that drafts the edits = the configured Writer/Editor DOER agent (prefer the
-            # builtin "writer", else the first configured doer) — its persona drives the edit, NOT a
-            # generic Claude call. An injected claude_fn (tests) wins.
-            writer_id = "writer" if "writer" in configured else next(
+            # The WRITER that drafts each edit is the configured DOER agent — Figure Drafter for a figure
+            # comment (when configured), else Writer/Editor (builtin "writer" or the first configured doer).
+            # Its persona drives the edit, NOT a generic call. An injected claude_fn (tests) wins.
+            prose_writer = "writer" if "writer" in configured else next(
                 (a for a in configured if (catalog.get(a) or {}).get("category") == "doer"), "writer")
-            writer_fn = claude_fn or (lambda t, wid=writer_id, f=field: run_writer_cli(t, catalog, f, wid))
+            fig_writer = "figure-drafter" if "figure-drafter" in configured else prose_writer
+            def _is_fig(c):
+                return bool((c.get("anchor") or {}).get("figure")) or c.get("tag") == "figure"
+            def writer_call(comment, wtask, _pw=prose_writer, _fw=fig_writer, _f=field):
+                if claude_fn:
+                    return claude_fn(wtask)
+                return run_writer_cli(wtask, catalog, _f, _fw if _is_fig(comment) else _pw)
             _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
-                                  base_branch, build_root, writer_fn, agent_fn,
+                                  base_branch, build_root, writer_call, agent_fn,
                                   catalog, review_agents, field)
             jobs = R.remove_job(jobs, job.get("id"))
             done += 1
