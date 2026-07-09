@@ -59,6 +59,47 @@ def literal_replace(text, find, replacement):
     return text.replace(find, replacement)
 
 
+def _flex_pattern(find):
+    """A regex that matches ``find`` treating every run of whitespace as ``\\s+`` — so a single-spaced
+    target string matches the same passage after LaTeX hard-wraps it across lines. Non-whitespace is
+    escaped verbatim. Returns None for a whitespace-only/empty target (nothing to anchor)."""
+    import re
+    parts = [re.escape(tok) for tok in (find or "").split()]
+    if not parts:
+        return None
+    return re.compile(r"\s+".join(parts))
+
+
+def flexible_count(text, find):
+    """How many times ``find`` occurs in ``text`` under whitespace-tolerant matching (a run of spaces
+    or newlines is equivalent). The fast path is an exact substring count; the flexible regex only runs
+    when the verbatim string is absent, so an exactly-matching target is never mis-collapsed."""
+    if find and find in (text or ""):
+        return (text or "").count(find)
+    pat = _flex_pattern(find)
+    if pat is None:
+        return 0
+    return len(pat.findall(text or ""))
+
+
+def flexible_replace(text, find, replacement):
+    """Replace the SINGLE occurrence of ``find`` in ``text`` with ``replacement``, tolerant of
+    whitespace differences (LaTeX hard-wraps prose at ~80 columns, but Claude returns ``source_before``
+    with single spaces). Exact match wins; otherwise a run-of-whitespace-insensitive match is used.
+    Raises EditConflict when the target is absent or ambiguous — the wrapped span (newlines and all) is
+    replaced by ``replacement`` verbatim, so the reviewer's exact ``source_after`` lands unchanged."""
+    if find and (text or "").count(find) == 1:
+        return text.replace(find, replacement)
+    pat = _flex_pattern(find)
+    matches = list(pat.finditer(text or "")) if pat is not None else []
+    if len(matches) != 1:
+        raise EditConflict(
+            f"expected exactly one occurrence of the target text, found {len(matches)}"
+        )
+    m = matches[0]
+    return text[:m.start()] + replacement + text[m.end():]
+
+
 def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
     """Guard a freshly-built ``content/<unit>.html`` before it replaces the last-good file.
 
@@ -624,13 +665,16 @@ def process_apply_edits_job(job, review, files, edits_by_id, ts):
         before, after = spec.get("source_before"), spec.get("source_after")
         response = spec.get("response", "")
         if before and after is not None and before != after:
-            hits = [p for p, text in work.items() if text.count(before) >= 1]
+            # whitespace-tolerant: LaTeX hard-wraps prose, but Claude's source_before is single-spaced,
+            # so an exact substring count would miss every wrapped passage. flexible_count/replace match
+            # runs of whitespace as equivalent (exact match still wins).
+            hits = [p for p, text in work.items() if flexible_count(text, before) >= 1]
             if len(hits) != 1:
                 updated[cid] = conflict_comment(
                     comment, f"Claude's target text matched {len(hits)} files", ts)
                 continue
             try:
-                work[hits[0]] = literal_replace(work[hits[0]], before, after)
+                work[hits[0]] = flexible_replace(work[hits[0]], before, after)
             except EditConflict as e:
                 updated[cid] = conflict_comment(comment, str(e), ts)
                 continue
