@@ -923,7 +923,7 @@ function loadMarkupThumb(el, path){
 let editingId = null, activeCommentId = null, resolvedOpen = false;
 let cFilter = { status:'all', tag:'all', sort:'doc' };
 const STATUS_ORDER = ['all','open','queued','staged','approved','answered','merged','declined','resolved'];
-const RESOLVED_STATES = new Set(['merged','answered','declined','resolved']);   // terminal — fold into "Resolved (N)"
+const RESOLVED_STATES = new Set(['merged','declined','resolved']);   // terminal — fold into "Resolved (N)"
 function docOrderIndex(){           // map comment id -> vertical position of its anchor in the doc
   const map = {}; const order = [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')];
   review.comments.forEach(c => { const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,30);
