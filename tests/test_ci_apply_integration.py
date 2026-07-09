@@ -371,3 +371,39 @@ def test_apply_edits_revise_loop_recovers(workspace_repo, monkeypatch, tmp_path)
     assert "\\beta" in branched and "\\gamma" not in branched
     prog = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
     assert any("revis" in e["say"].lower() for e in prog)   # narrated the revision
+
+
+# ---- external-source push is best-effort: a read-only SOURCE_TOKEN must not crash the job,
+#      and the portal artifacts (preview via after_commit, review writeback) must still land ----
+
+def test_commit_branch_external_push_failure_is_survivable(tmp_path, monkeypatch):
+    repo = tmp_path / "clone"
+    repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    _git(["config", "user.name", "t"], repo)
+    _git(["config", "user.email", "t@t"], repo)
+    (repo / "methods.tex").write_text("x = 1\n")
+    _git(["add", "-A"], repo)
+    _git(["commit", "-m", "init"], repo)
+
+    # simulate a read-only external token: the remote push raises like a 403 from git
+    def _boom(*a, **k):
+        raise subprocess.CalledProcessError(128, ["git", "push"])
+    monkeypatch.setattr(ci_apply, "_push_remote", _boom)
+
+    ran = {"after": False}
+    result = ci_apply.commit_branch(
+        repo, "review-edits/02-methods", {"methods.tex": "x = 2\n"}, "main",
+        "stage edit", token="ro-token", remote_repo="owner/source", push=True,
+        after_commit=lambda: ran.__setitem__("after", True))
+
+    assert ran["after"] is True                       # preview still built from the local branch commit
+    assert result is False                             # signals the source-branch push did not land
+    # the local branch commit exists even though the remote push failed
+    log = subprocess.run(["git", "log", "--oneline", "review-edits/02-methods"],
+                         cwd=str(repo), capture_output=True, text=True).stdout
+    assert "stage edit" in log
+    # left back on base for the review/jobs writeback
+    head = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"],
+                          cwd=str(repo), capture_output=True, text=True).stdout.strip()
+    assert head == "main"

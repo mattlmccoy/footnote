@@ -249,13 +249,27 @@ def _git(args, cwd, check=True):
                           stdout=sys.stderr, stderr=sys.stderr)
 
 
+def _push_remote(repo_dir, branch, token, remote_repo):
+    """Push ``HEAD`` to ``branch`` on an EXTERNAL repo via a token URL. Isolated so the caller can
+    make it best-effort — a read-only SOURCE_TOKEN (the documented clone PAT) makes this raise a
+    ``CalledProcessError`` (403), which must NOT crash the whole apply job."""
+    url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
+    _git(["push", url, f"HEAD:{branch}"], repo_dir)
+
+
 def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=None,
                   push=True, after_commit=None):
     """Create/switch to ``branch`` off ``base`` in ``repo_dir``, write ``changed`` ({relpath: text}),
-    commit, and (when ``push``) push to origin. ``after_commit`` (if given) runs WHILE the branch is
-    still checked out — used to build the preview from the branch's edited source. Returns to
-    ``base`` afterwards so the data-repo working tree is left on its default branch for the
-    review/jobs writeback."""
+    commit, and (when ``push``) push. ``after_commit`` (if given) runs WHILE the branch is still
+    checked out — used to build the preview from the branch's edited source. Returns to ``base``
+    afterwards so the data-repo working tree is left on its default branch for the review/jobs
+    writeback.
+
+    Returns True when the push landed (or nothing needed pushing), False when an EXTERNAL push was
+    attempted but failed. The external push is best-effort: a read-only ``SOURCE_TOKEN`` must still
+    leave the reviewer a working portal (preview built from the local branch commit + review
+    writeback) even though the source-repo ``review-edits`` branch could not be created. The push to
+    THIS data repo's own ``origin`` (token/remote_repo absent, always write-scoped) stays strict."""
     _git(["config", "user.name", "github-actions[bot]"], repo_dir, check=False)
     _git(["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"], repo_dir, check=False)
     # start the branch from base — create if new, RESET onto base if it exists (-B does both). Without the
@@ -268,17 +282,25 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
         fp.parent.mkdir(parents=True, exist_ok=True)
         fp.write_text(text, encoding="utf-8")
     _git(["add", *changed.keys()], repo_dir)
+    pushed = True
     if _git(["diff", "--cached", "--quiet"], repo_dir, check=False).returncode != 0:
         _git(["commit", "-m", msg], repo_dir)
         if push:
             if token and remote_repo:
-                url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
-                _git(["push", url, f"HEAD:{branch}"], repo_dir)
+                try:
+                    _push_remote(repo_dir, branch, token, remote_repo)
+                except subprocess.CalledProcessError as e:
+                    pushed = False
+                    print(f"[apply] source-branch push to {remote_repo} FAILED ({e}) — SOURCE_TOKEN "
+                          f"likely lacks write on the source repo. The edit is staged for portal review "
+                          f"(preview + review writeback) but no {branch} branch was created on the source.",
+                          file=sys.stderr)
             else:
                 _git(["push", "origin", branch], repo_dir)
     if after_commit is not None:
         after_commit()                 # build preview while the branch source is checked out
     _git(["checkout", base], repo_dir)
+    return pushed
 
 
 def _build_unit(prefix, unit_id, source_dir, out_path, workdir, label):
@@ -608,10 +630,14 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         changed = {os.path.normpath(os.path.join(src_rel, rel)): txt
                    for rel, txt in work.items() if files.get(rel) != txt}
         ev("build", "Building a preview of the staged changes…")
-        commit_branch(repo_dir, R.branch_for(ch), changed, base_branch,
-                      f"apply-edits: stage {staged} agent-reviewed edit(s) on {ch}",
-                      token=token, remote_repo=remote_repo, push=True,
-                      after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
+        pushed = commit_branch(repo_dir, R.branch_for(ch), changed, base_branch,
+                               f"apply-edits: stage {staged} agent-reviewed edit(s) on {ch}",
+                               token=token, remote_repo=remote_repo, push=True,
+                               after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
+        if pushed is False:
+            ev("build", f"Staged for your review in the portal. (The source repo {remote_repo} wasn't "
+               f"updated — its access token is read-only — so approve here and merge to the source "
+               f"with a write-scoped token.)", status="ok")
     _write_json(R.review_path(prefix, ch), kept_review)
     ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts.")
     return kept_review, staged
