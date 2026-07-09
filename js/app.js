@@ -1751,16 +1751,22 @@ function openSendMenu(){
     'run-agents': `<div class="smi" data-type="run-agents"><i class="ti ti-robot-face"></i><div style="min-width:0"><div style="font-weight:500">Run review agents</div><div class="smi-d" style="overflow-wrap:anywhere">${escapeHtml(_rvLabel)} · read-only critique</div></div></div>`,
     'export': `<div class="smi" data-type="export"><i class="ti ti-file-export"></i><div><div style="font-weight:500">Export this ${UNIT}…</div><div class="smi-d">Word · Markdown, with comments</div></div></div>`,
   };
-  menu.innerHTML = sendMenuActions(assistantOn(), _CFG.reviewAgents).map(a => rowFor[a]).join('');
+  // Cloud mode: a reopen entry for the live "Cloud activity" view, so closing it isn't a dead end —
+  // the last cloud job id is remembered per project (localStorage) and survives a reload.
+  const _lastCloud = processingMode(_CFG) === 'cloud' ? localStorage.getItem('footnote:lastcloud:' + (_projectId || DATA_REPO)) : null;
+  const cloudRow = _lastCloud ? `<div class="smi" data-type="cloud-activity"><i class="ti ti-activity-heartbeat"></i><div><div style="font-weight:500">Cloud activity</div><div class="smi-d">watch / review the latest cloud job</div></div></div>` : '';
+  menu.innerHTML = cloudRow + sendMenuActions(assistantOn(), _CFG.reviewAgents).map(a => rowFor[a]).join('');
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
-    el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else sendJob(el.dataset.type); }; });
+    el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else if (el.dataset.type === 'cloud-activity') openCloudActivity(_lastCloud); else sendJob(el.dataset.type); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 // Live "watch it work" view for a cloud review job. Polls <prefix>progress/<job>.jsonl every ~2.5s and
 // renders a narrated, per-comment activity feed (the say lines are primary; a "details" toggle shows the
 // raw machine fields). Stops on a terminal done/error event. Serverless — just the data-repo + token.
 function openCloudActivity(jobId){
+  if (!jobId) return;
+  try { localStorage.setItem('footnote:lastcloud:' + (_projectId || DATA_REPO), jobId); } catch (e) {}   // reopenable later
   document.getElementById('cloud-activity')?.remove();
   const panel = document.createElement('div'); panel.id = 'cloud-activity';
   panel.style.cssText = 'position:fixed;top:0;right:0;height:100vh;width:min(460px,92vw);z-index:60;background:var(--bg);border-left:.5px solid var(--border-2);box-shadow:-14px 0 44px rgba(0,0,0,.14);display:flex;flex-direction:column';
