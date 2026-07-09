@@ -12,6 +12,21 @@ test('parseLatexOutline excludes appendices (\\appendix boundary)', () => {
   const tex = '\\chapter{One}\nx.\n\\appendix\n\\chapter{App}\ny.';
   assert.equal(parseLatexOutline(tex).chapters.length, 1);
 });
+test('parseLatexOutline resolves NESTED \\input (chapter wrapper -> subfile -> sections)', () => {
+  // main \include's a thin chapter WRAPPER file, whose sections live in FURTHER \input'd subfiles
+  // (two levels deep: main -> ch_background -> ch_fundamentals). Requires recursive assembly.
+  const main = '\\input{ch_background}';
+  const files = {
+    ch_background: '\\chapter{Background}\n\\input{sub_a}\n\\input{sub_b}',
+    sub_a: '\\section{Fundamentals}\nFirst section body here.\n\\subsection{Dielectric Heating}\nDetail.',
+    sub_b: '\\section{Prior Work}\nSecond section body here.',
+  };
+  const o = parseLatexOutline(main, name => (name in files ? files[name] : null));
+  assert.equal(o.chapters.length, 1);
+  const secs = o.chapters[0].sections.map(s => s.title);
+  assert.deepEqual(secs, ['Fundamentals', 'Prior Work']);
+  assert.equal(o.chapters[0].sections[0].subsections[0].title, 'Dielectric Heating');
+});
 test('parseLatexOutline nests chapters > sections > subsections with n', () => {
   const tex = `\\title{My Doc}
 \\chapter{Introduction}
