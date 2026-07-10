@@ -74,7 +74,10 @@ CLAUDE_INSTRUCTIONS = (
     "  prose_before  the reader-facing text before your change (for the track-changes diff)\n"
     "  prose_after   the reader-facing text after your change\n"
     "source_before must appear VERBATIM exactly once in the source, or the edit is rejected. If a "
-    "comment is a question, return only id + response."
+    "comment is a question, return only id + response.\n\n"
+    "STYLE (hard rule): never use an em-dash — neither the Unicode '—' nor the LaTeX '---'. Use commas, "
+    "parentheses, a colon, or restructure the sentence instead. An edit that introduces an em-dash is "
+    "rejected."
 )
 
 # The outline (__outline__ pseudo-unit) carries comments on the document's STRUCTURE — headings and their
@@ -250,11 +253,14 @@ def _git(args, cwd, check=True):
 
 
 def _push_remote(repo_dir, branch, token, remote_repo):
-    """Push ``HEAD`` to ``branch`` on an EXTERNAL repo via a token URL. Isolated so the caller can
+    """Force-push ``HEAD`` to ``branch`` on an EXTERNAL repo via a token URL. Isolated so the caller can
     make it best-effort — a read-only SOURCE_TOKEN (the documented clone PAT) makes this raise a
-    ``CalledProcessError`` (403), which must NOT crash the whole apply job."""
+    ``CalledProcessError`` (403), which must NOT crash the whole apply job. The refspec is a FORCE update
+    (``+HEAD:branch``): a review-edits/<unit> branch is disposable and rebuilt from base each run (see
+    commit_branch's checkout -B), so re-staging over an existing remote branch must replace it, not fail
+    non-fast-forward."""
     url = f"https://x-access-token:{token}@github.com/{remote_repo}.git"
-    _git(["push", url, f"HEAD:{branch}"], repo_dir)
+    _git(["push", url, f"+HEAD:{branch}"], repo_dir)
 
 
 def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=None,
@@ -296,7 +302,9 @@ def commit_branch(repo_dir, branch, changed, base, msg, token=None, remote_repo=
                           f"(preview + review writeback) but no {branch} branch was created on the source.",
                           file=sys.stderr)
             else:
-                _git(["push", "origin", branch], repo_dir)
+                # force: the review-edits/<unit> branch is disposable (rebuilt from base each run), so a
+                # re-stage over the existing branch must replace it rather than fail non-fast-forward.
+                _git(["push", "--force", "origin", branch], repo_dir)
     if after_commit is not None:
         after_commit()                 # build preview while the branch source is checked out
     _git(["checkout", base], repo_dir)
@@ -602,12 +610,22 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
             # those makes every prose edit a false-positive conflict. Compare against the pre-edit baseline.
             baseline_undef = set(R.verify_refs("\n".join(work.values())))
             undefined = [k for k in R.verify_refs("\n".join(trial_files.values())) if k not in baseline_undef]
-            if undefined:
-                ev("verify", f"verify_refs found undefined references ({', '.join(undefined)}).",
-                   comment=cid, agent="verify_refs", status="conflict")
-                approved, reason = False, "undefined references: " + ", ".join(undefined)
+            # em-dash guard (delta): the edit must not INTRODUCE an em-dash (— or ---) — a hard style rule
+            # and a common AI tell. Pre-existing em-dashes don't block; only ones this edit adds do.
+            new_em = R.em_dash_count("\n".join(trial_files.values())) - R.em_dash_count("\n".join(work.values()))
+            if undefined or new_em > 0:
+                problems = []
+                if undefined:
+                    problems.append("undefined references: " + ", ".join(undefined))
+                if new_em > 0:
+                    problems.append("introduced an em-dash (— or ---); rewrite with commas, parentheses, "
+                                    "or a restructured sentence — never an em-dash")
+                say = ("verify_refs found undefined references (%s)." % ", ".join(undefined)) if undefined \
+                    else "The edit introduced an em-dash, which the style rules forbid."
+                ev("verify", say, comment=cid, agent="verify_refs", status="conflict")
+                approved, reason = False, "; ".join(problems)
             else:
-                ev("verify", "References check out.", comment=cid, agent="verify_refs", status="ok")
+                ev("verify", "References check out; no em-dashes.", comment=cid, agent="verify_refs", status="ok")
                 verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
                 for v in verdicts:
                     ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],

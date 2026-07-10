@@ -579,6 +579,15 @@ def verify_refs(tex):
     return sorted(refs - labels)
 
 
+def em_dash_count(text):
+    """How many em-dashes are in ``text`` — both the Unicode ``—`` (U+2014) and the LaTeX ``---``. The
+    en-dash (``--`` / ``–``) is intentionally NOT counted. Used delta-wise so the writer gate blocks an
+    edit that INTRODUCES an em-dash (a common AI tell and a hard style rule) without touching any that
+    pre-exist in the source. Pure."""
+    t = text or ""
+    return t.count("—") + t.count("---")
+
+
 def edit_in_source(source_text, edit):
     """Truthful-merge assertion (Item 5): the edit's ``after`` text actually appears in the (merged)
     source. Whitespace-tolerant. Returns False when the edit did not land, so the caller marks the
