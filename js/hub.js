@@ -6,7 +6,7 @@ import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from '.
 import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=2df623a';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=d2532a6';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
-import { startWatch as startNetWatch } from './netstatus.js?v=9c958aa';
+import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 startNetWatch();
 showBuildTag(import.meta.url);

@@ -13,7 +13,7 @@ import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, str
 import { parseLatexTitle } from './docparse.js?v=534763c';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { startWatch as startNetWatch } from './netstatus.js?v=9c958aa';
+import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a764ebc';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
