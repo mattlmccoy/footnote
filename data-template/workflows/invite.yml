@@ -83,8 +83,10 @@ jobs:
           if git diff --cached --quiet; then echo "no status change"; else
             git commit -m "invite: update advisor invite status [skip ci]"
             # the browser may have written advisors.json since checkout — rebase onto the remote and retry
-            for attempt in 1 2 3; do
-              git push && break
-              echo "push rejected — rebasing (attempt $attempt)"; git pull --rebase origin main || { git rebase --abort; break; }
+            for attempt in 1 2 3 4 5; do
+              git push && exit 0
+              echo "push rejected — rebasing (attempt $attempt)"; git pull --rebase origin main || { git rebase --abort || true; break; }
             done
+            echo "::error::invite writeback push failed after retries — advisor status not persisted; re-run to reconcile" >&2
+            exit 1
           fi

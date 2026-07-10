@@ -61,9 +61,11 @@ jobs:
             echo "no content changes"
           else
             git commit -m "render: rebuild reading view [skip ci]"
-            for attempt in 1 2 3; do
-              git push && break
+            for attempt in 1 2 3 4 5; do
+              git push && exit 0
               echo "push rejected — rebasing (attempt $attempt)"
-              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || { git rebase --abort; break; }
+              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || { git rebase --abort || true; break; }
             done
+            echo "::error::render writeback push failed after retries — reading view not published; re-run to reconcile" >&2
+            exit 1
           fi
