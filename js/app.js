@@ -9,7 +9,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
 import { parseEvents, groupByComment, isTerminal, summaryLine, usageTotals, usageLine } from './cloudprogress.js?v=90535e9';
-import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=a1734d0';
+import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=agpick1';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
@@ -1900,39 +1900,66 @@ async function queueExport(scope, formats, opts){
 
 // Pick which review agents run over the CURRENT chapter (a subset of the configured reviewAgents), so
 // you can target one critic instead of the whole panel. The engine already honors job.agents.
-function agentPickerDialog(scope){
+async function agentPickerDialog(scope){
   const agents = _CFG.reviewAgents || [];
   if (!agents.length){ flash('No review agents are configured for this project.'); return; }
   document.getElementById('agdlg')?.remove();
   const title = `${unitLabel(chMeta(scope), UNIT)} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
   const back = document.createElement('div'); back.id = 'agdlg';
   back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
-  back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
+  const shell = rows => `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(500px,94vw);max-height:88vh;display:flex;flex-direction:column;padding:20px 22px">
       <div style="font-size:16px;font-weight:600;margin-bottom:3px">Run review agents</div>
-      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Read-only critique of ${title}. Pick which agents to run; each appends its findings as comments.</div>
-      <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" id="ag-all" style="padding:2px 8px;font-size:11px">All</button><button class="btn" id="ag-none" style="padding:2px 8px;font-size:11px">None</button></div>
-      <div style="max-height:44vh;overflow:auto">${agents.map(a => `<label class="exp-row"><input type="checkbox" class="ag-a" value="${escapeHtml(a)}" checked> ${escapeHtml(a)}</label>`).join('')}</div>
-      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Read-only critique of ${title}. Each selected agent appends its findings as comments.</div>
+      ${rows}
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-shrink:0">
         <button class="btn" id="ag-cancel">Cancel</button>
-        <button class="btn btn-primary" id="ag-go"><i class="ti ti-robot-face"></i>Run selected</button></div>
-      <div id="ag-stat" style="font-size:12px;color:var(--text-3);margin-top:8px"></div></div>`;
+        <button class="btn btn-primary" id="ag-go" disabled><i class="ti ti-robot-face"></i>Run selected</button></div>
+      <div id="ag-stat" style="font-size:12px;color:var(--text-3);margin-top:8px;flex-shrink:0"></div></div>`;
+  back.innerHTML = shell(`<div style="font-size:12px;color:var(--text-3);padding:14px 0">Loading agents…</div>`);
   document.body.appendChild(back);
-  const q = s => back.querySelector(s), boxes = () => [...back.querySelectorAll('.ag-a')];
   back.onclick = e => { if (e.target === back) back.remove(); };
+  back.querySelector('#ag-cancel').onclick = () => back.remove();
+
+  // Load the catalog so we can show real names/descriptions and only offer CLOUD-runnable critics —
+  // doers (writer/…) and the user's local specialized agents can't run here (engine skips them).
+  const catalog = await loadAgentCatalog(tok(), _CFG).catch(() => []);
+  if (!document.body.contains(back)) return;                       // cancelled while loading
+  const { runnable, localOnly } = splitAgentsForCloud(catalog, agents);
+
+  const row = a => `<label class="ag-item" style="display:flex;gap:10px;align-items:flex-start;padding:9px 11px;border:.5px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer">
+      <input type="checkbox" class="ag-a" value="${escapeHtml(a.id)}" checked style="margin-top:2px">
+      <span style="flex:1;min-width:0">
+        <span style="font-weight:600;font-size:12.5px">${escapeHtml(a.displayName)}</span>
+        ${a.description ? `<span style="display:block;font-size:11px;color:var(--text-3);margin-top:2px;line-height:1.4">${escapeHtml(a.description)}</span>` : ''}
+      </span></label>`;
+  const localNote = localOnly.length
+    ? `<div style="margin-top:12px;font-size:11px;color:var(--text-3);line-height:1.5;border-top:.5px solid var(--border);padding-top:10px">
+        <i class="ti ti-device-laptop" style="font-size:12px;margin-right:3px"></i>${localOnly.length} agent${localOnly.length===1?'':'s'} run on your machine (local runner), not in the cloud, so ${localOnly.length===1?'it is':'they are'} not shown here: ${localOnly.map(a=>escapeHtml(a.displayName)).join(', ')}.</div>`
+    : '';
+  const body = runnable.length
+    ? `<div style="display:flex;gap:8px;margin-bottom:8px;flex-shrink:0"><button class="btn" id="ag-all" style="padding:2px 8px;font-size:11px">All</button><button class="btn" id="ag-none" style="padding:2px 8px;font-size:11px">None</button><span id="ag-count" style="align-self:center;font-size:11px;color:var(--text-3);margin-left:auto"></span></div>
+       <div style="display:grid;gap:6px;overflow:auto;min-height:0">${runnable.map(row).join('')}</div>${localNote}`
+    : `<div style="font-size:12.5px;color:var(--text-2);padding:6px 0">None of this project's configured agents can run in the cloud.${localNote}</div>`;
+  back.innerHTML = shell(body);
+  back.onclick = e => { if (e.target === back) back.remove(); };
+  const q = s => back.querySelector(s), boxes = () => [...back.querySelectorAll('.ag-a')];
+  const refresh = () => { const n = boxes().filter(b=>b.checked).length; const c = q('#ag-count'); if (c) c.textContent = `${n} selected`; q('#ag-go').disabled = !n; };
   q('#ag-cancel').onclick = () => back.remove();
-  q('#ag-all').onclick = () => boxes().forEach(b => b.checked = true);
-  q('#ag-none').onclick = () => boxes().forEach(b => b.checked = false);
+  if (q('#ag-all')) q('#ag-all').onclick = () => { boxes().forEach(b => b.checked = true); refresh(); };
+  if (q('#ag-none')) q('#ag-none').onclick = () => { boxes().forEach(b => b.checked = false); refresh(); };
+  boxes().forEach(b => b.onchange = refresh);
+  refresh();
   q('#ag-go').onclick = async () => {
     const picked = boxes().filter(b => b.checked).map(b => b.value);
     if (!picked.length){ q('#ag-stat').textContent = 'Pick at least one agent.'; return; }
-    q('#ag-stat').textContent = 'Queuing…';
+    q('#ag-stat').textContent = 'Queuing…'; q('#ag-go').disabled = true;
     try {
       const jid = await queueRunAgents(scope, picked);
       q('#ag-stat').textContent = `Queued ${picked.length} agent(s) ✓ — findings will appear as comments in a few minutes.`;
       flash(`Requested review of ${unitLabel(chMeta(scope), UNIT)} by ${picked.length} agent(s)`);
       back.remove();
       if (jid && processingMode(_CFG) === 'cloud') openCloudActivity(jid);   // watch it live + usage, like apply-edits
-    } catch(e){ q('#ag-stat').textContent = 'Failed: ' + e.message; }
+    } catch(e){ q('#ag-stat').textContent = 'Failed: ' + e.message; q('#ag-go').disabled = false; }
   };
 }
 async function queueRunAgents(scope, agents){
