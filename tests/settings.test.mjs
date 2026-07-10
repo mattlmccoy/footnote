@@ -13,6 +13,11 @@ test('Document section is first; glyph reflects whether a title is set', () => {
   assert.equal(noTitle[0].glyph, null);
 });
 
+test('Access section is labelled "Access & tokens" (lists every credential)', () => {
+  const s = settingsSections(cfg, { aiOn:false });
+  assert.equal(s.find(x => x.id === 'access').label, 'Access & tokens');
+});
+
 test('AI off: sections are document, email, access, ai(last, muted); NO agents', () => {
   const s = settingsSections(cfg, { aiOn:false, claudeConnected:false, emailConfigured:false, hasToken:false });
   assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'ai']);

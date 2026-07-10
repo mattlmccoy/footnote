@@ -178,6 +178,16 @@ const STEPS = [
   <div class="note info"><span class="ic">◆</span><div>Footnote runs entirely on <b>free GitHub infrastructure</b> (Pages + Actions). There is no Footnote server and no account to pay for — your token and your files stay in your own GitHub and your own browser.</div></div>
   <p>The steps on the left mirror what you'll actually click. Work top to bottom; you can jump back anytime.</p>` },
 
+{ nav:'How your repos work', eyebrow:'Getting started', title:'How Footnote uses your repos',
+  body:`
+  <p class="lead">Footnote uses your GitHub repos in three roles. In the simple case — you upload a <code>.tex</code>, or keep one workspace — they can be <b>one physical repo</b>: the Review repo is also the workspace, and your source lives inside it.</p>
+  <ul>
+    <li><b>Source repo</b> — your source of truth: the real LaTeX (often Overleaf-linked). Footnote reads it, and only ever writes a <code>review-edits/&lt;unit&gt;</code> branch here when you approve an edit; your <code>main</code> branch is never touched by the tool.</li>
+    <li><b>Review repo</b> — the working copy Footnote drives: comments, staged edits, the rendered reading view, and the job queue. An effective mirror of the source that your reviewers read against.</li>
+    <li><b>Workspace repo</b> — optional: one private repo that houses several projects' Review repos together. For a single paper, your Review repo <i>is</i> the workspace.</li>
+  </ul>
+  <div class="note info"><span class="ic">◆</span><div>Your <b>Owner key</b> (next step) controls your Source and Review repos. The <b>Reviewer key</b> is a separate, least-privilege token scoped to only the Review repo — it's what gets emailed to reviewers.</div></div>` },
+
 { nav:'GitHub account', eyebrow:'Step 1', title:'Have a GitHub account',
   body:`
   <p class="lead">GitHub is where your source lives and where Footnote stores review comments. If you already have an account, skip straight to the next step.</p>

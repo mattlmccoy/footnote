@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {
   CLASSIC_OWNER_SCOPES, classicTokenUrl, fineGrainedUrl,
   OWNER_KEY_PERMISSIONS, REVIEWER_KEY_PERMISSIONS, SOURCE_KEY_PERMISSIONS,
-  permissionNames, tokenKind, reviewerKeyWarning, CREDENTIALS,
+  permissionNames, tokenKind, reviewerKeyWarning, CREDENTIALS, credentialStatus,
 } from '../js/tokenscopes.js';
 
 test('classic owner scopes are repo + workflow (fully URL-prefillable, sufficient)', () => {
@@ -73,6 +73,34 @@ test('reviewerKeyWarning flags a broad classic token pasted as the Reviewer key'
   // a fine-grained token is the right shape → no warning
   assert.equal(reviewerKeyWarning('github_pat_ok'), '');
   assert.equal(reviewerKeyWarning(''), '');
+});
+
+test('credentialStatus(owner): unset / under-scoped / ok', () => {
+  assert.equal(credentialStatus('owner', { hasOwnerKey: false }).glyph, 'warn');
+  const under = credentialStatus('owner', { hasOwnerKey: true, ownerScopeOk: false });
+  assert.equal(under.glyph, 'warn');
+  assert.match(under.text, /Secrets|Actions|scope/i);
+  assert.equal(credentialStatus('owner', { hasOwnerKey: true, ownerScopeOk: true }).glyph, 'ok');
+  // scope unknown (couldn't probe) but connected → still ok/neutral, not a false alarm
+  assert.notEqual(credentialStatus('owner', { hasOwnerKey: true, ownerScopeOk: null }).glyph, 'warn');
+});
+
+test('credentialStatus(reviewer): reflects whether ADVISOR_KEY is set', () => {
+  assert.equal(credentialStatus('reviewer', { reviewerSet: true }).glyph, 'ok');
+  const off = credentialStatus('reviewer', { reviewerSet: false });
+  assert.equal(off.glyph, 'warn');
+  assert.match(off.text, /Reviewers/i);   // points to the Reviewers page
+});
+
+test('credentialStatus(source): only warns when the source is external and unset', () => {
+  assert.equal(credentialStatus('source', { sourceExternal: false }).glyph, null);   // not needed
+  assert.equal(credentialStatus('source', { sourceExternal: true, sourceSet: true }).glyph, 'ok');
+  assert.equal(credentialStatus('source', { sourceExternal: true, sourceSet: false }).glyph, 'warn');
+});
+
+test('credentialStatus(claude): muted when off, ok when connected', () => {
+  assert.equal(credentialStatus('claude', { claudeConnected: true }).glyph, 'ok');
+  assert.equal(credentialStatus('claude', { claudeConnected: false }).glyph, null);
 });
 
 test('CREDENTIALS uses the standardized vocabulary and maps to stable internal names', () => {
