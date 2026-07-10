@@ -1,6 +1,6 @@
 // Pure helpers for the document import + convert flow. No I/O — unit-tested in tests/importdoc.test.mjs.
 // The import UI (app.js / hub.js) uses these to decide how to handle an uploaded file and where to put it.
-import { parseLatexOutline } from './docparse.js?v=e7b0cc7';
+import { parseLatexOutline } from './docparse.js?v=534763c';
 
 // Which converter handles an uploaded file, by extension. 'tex' = commit as-is; 'docx' = pandoc Action.
 // Anything else (md/pdf/none) is unsupported → null.
