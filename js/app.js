@@ -1,7 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=f0898b1';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=5fdbd60';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=modelbudget1';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=079b317';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=2df623a';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
