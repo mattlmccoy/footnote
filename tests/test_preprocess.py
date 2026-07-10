@@ -193,3 +193,23 @@ def test_unit_equation_context_chapter_then_article():
     afiles = {"main.tex": ("\\section{S1}\\begin{equation}x=y\\end{equation}\n"
                            "\\section{S2}\\begin{equation}p=q\\end{equation}")}
     assert P.unit_equation_context(arows, "s2", reader_from(afiles), "main.tex") == ("", 1)
+
+
+def test_unit_body_index_slice_ignores_frontmatter_starred_chapters():
+    """The dtd bug: a shared main.tex with a frontmatter \\chapter*{Summary} before the numbered
+    chapters. chapters.json lists ONLY the numbered chapters, so index-slicing must NOT count the
+    starred frontmatter block — else unit N renders chapter N-1 (ch_platform showed ch_background)."""
+    rows = [{"id": "ch_intro", "n": 1, "title": "Intro", "sourceFile": "main.tex"},
+            {"id": "ch_background", "n": 2, "title": "Background", "sourceFile": "main.tex"},
+            {"id": "ch_platform", "n": 3, "title": "Platform", "sourceFile": "main.tex"}]
+    files = {"main.tex": (
+        "\\documentclass{book}\\begin{document}\n"
+        "\\chapter*{Summary}\nUnnumbered summary prose.\n"      # frontmatter, NOT a reading unit
+        "\\chapter{Intro}\nIntro prose.\n"
+        "\\chapter{Background}\nBackground prose.\n"
+        "\\chapter{Platform}\nPlatform prose.\n"
+        "\\end{document}\n")}
+    body = P.unit_body(rows, "ch_platform", reader_from(files), "main.tex")
+    assert "Platform prose." in body
+    assert "Background prose." not in body      # the off-by-one bug returned this
+    assert "Unnumbered summary" not in body

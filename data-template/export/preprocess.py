@@ -101,10 +101,16 @@ def document_body(tex):
 
 
 def split_top_level(tex, level):
-    """Split a single file's body into blocks, one per top-level sectioning command
-    (\\chapter or \\section). Text before the first command is dropped (preamble/intro)."""
+    """Split a single file's body into blocks, one per NUMBERED top-level sectioning command
+    (\\chapter or \\section). Text before the first command is dropped (preamble/intro).
+
+    STARRED commands (\\chapter*, \\section*) are frontmatter/backmatter (Summary, Acknowledgments,
+    unnumbered entries), NOT reading units — chapters.json lists only the numbered ones. Counting a
+    \\chapter* as a block shifts every subsequent unit's index by one, so unit N renders unit N-1 (the
+    live dtd bug: ch_platform rendered ch_background). Excluding the star keeps the block list aligned
+    1:1 with the numbered units the manifest carries."""
     cmd = TOP_CMD[level]
-    marker = re.compile(r"\\" + cmd + r"\*?\s*(?:\[[^\]]*\])?\s*\{")
+    marker = re.compile(r"\\" + cmd + r"(?!\*)\s*(?:\[[^\]]*\])?\s*\{")
     starts = [m.start() for m in marker.finditer(tex)]
     if not starts:
         return [tex]
