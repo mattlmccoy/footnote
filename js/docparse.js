@@ -30,6 +30,16 @@ function stripComments(tex) {
   return String(tex).replace(/(^|[^\\])%.*$/gm, '$1');
 }
 
+// Index of the appendix boundary in a LaTeX source: standard \appendix, or a \begin{...appendices}
+// environment (GaTech thesis classes wrap appendices in \begin{theappendices}). Returns the match index,
+// or Infinity when there is none. POLICY-FREE — callers decide what the boundary means: parseLatexOutline
+// DROPS headings at/after it (outline = real chapters only); parseLatexChapters KEEPS them, labeled as
+// appendix units (A, B, …). One detector, two policies — so the two parsers can never drift apart.
+export function appendixBoundary(text) {
+  const m = /\\appendix\b|\\begin\s*\{[a-zA-Z]*appendices\}/.exec(String(text));
+  return m ? m.index : Infinity;
+}
+
 // Title-attached marks: affiliations / funding / footnotes that authors hang on the title but are NOT part
 // of the title text. Removed (command + balanced-brace arg) before cleaning, or they leak into the title.
 const _TITLE_MARKS = ['thanks', 'footnote', 'tnoteref', 'thanksref', 'fnref', 'textsuperscript', 'inst',
@@ -150,11 +160,9 @@ function _firstSentence(tex) {
 export function parseLatexOutline(mainTex, resolveFile = () => null) {
   const clean = stripComments(String(mainTex || ''));
   const full = _assembleDoc(clean, resolveFile);
-  // Appendices are NOT chapters. Standard LaTeX marks the boundary with \appendix; thesis classes (e.g.
-  // GaTech) use a \begin{...appendices} environment. Headings at/after the boundary are appendices — drop
-  // them so the outline shows the real chapters, matching an \appendix-aware chapter count.
-  const _appM = /\\appendix\b|\\begin\s*\{[a-zA-Z]*appendices\}/.exec(full);
-  const _appPos = _appM ? _appM.index : Infinity;
+  // Appendices are NOT chapters: drop headings at/after the boundary so the outline shows the real
+  // chapters (parseLatexChapters keeps them instead, labeled A/B/…). Shared, policy-free detector.
+  const _appPos = appendixBoundary(full);
   const ALL = ['chapter', 'section', 'subsection', 'subsubsection'];
   const topIdx = ALL.findIndex(lvl => firstSectioning(full, lvl));
   const root = { title: parseDocTitle(mainTex, resolveFile), intro: '', chapters: [] };
@@ -333,22 +341,22 @@ export function parseLatexChapters(mainTex, resolveFile = () => null) {
   const clean = stripComments(mainTex);
   const includes = resolveIncludes(clean, resolveFile);
   const level = pickLevel(clean, includes.map(i => i.content));
-  // \appendix marks the boundary: units at/after it are appendices. We look for it in the main file
-  // (the common pattern: \appendix sits in main.tex before the appendix \include's / \section's).
-  const appM = /\\appendix\b/.exec(clean);
-  const appPos = appM ? appM.index : -1;
+  // Units at/after the appendix boundary are appendices (KEPT, labeled A/B/… by finalizeChapters — the
+  // opposite policy to parseLatexOutline, which drops them). The boundary sits in the main file, before
+  // the appendix \include's / \section's. Shared, policy-free detector; Infinity when there is none.
+  const appPos = appendixBoundary(clean);
   const raw = [];
   for (const inc of includes) {
     if (inc.content == null) continue;
     const title = (firstSectioning(inc.content, level) || {}).title;
-    if (title) raw.push({ title, id: slugifyId(inc.path.split('/').pop()), sourceFile: `${inc.path}.tex`, appendix: appPos >= 0 && inc.at > appPos });
+    if (title) raw.push({ title, id: slugifyId(inc.path.split('/').pop()), sourceFile: `${inc.path}.tex`, appendix: inc.at > appPos });
   }
   // Single-file fallback: no includes produced units → parse the level's commands in the main file,
   // tracking each command's position so the ones after \appendix are marked appendix.
   if (raw.length === 0) {
     let pos = 0, hit;
     while ((hit = firstSectioning(clean, level, pos))) {
-      raw.push({ title: hit.title, id: slugifyId(hit.title), sourceFile: 'main.tex', appendix: appPos >= 0 && hit.start > appPos });
+      raw.push({ title: hit.title, id: slugifyId(hit.title), sourceFile: 'main.tex', appendix: hit.start > appPos });
       pos = hit.end + 1;
     }
   }
