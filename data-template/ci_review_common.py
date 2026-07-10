@@ -465,6 +465,27 @@ def build_apply_task(job, review, files):
             "revision": bool(job.get("revision")), "revise_note": job.get("revise_note", "")}
 
 
+def staged_edit_spec(comment):
+    """Reconstruct the writer's apply spec from a comment that ALREADY carries a staged edit, so a
+    NON-revision re-drain (e.g. rebuilding a preview after a render bug) can re-apply the SAME edit
+    deterministically instead of re-running the writer — which would re-roll wording the author may have
+    liked. Only a ``replace`` edit is reusable (an insertion's verbatim anchor is ambiguous to re-apply);
+    returns None when there's nothing reusable. Pure."""
+    se = (comment or {}).get("source_edit") or {}
+    find, repl = se.get("find"), se.get("replacement")
+    if not find or repl is None or (se.get("op") or "replace") != "replace":
+        return None
+    staged = (comment or {}).get("staged_edit") or {}
+    return {
+        "id": (comment or {}).get("id"),
+        "response": ((comment or {}).get("claude") or {}).get("response", "") or (comment or {}).get("response", ""),
+        "source_before": find,
+        "source_after": repl,
+        "prose_before": staged.get("before", ""),
+        "prose_after": staged.get("after", ""),
+    }
+
+
 def stage_claude_edit(comment, branch, ts, response, prose_before, prose_after,
                       source_before=None, source_after=None):
     """A comment STAGED from a Claude edit: records Claude's response, the reader-facing diff (prose
