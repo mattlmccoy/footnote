@@ -45,3 +45,24 @@ export function summaryLine(events) {
   if (!events || !events.length) return '';
   return events[events.length - 1].say || '';
 }
+
+// The Claude spend tally for this run — the latest event carrying a `usage` object, or null. The engine
+// emits it near the end (phase 'usage'); the header renders it so a reviewer isn't burning credits blind.
+export function usageTotals(events) {
+  for (let i = (events || []).length - 1; i >= 0; i--) {
+    if (events[i] && events[i].usage) return events[i].usage;
+  }
+  return null;
+}
+
+// Compact header string for a usage tally ('' when none): "$0.0123 · 2.3k tokens · 3 calls".
+export function usageLine(u) {
+  if (!u) return '';
+  const cost = Number(u.cost_usd || 0);
+  const tok = Number(u.input_tokens || 0) + Number(u.output_tokens || 0);
+  const tks = tok >= 1000 ? (tok / 1000).toFixed(1) + 'k' : String(tok);
+  let s = `$${cost.toFixed(4)} · ${tks} tokens`;
+  if (u.calls) s += ` · ${u.calls} call${u.calls === 1 ? '' : 's'}`;
+  if (u.errors) s += ` · ${u.errors} failed`;
+  return s;
+}

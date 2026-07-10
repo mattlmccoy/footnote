@@ -39,3 +39,21 @@ test('summaryLine reflects the latest activity', () => {
   assert.equal(summaryLine(done), 'All comments processed.');
   assert.equal(summaryLine([]), '');
 });
+
+import { usageTotals, usageLine } from '../js/cloudprogress.js';
+
+test('usageTotals returns the latest usage tally, or null', () => {
+  assert.equal(usageTotals(parseEvents(JL)), null);
+  const withUsage = parseEvents(JL) .concat([{ job:'j1', seq:5, phase:'usage', say:'…',
+    usage:{ cost_usd:0.0123, input_tokens:1200, output_tokens:340, calls:3, errors:0 } }]);
+  const u = usageTotals(withUsage);
+  assert.equal(u.cost_usd, 0.0123);
+  assert.equal(u.calls, 3);
+});
+
+test('usageLine formats cost + tokens + calls', () => {
+  assert.equal(usageLine(null), '');
+  assert.equal(usageLine({ cost_usd:0.0123, input_tokens:1200, output_tokens:340, calls:3 }),
+    '$0.0123 · 1.5k tokens · 3 calls');
+  assert.match(usageLine({ cost_usd:0, input_tokens:0, output_tokens:0, calls:0, errors:1 }), /failed/);
+});

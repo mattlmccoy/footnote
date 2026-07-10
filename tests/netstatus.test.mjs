@@ -62,3 +62,16 @@ test('bannerText for unreachable points at GitHub + blockers (actionable), not "
   assert.match(t, /GitHub/);
   assert.match(t, /block|extension|ad.?block/i);
 });
+
+import { shouldShow } from '../js/netstatus.js';
+
+test('shouldShow: never for ok/empty', () => {
+  assert.equal(shouldShow('ok', null), false);
+  assert.equal(shouldShow(undefined, null), false);
+});
+
+test('shouldShow: shows an un-dismissed state, hides the exact dismissed one', () => {
+  assert.equal(shouldShow('slow', null), true);
+  assert.equal(shouldShow('slow', 'slow'), false);          // user dismissed 'slow' → stay hidden
+  assert.equal(shouldShow('offline', 'slow'), true);        // escalated to a different state → show again
+});

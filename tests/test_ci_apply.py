@@ -606,3 +606,22 @@ def test_staged_edit_spec_reconstructs_a_reusable_spec():
 def test_staged_edit_spec_none_when_nothing_staged():
     assert R.staged_edit_spec({"id": "c1"}) is None
     assert R.staged_edit_spec({"id": "c1", "source_edit": {"op": "insert", "find": "", "replacement": "x"}}) is None
+
+
+# ---- usage/cost extraction from the claude CLI envelope (Cloud Activity credit visibility) ----
+
+def test_claude_usage_extracts_cost_and_tokens():
+    import ci_apply as A
+    env = json.dumps({"type": "result", "total_cost_usd": 0.0123, "result": "[]",
+                      "usage": {"input_tokens": 1200, "output_tokens": 340,
+                                "cache_read_input_tokens": 800}})
+    u = A.claude_usage(env)
+    assert abs(u["cost_usd"] - 0.0123) < 1e-9
+    assert u["input_tokens"] == 2000            # input + cache-read (+creation) = total context billed
+    assert u["output_tokens"] == 340
+
+
+def test_claude_usage_handles_legacy_cost_field_and_garbage():
+    import ci_apply as A
+    assert abs(A.claude_usage(json.dumps({"cost_usd": 0.5, "usage": {}}))["cost_usd"] - 0.5) < 1e-9
+    assert A.claude_usage("not json") == {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0}

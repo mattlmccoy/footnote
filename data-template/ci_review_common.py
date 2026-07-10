@@ -553,10 +553,11 @@ def _norm_ws(s):
 
 # ------------------------------------------------ cloud parity + live progress (pure)
 
-def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit=None, ts=""):
+def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit=None, ts="", usage=None):
     """Build one narrated progress event for <prefix>progress/<job>.jsonl. ``say`` is the human
     sentence the live view shows; phase/status/agent/comment drive the row's visual state; ``edit`` is
-    an optional before/after diff. Empty optionals are omitted so the stream stays lean. Pure."""
+    an optional before/after diff; ``usage`` is an optional {cost_usd,input_tokens,output_tokens,calls}
+    tally the Cloud Activity header renders. Empty optionals are omitted so the stream stays lean. Pure."""
     e = {"job": job, "seq": seq, "phase": phase, "status": status, "say": say}
     if ts:
         e["ts"] = ts
@@ -566,6 +567,8 @@ def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit
         e["agent"] = agent
     if edit:
         e["edit"] = edit
+    if usage:
+        e["usage"] = usage
     return e
 
 
