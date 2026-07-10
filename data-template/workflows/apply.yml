@@ -46,6 +46,16 @@ jobs:
             texlive-latex-base texlive-latex-extra texlive-pictures texlive-science
       - name: Install Claude Code CLI (used by apply-edits/run-agents when Claude is connected)
         run: npm install -g @anthropic-ai/claude-code || echo "claude CLI unavailable — Claude jobs will wait"
+      - name: Sync to latest main before draining
+        # checkout@v4 lands on the SHA that triggered the run, which is behind a prior serialized run's
+        # [skip ci] drain commit. Draining that stale jobs.json makes the whole-file writeback conflict on
+        # rebase (and the old loop silently dropped it). With the `apply` concurrency group serializing
+        # runs, resetting to the current tip means this run drains the up-to-date queue and its writeback
+        # fast-forwards cleanly.
+        run: |
+          REF="${GITHUB_REF_NAME:-main}"
+          git fetch origin "$REF"
+          git checkout -B "$REF" "origin/$REF"
       - name: Drain review job queue
         env:
           SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
@@ -63,14 +73,18 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          REF="${GITHUB_REF_NAME:-main}"
           git add -A
           if git diff --cached --quiet; then
-            echo "no queue changes"
-          else
-            git commit -m "apply: drain review queue [skip ci]"
-            for attempt in 1 2 3; do
-              git push && break
-              echo "push rejected — rebasing (attempt $attempt)"
-              git pull --rebase origin "${GITHUB_REF_NAME:-main}" || { git rebase --abort; break; }
-            done
+            echo "no queue changes"; exit 0
           fi
+          git commit -m "apply: drain review queue [skip ci]"
+          for attempt in 1 2 3 4 5; do
+            git push origin "HEAD:$REF" && exit 0
+            echo "push rejected — rebasing onto latest (attempt $attempt)"
+            # a concurrent [skip ci] push (e.g. render committing content/) touches different files, so the
+            # rebase is clean; if it ever conflicts, abort and fail LOUDLY rather than dropping the writeback.
+            git pull --rebase origin "$REF" || { git rebase --abort || true; break; }
+          done
+          echo "::error::writeback push failed after retries — the job stays queued (branch may already be pushed); re-dispatch apply to reconcile" >&2
+          exit 1
