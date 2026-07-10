@@ -18,13 +18,13 @@ import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSh
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
-import { settingsSections, resolveSection } from './settings.js?v=5b66ea0';
+import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
-import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=0000000';
-import { repoExplainerHtml } from './repoexplainer.js?v=0000000';
+import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=83ca70b';
+import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 startNetWatch();
 showBuildTag(import.meta.url);
