@@ -715,4 +715,4 @@ def test_run_agents_stops_at_budget_cap(workspace_repo, monkeypatch):
 
     assert ran == ["adversary"]                # the 2nd agent never ran — cap tripped after the 1st
     events = [json.loads(l) for l in (data / "proj" / "progress" / "g1.jsonl").read_text().splitlines() if l.strip()]
-    assert any("budget cap" in (e.get("say") or "").lower() for e in events)
+    assert any("call cap" in (e.get("say") or "").lower() for e in events)

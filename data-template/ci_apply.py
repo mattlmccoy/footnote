@@ -668,6 +668,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
 
     usage = reset_usage()                      # per-run Claude spend tally for the Cloud Activity header
     caps = R.budget_caps(os.environ)
+    usage["cap_calls"], usage["cap_usd"] = caps["calls"], caps["cost_usd"]   # for the app's budget gauge
     model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
     ev("read", f"Starting review of {len(ids)} comment(s) on {ch} · model {model}.")
     work = dict(files)
@@ -683,9 +684,10 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         # budget guard: stop before starting a comment that would push past the per-job cap, so a big
         # queue can't burn tokens without bound. A reuse (no writer call) is exempt — it spends nothing.
         needs_writer = job.get("revision") or not R.staged_edit_spec(comment)
-        if needs_writer and R.over_budget(usage, caps["cost_usd"], caps["calls"]):
-            ev("stage", f"Stopped at your cloud budget cap ({_usage_say(usage)}) — {len(ids) - idx} comment(s) "
-               f"not processed. Raise the cap in Settings or send fewer at once.", status="conflict", usage=dict(usage))
+        reason = R.over_budget(usage, caps["cost_usd"], caps["calls"], caps["errors"]) if needs_writer else ""
+        if reason:
+            ev("stage", _stop_say(reason, usage) + f" — {len(ids) - idx} comment(s) not processed.",
+               status="conflict", usage=dict(usage))
             stopped = True
             break
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
@@ -803,6 +805,17 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
     tail = " (stopped early at the budget cap)" if stopped else ""
     ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts{tail}.")
     return kept_review, staged
+
+
+def _stop_say(reason, usage):
+    """A clear one-liner for why a job stopped early — a failure loop vs a spend cap — so the reviewer
+    knows whether it hit a wall or their budget."""
+    if reason == "failures":
+        return (f"Stopped — Claude kept failing ({usage.get('errors', 0)} failed call(s) with no results; "
+                f"check your Claude token or remaining credits)")
+    if reason == "cost":
+        return f"Stopped at your cost cap ({_usage_say(usage)})"
+    return f"Stopped at your call cap ({_usage_say(usage)}). Raise it in Settings or send fewer at once"
 
 
 def _usage_say(u):
@@ -958,14 +971,16 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 return e
             ausage = reset_usage()
             caps = R.budget_caps(os.environ)
+            ausage["cap_calls"], ausage["cap_usd"] = caps["calls"], caps["cost_usd"]   # for the app's gauge
             model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
             aev("read", f"Running {len(selected)} review agent(s) over {ch} · model {model}.")
             outputs = {}
             n = len(selected)
             for i, a in enumerate(selected):
-                if R.over_budget(ausage, caps["cost_usd"], caps["calls"]):
-                    aev("stage", f"Stopped at your cloud budget cap ({_usage_say(ausage)}) — {n - i} agent(s) "
-                        f"not run. Raise the cap in Settings or pick fewer agents.", status="conflict", usage=dict(ausage))
+                reason = R.over_budget(ausage, caps["cost_usd"], caps["calls"], caps["errors"])
+                if reason:
+                    aev("stage", _stop_say(reason, ausage) + f" — {n - i} agent(s) not run.",
+                        status="conflict", usage=dict(ausage))
                     break
                 # the app bolds the agent name already, so the `say` must NOT repeat it.
                 aev("agent", f"reviewing… ({i + 1} of {n})", agent=a, status="running", usage=dict(ausage))

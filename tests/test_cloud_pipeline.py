@@ -148,22 +148,27 @@ def test_em_dash_count_counts_latex_and_unicode():
 # ---- over_budget: stop a job before it burns tokens without bound ----
 
 def test_over_budget_off_by_default():
-    assert R.over_budget({"cost_usd": 99, "calls": 999}, cap_usd=0, cap_calls=0) is False
+    assert R.over_budget({"cost_usd": 99, "calls": 999, "errors": 99}, cap_usd=0, cap_calls=0, cap_errors=0) == ""
 
 
 def test_over_budget_cost_cap():
-    assert R.over_budget({"cost_usd": 0.49, "calls": 3}, cap_usd=0.50) is False
-    assert R.over_budget({"cost_usd": 0.50, "calls": 3}, cap_usd=0.50) is True
+    assert R.over_budget({"cost_usd": 0.49, "calls": 3}, cap_usd=0.50) == ""
+    assert R.over_budget({"cost_usd": 0.50, "calls": 3}, cap_usd=0.50) == "cost"
 
 
 def test_over_budget_call_cap():
-    assert R.over_budget({"cost_usd": 0.01, "calls": 39}, cap_calls=40) is False
-    assert R.over_budget({"cost_usd": 0.01, "calls": 40}, cap_calls=40) is True
+    assert R.over_budget({"cost_usd": 0.01, "calls": 39}, cap_calls=40) == ""
+    assert R.over_budget({"cost_usd": 0.01, "calls": 40}, cap_calls=40) == "calls"
+
+
+def test_over_budget_error_cap_stops_a_broken_loop():
+    assert R.over_budget({"errors": 4, "calls": 0}, cap_calls=100, cap_errors=5) == ""
+    assert R.over_budget({"errors": 5, "calls": 0}, cap_calls=100, cap_errors=5) == "failures"
 
 
 def test_budget_caps_defaults_and_overrides():
-    assert R.budget_caps({}) == {"cost_usd": 0.0, "calls": 100}          # cost off, call backstop on
-    assert R.budget_caps({"COST_CAP_USD": "2.5", "MAX_CLAUDE_CALLS": "20"}) == {"cost_usd": 2.5, "calls": 20}
+    assert R.budget_caps({}) == {"cost_usd": 0.0, "calls": 100, "errors": 5}   # cost off, call+error backstops on
+    assert R.budget_caps({"COST_CAP_USD": "2.5", "MAX_CLAUDE_CALLS": "20"}) == {"cost_usd": 2.5, "calls": 20, "errors": 5}
     assert R.budget_caps({"MAX_CLAUDE_CALLS": "garbage"})["calls"] == 100  # tolerate bad input
 
 

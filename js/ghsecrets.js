@@ -205,6 +205,14 @@ export async function applyRun(tok){
   return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
 }
 
+// Cancel a running Actions run (the manual "stop" — kill a cloud job that's burning credits). Needs the
+// same Actions scope as dispatch. Idempotent-ish: GitHub returns 202 on accept, 409 if it already finished.
+export async function cancelRun(tok, runId){
+  const r = await fetch(`${API}/repos/${slug()}/actions/runs/${runId}/cancel`, { method:'POST', headers:hdr(tok) });
+  if (r.status === 202 || r.status === 409) return true;     // accepted, or already done
+  throw new Error('cancel run ' + r.status);
+}
+
 // Pure: turn an apply-run snapshot into a plain-English status line, or null when there's nothing to
 // show (no run yet, or a finished successful run). Keeps a queued job from ever looking dead.
 export function applyRunLabel(run){

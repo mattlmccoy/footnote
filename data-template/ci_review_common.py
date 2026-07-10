@@ -629,22 +629,26 @@ def finding_summaries(findings, limit=6, width=160):
     return out
 
 
-def over_budget(usage, cap_usd=0.0, cap_calls=0):
-    """True once the running Claude usage hits a configured per-job cap (0 = that cap is off). The caller
-    checks this BEFORE each Claude call and, when it trips, stops the loop and narrates why — so a cloud
-    job can't burn tokens without bound. Pure; ``usage`` is the {cost_usd, calls, …} accumulator."""
+def over_budget(usage, cap_usd=0.0, cap_calls=0, cap_errors=0):
+    """Return a reason string once the running Claude usage hits a configured per-job cap ('' = keep going;
+    0 = that cap is off). The caller checks this BEFORE each Claude call and stops when it trips, so a cloud
+    job can't burn tokens without bound AND can't loop forever on a broken token with no results. Pure;
+    ``usage`` is the {cost_usd, calls, errors, …} accumulator."""
     u = usage or {}
+    if cap_errors and (u.get("errors", 0) or 0) >= cap_errors:
+        return "failures"        # Claude keeps erroring (auth/credits/outage) — stop, don't keep trying
     if cap_usd and (u.get("cost_usd", 0.0) or 0.0) >= cap_usd:
-        return True
+        return "cost"
     if cap_calls and (u.get("calls", 0) or 0) >= cap_calls:
-        return True
-    return False
+        return "calls"
+    return ""
 
 
 def budget_caps(env):
     """Resolve the per-job budget caps from the environment (Actions variables): COST_CAP_USD (float, 0 =
-    off) and MAX_CLAUDE_CALLS (int). MAX_CLAUDE_CALLS defaults to a generous backstop (100) so a
-    pathological loop is always bounded even when the owner sets nothing; the cost cap is opt-in. Pure."""
+    off), MAX_CLAUDE_CALLS (int), MAX_CLAUDE_ERRORS (int). MAX_CLAUDE_CALLS defaults to a generous backstop
+    (100) and MAX_CLAUDE_ERRORS to 5 (a job that can't make 5 successful calls is broken — stop rather than
+    loop), so a pathological run is always bounded even when the owner sets nothing; cost is opt-in. Pure."""
     def _f(k, d):
         try:
             return float((env or {}).get(k) or d)
@@ -655,7 +659,8 @@ def budget_caps(env):
             return int(float((env or {}).get(k) or d))
         except (ValueError, TypeError):
             return d
-    return {"cost_usd": _f("COST_CAP_USD", 0.0), "calls": _i("MAX_CLAUDE_CALLS", 100)}
+    return {"cost_usd": _f("COST_CAP_USD", 0.0), "calls": _i("MAX_CLAUDE_CALLS", 100),
+            "errors": _i("MAX_CLAUDE_ERRORS", 5)}
 
 
 def em_dash_count(text):
