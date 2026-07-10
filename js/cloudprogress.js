@@ -66,3 +66,26 @@ export function usageLine(u) {
   if (u.errors) s += ` · ${u.errors} failed`;
   return s;
 }
+
+// Group the stream by SUBJECT — a comment (apply-edits) or an agent (run-agents) — so the feed renders one
+// tidy card per thing instead of a flat log. Truly job-level events (no comment, no agent: the opening
+// line, usage, done) stay in jobEvents. Each group carries a rolled-up status + its findings. Pure.
+export function groupStream(events) {
+  const jobEvents = [], byKey = new Map(), order = [];
+  for (const e of events || []) {
+    const key = e.comment || e.agent;
+    if (!key) { jobEvents.push(e); continue; }
+    if (!byKey.has(key)) { byKey.set(key, { key, kind: e.comment ? 'comment' : 'agent', events: [] }); order.push(key); }
+    byKey.get(key).events.push(e);
+  }
+  const groups = order.map(k => {
+    const g = byKey.get(k);
+    const conflict = g.events.some(e => e.status === 'conflict');
+    g.done = g.events.some(e => STEP_DONE.has(e.phase) || (e.phase === 'agent' && e.status !== 'running'));
+    g.status = conflict ? 'conflict' : (g.done ? 'ok' : 'running');
+    g.findings = g.events.flatMap(e => e.findings || []);
+    g.last = g.events[g.events.length - 1] || null;
+    return g;
+  });
+  return { jobEvents, groups };
+}

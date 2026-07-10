@@ -8,7 +8,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, isTerminal, summaryLine, usageTotals, usageLine } from './cloudprogress.js?v=90535e9';
+import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine } from './cloudprogress.js?v=feed2';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=318f4ae';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1781,22 +1781,42 @@ function openCloudActivity(jobId){
   let stop = false, debug = false, lastEvents = [];
   panel.querySelector('#ca-x').onclick = () => { stop = true; panel.remove(); };
   panel.querySelector('#ca-debug').onchange = e => { debug = e.target.checked; render(lastEvents); };
-  const glyph = e => e.status === 'conflict' ? '⚠' : (e.phase === 'stage' || e.phase === 'done' || e.phase === 'merge') ? '✓' : (e.status === 'ok' ? '·' : '…');
-  const rowFor = e => `<div style="display:flex;gap:7px;padding:2px 0;font-size:12.5px${e.status === 'conflict' ? ';color:var(--warn)' : ''}">
-      <span style="width:12px;text-align:center">${glyph(e)}</span><div style="min-width:0">
-      <div>${e.agent ? `<b>${escapeHtml(e.agent)}:</b> ` : ''}${escapeHtml(e.say || '')}</div>
-      ${e.edit && (e.edit.before || e.edit.after) ? `<details style="margin-top:2px"><summary style="cursor:pointer;color:var(--text-3);font-size:11px">diff</summary><div style="font-family:var(--mono);font-size:11px;white-space:pre-wrap"><span style="color:var(--warn)">- ${escapeHtml(e.edit.before || '')}</span>\n<span style="color:var(--success)">+ ${escapeHtml(e.edit.after || '')}</span></div></details>` : ''}
-      ${debug ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-3)">${escapeHtml(JSON.stringify({ seq: e.seq, phase: e.phase, status: e.status }))}</div>` : ''}</div></div>`;
+  if (!document.getElementById('ca-css')) {
+    const st = document.createElement('style'); st.id = 'ca-css';
+    st.textContent = '@keyframes caspin{to{transform:rotate(360deg)}}.ca-spin{display:inline-block;animation:caspin 1.1s linear infinite}';
+    document.head.appendChild(st);
+  }
+  const dot = s => s === 'conflict' ? '<span style="color:var(--warn)">⚠</span>'
+    : s === 'ok' ? '<span style="color:var(--success)">✓</span>'
+    : '<span class="ca-spin" style="color:var(--accent,#2c64c4)">◜</span>';
+  // job-level narration (opening line, budget stop, done) — a thin muted row
+  const jobRow = e => `<div style="display:flex;gap:8px;padding:3px 2px;font-size:12px;color:${e.status === 'conflict' ? 'var(--warn)' : 'var(--text-3)'}">
+      <span style="width:14px;text-align:center;flex-shrink:0">${e.phase === 'done' ? '✓' : e.status === 'conflict' ? '⚠' : '·'}</span>
+      <span style="min-width:0">${escapeHtml(e.say || '')}</span></div>`;
+  const fList = fs => !fs || !fs.length ? '' : `<div style="margin-top:6px;display:grid;gap:5px;padding-left:22px">${fs.map(f => `
+      <div style="display:flex;gap:7px;font-size:11.5px;line-height:1.45">
+        ${f.tag ? `<span style="flex-shrink:0;font-size:9px;text-transform:uppercase;letter-spacing:.04em;background:var(--bg-3,#eef);color:var(--text-3);padding:1px 6px;border-radius:5px;height:fit-content;margin-top:1px">${escapeHtml(f.tag)}</span>` : ''}
+        <span style="color:var(--text-2)">${escapeHtml(f.text || '')}</span></div>`).join('')}</div>`;
+  const editToggle = e => e.edit && (e.edit.before || e.edit.after) ? `<details style="margin:4px 0 0 22px"><summary style="cursor:pointer;color:var(--text-3);font-size:11px">show diff</summary><div style="font-family:var(--mono);font-size:11px;white-space:pre-wrap;margin-top:3px"><span style="color:var(--warn)">- ${escapeHtml(e.edit.before || '')}</span>\n<span style="color:var(--success)">+ ${escapeHtml(e.edit.after || '')}</span></div></details>` : '';
+  const statusWord = g => g.status === 'running' ? 'working…' : g.status === 'conflict' ? 'flagged' : 'done';
+  // one card per subject (agent or comment) — header + findings (agents) or narrated steps (comments)
+  const card = g => `<div style="margin:7px 0;border:.5px solid var(--border);border-radius:10px;padding:9px 11px;background:var(--bg)">
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="width:14px;text-align:center;flex-shrink:0">${dot(g.status)}</span>
+        <b style="font-size:12.5px">${escapeHtml(g.key)}</b>
+        <span style="font-size:10.5px;color:var(--text-3);margin-left:auto;text-transform:uppercase;letter-spacing:.03em">${statusWord(g)}</span></div>
+      ${g.kind === 'agent'
+        ? (g.findings.length ? fList(g.findings)
+           : `<div style="font-size:11.5px;color:var(--text-3);margin-top:3px;padding-left:22px">${escapeHtml((g.last && g.last.say) || '')}</div>`)
+        : g.events.filter(e => e.phase !== 'read').map(e => `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;padding-left:22px">${e.agent ? `<b style="font-weight:600">${escapeHtml(e.agent)}</b> · ` : ''}${escapeHtml(e.say || '')}</div>${editToggle(e)}`).join('')}
+      ${debug ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-3);padding-left:22px;margin-top:4px">${escapeHtml(JSON.stringify(g.events.map(e => ({ seq: e.seq, phase: e.phase, status: e.status }))))}</div>` : ''}</div>`;
   function render(events){
     lastEvents = events;
     panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
     const u = usageTotals(events), chip = panel.querySelector('#ca-usage');
     if (chip){ chip.textContent = usageLine(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; }
-    const g = groupByComment(events);
-    const block = c => `<div style="margin:8px 0;border:.5px solid var(--border);border-radius:9px;padding:8px 10px">
-        <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${escapeHtml(c.comment)}${c.done ? '' : ' · in progress'}</div>
-        ${c.events.map(rowFor).join('')}</div>`;
-    panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(rowFor).join('') + g.comments.map(block).join('');
+    const g = groupStream(events);
+    panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(jobRow).join('') + g.groups.map(card).join('');
   }
   async function poll(){
     if (stop) return;

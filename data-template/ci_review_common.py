@@ -553,7 +553,7 @@ def _norm_ws(s):
 
 # ------------------------------------------------ cloud parity + live progress (pure)
 
-def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit=None, ts="", usage=None):
+def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit=None, ts="", usage=None, findings=None):
     """Build one narrated progress event for <prefix>progress/<job>.jsonl. ``say`` is the human
     sentence the live view shows; phase/status/agent/comment drive the row's visual state; ``edit`` is
     an optional before/after diff; ``usage`` is an optional {cost_usd,input_tokens,output_tokens,calls}
@@ -569,6 +569,8 @@ def progress_event(job, seq, phase, say, comment="", agent="", status="ok", edit
         e["edit"] = edit
     if usage:
         e["usage"] = usage
+    if findings:
+        e["findings"] = findings
     return e
 
 
@@ -606,6 +608,25 @@ def verify_refs(tex):
             if k and "#" not in k:
                 refs.add(k)
     return sorted(refs - labels)
+
+
+def finding_summaries(findings, limit=6, width=160):
+    """Compact each agent finding to ``{tag, text}`` for the live Cloud Activity feed — the reviewer sees
+    WHAT the agent flagged, not just a count. Prefers the finding body, then quote; truncates to ``width``;
+    caps at ``limit`` and drops entries with nothing sayable. Pure."""
+    out = []
+    for f in (findings or []):
+        if not isinstance(f, dict):
+            continue
+        text = (f.get("body") or f.get("text") or f.get("quote") or "").strip()
+        if not text:
+            continue
+        if len(text) > width:
+            text = text[:width].rstrip() + "…"
+        out.append({"tag": (f.get("tag") or "").strip(), "text": text})
+        if len(out) >= limit:
+            break
+    return out
 
 
 def over_budget(usage, cap_usd=0.0, cap_calls=0):

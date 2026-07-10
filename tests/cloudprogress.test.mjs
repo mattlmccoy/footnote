@@ -57,3 +57,21 @@ test('usageLine formats cost + tokens + calls', () => {
     '$0.0123 · 1.5k tokens · 3 calls');
   assert.match(usageLine({ cost_usd:0, input_tokens:0, output_tokens:0, calls:0, errors:1 }), /failed/);
 });
+
+import { groupStream } from '../js/cloudprogress.js';
+
+test('groupStream groups run-agents by agent with status + findings', () => {
+  const evs = parseEvents([
+    { job:'g', seq:0, phase:'read', say:'Running 2 agents.' },
+    { job:'g', seq:1, phase:'agent', agent:'rigor', status:'running', say:'reviewing… (1 of 2)' },
+    { job:'g', seq:2, phase:'agent', agent:'rigor', status:'ok', say:'2 findings', findings:[{tag:'rigor',text:'cite this'}] },
+    { job:'g', seq:3, phase:'agent', agent:'clarity', status:'running', say:'reviewing… (2 of 2)' },
+    { job:'g', seq:4, phase:'usage', say:'$0.02', usage:{cost_usd:0.02} },
+  ].map(o=>JSON.stringify(o)).join('\n'));
+  const { jobEvents, groups } = groupStream(evs);
+  assert.deepEqual(jobEvents.map(e=>e.phase), ['read','usage']);   // job-level lines
+  assert.equal(groups.length, 2);
+  assert.equal(groups[0].key, 'rigor'); assert.equal(groups[0].status, 'ok');
+  assert.deepEqual(groups[0].findings, [{tag:'rigor',text:'cite this'}]);
+  assert.equal(groups[1].key, 'clarity'); assert.equal(groups[1].status, 'running');  // still going
+});
