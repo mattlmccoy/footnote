@@ -108,6 +108,15 @@ export async function setVariable(tok, name, value){
   if (!r.ok) throw new Error(`variable ${name}: ${r.status}`);
 }
 
+// Read one Actions variable's value (null if unset). Used to pre-fill the model/budget settings. Needs
+// the same Actions scope as setVariable; a scope-limited token throws (caller falls back to defaults).
+export async function getVariable(tok, name){
+  const r = await fetch(`${API}/repos/${slug()}/actions/variables/${name}`, { headers: hdr(tok), cache:'no-store' });
+  if (r.status === 404) return null;
+  if (!r.ok) throw new Error(`variable ${name}: ${r.status}`);
+  return (await r.json()).value;
+}
+
 // Fire the invite workflow as a test send to testEmail. Needs actions:write / workflow scope.
 export async function dispatchInvite(tok, testEmail){
   const r = await fetch(`${API}/repos/${slug()}/actions/workflows/${inviteWorkflow()}/dispatches`, {

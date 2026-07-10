@@ -685,3 +685,34 @@ def test_run_agents_emits_progress_and_usage(workspace_repo, monkeypatch):
     assert "read" in phases and "usage" in phases and "done" in phases
     assert any(e.get("agent") == "adversary" for e in events)
     assert any(e["phase"] == "usage" and "usage" in e for e in events)   # header tally present
+
+
+def test_run_agents_stops_at_budget_cap(workspace_repo, monkeypatch):
+    """The budget cap halts a job before it burns tokens without bound: with MAX_CLAUDE_CALLS=1 and two
+    agents, the second agent must NOT run and the feed must narrate the stop."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": []}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "g1", "type": "run-agents", "chapter": "02-methods",
+         "agents": ["adversary", "clarity"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    ran = []
+    def fake_agent(agent_id, task):
+        ran.append(agent_id)
+        # simulate a Claude call's spend so the cap can trip (injected agents bypass _run_claude)
+        acc = getattr(ci_apply._run_claude, "usage", None)
+        if acc is not None:
+            acc["calls"] += 1; acc["cost_usd"] += 0.01
+        return [{"quote": "\\alpha", "body": "note", "tag": "rigor"}]
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.setenv("MAX_CLAUDE_CALLS", "1")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
+
+    assert ran == ["adversary"]                # the 2nd agent never ran — cap tripped after the 1st
+    events = [json.loads(l) for l in (data / "proj" / "progress" / "g1.jsonl").read_text().splitlines() if l.strip()]
+    assert any("budget cap" in (e.get("say") or "").lower() for e in events)

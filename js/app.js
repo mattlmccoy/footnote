@@ -1,7 +1,7 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=f0898b1';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=5fdbd60';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=c8d63cb';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=modelbudget1';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=2df623a';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
@@ -3182,7 +3182,8 @@ async function renderSettingsAI(pane, t) {
       </div>
       <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
       <div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>
-    </div>`;
+    </div>` + modelBudgetCard();
+  wireModelBudget(pane, t);
   const conn = pane.querySelector('#set-ai-conn');
   try { const s = claudeConnectionStatus(await listSecretNames(t));
     conn.innerHTML = s.claude ? `<span class="ok">✓</span> Claude connected via <code>${s.via}</code> — every paper in ${escapeHtml(DATA_REPO)} is set.` : '<span class="warn">●</span> Not connected — add your Claude Code token.';
@@ -3198,6 +3199,59 @@ async function renderSettingsAI(pane, t) {
   };
   const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
   wirePmToggle(pane, t);
+}
+
+// The cloud model + per-job budget cap. Both are GitHub Actions variables the engine reads (CLAUDE_MODEL,
+// COST_CAP_USD, MAX_CLAUDE_CALLS) — set them here so a cloud run can't burn tokens blind, and pick a cheaper
+// model to cut cost. Only relevant in Cloud mode (local runs use your own Claude Code).
+const CLOUD_MODELS = [
+  { id: 'claude-opus-4-8', label: 'Opus 4.8 — most capable (highest cost)' },
+  { id: 'claude-sonnet-5', label: 'Sonnet 5 — balanced (lower cost)' },
+  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fastest / cheapest' },
+];
+function modelBudgetCard() {
+  return `<div class="set-card" id="set-mb">
+    <h4>Cloud model &amp; budget</h4>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">What the <b>cloud</b> review runs use. A cheaper model cuts cost; the caps stop a job before it burns tokens without bound. (Local runs use your own Claude Code and ignore these.)</div>
+    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Model</label>
+    <select id="mb-model" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:12px">
+      ${CLOUD_MODELS.map(m => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('')}</select>
+    <div style="display:flex;gap:12px;flex-wrap:wrap">
+      <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Cost cap (USD / job)
+        <input id="mb-cost" type="number" min="0" step="0.5" placeholder="off" style="display:block;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;font-weight:400"></label>
+      <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Max Claude calls / job
+        <input id="mb-calls" type="number" min="1" step="1" placeholder="100" style="display:block;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;font-weight:400"></label>
+    </div>
+    <div style="font-size:11px;color:var(--text-3);margin-top:8px">A job stops as soon as either cap is hit and tells you in Cloud Activity. Cost cap blank = off; calls default 100.</div>
+    <div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" id="mb-save" style="padding:5px 14px">Save</button><span id="mb-stat" style="font-size:11.5px;color:var(--text-3)"></span></div>
+  </div>`;
+}
+async function wireModelBudget(pane, t) {
+  const sel = pane.querySelector('#mb-model'), cost = pane.querySelector('#mb-cost'),
+        calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat');
+  if (!sel) return;
+  // best-effort prefill from the current variables (a scope-limited token just leaves defaults)
+  try {
+    const [m, c, n] = await Promise.all([
+      getVariable(t, 'CLAUDE_MODEL').catch(() => null),
+      getVariable(t, 'COST_CAP_USD').catch(() => null),
+      getVariable(t, 'MAX_CLAUDE_CALLS').catch(() => null)]);
+    if (m && CLOUD_MODELS.some(x => x.id === m)) sel.value = m;
+    if (c && Number(c) > 0) cost.value = c;
+    if (n && Number(n) > 0) calls.value = n;
+  } catch {}
+  pane.querySelector('#mb-save').onclick = async () => {
+    stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
+    try {
+      await setVariable(t, 'CLAUDE_MODEL', sel.value);
+      await setVariable(t, 'COST_CAP_USD', String(Number(cost.value) > 0 ? Number(cost.value) : 0));
+      await setVariable(t, 'MAX_CLAUDE_CALLS', String(Number(calls.value) > 0 ? Math.round(Number(calls.value)) : 100));
+      stat.style.color = 'var(--success)'; stat.textContent = 'Saved ✓ — applies to the next cloud run.';
+    } catch(e){
+      stat.style.color = 'var(--warn)';
+      stat.textContent = isScopeError(e) ? 'Your access token needs Actions access to set these (Connect Claude with a capable token).' : 'Failed: ' + escapeHtml((e && e.message) || 'error');
+    }
+  };
 }
 // Connect Claude dialog: primary = paste the `claude setup-token` value (CLAUDE_CODE_OAUTH_TOKEN);
 // Advanced = Anthropic API key fallback. Save seals via setAiSecrets + self-heals the engine.
