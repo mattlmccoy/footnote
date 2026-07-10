@@ -40,7 +40,7 @@ test('summaryLine reflects the latest activity', () => {
   assert.equal(summaryLine([]), '');
 });
 
-import { usageTotals, usageLine } from '../js/cloudprogress.js';
+import { usageTotals, usageLine, usageCostNote } from '../js/cloudprogress.js';
 
 test('usageTotals returns the latest usage tally, or null', () => {
   assert.equal(usageTotals(parseEvents(JL)), null);
@@ -51,11 +51,21 @@ test('usageTotals returns the latest usage tally, or null', () => {
   assert.equal(u.calls, 3);
 });
 
-test('usageLine formats cost + tokens + calls', () => {
+test('usageLine leads with tokens + calls, NO misleading dollar', () => {
   assert.equal(usageLine(null), '');
   assert.equal(usageLine({ cost_usd:0.0123, input_tokens:1200, output_tokens:340, calls:3 }),
-    '$0.0123 · 1.5k tokens · 3 calls');
-  assert.match(usageLine({ cost_usd:0, input_tokens:0, output_tokens:0, calls:0, errors:1 }), /failed/);
+    '1.5k tokens · 3 calls');
+  assert.ok(!usageLine({ cost_usd:5, input_tokens:1000, output_tokens:0, calls:1 }).includes('$'));  // no $ in the chip
+  assert.match(usageLine({ input_tokens:0, output_tokens:0, calls:0, errors:1 }), /failed/);
+});
+
+test('usageCostNote is the honest hover: API-equiv + subscription caveat', () => {
+  const note = usageCostNote({ cost_usd:23.7285, input_tokens:1000, output_tokens:0, calls:6 });
+  assert.match(note, /API list price/);
+  assert.match(note, /Pro\/Max/);
+  assert.match(note, /5-hour/);
+  // no cost → still explains the plan-limit caveat, without a bogus $0
+  assert.ok(!usageCostNote({ cost_usd:0 }).includes('$'));
 });
 
 import { groupStream } from '../js/cloudprogress.js';

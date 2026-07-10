@@ -55,16 +55,29 @@ export function usageTotals(events) {
   return null;
 }
 
-// Compact header string for a usage tally ('' when none): "$0.0123 · 2.3k tokens · 3 calls".
+// The header chip: lead with tokens + calls (plan-agnostic, factual). The DOLLAR is deliberately NOT here —
+// it is API list-price and misleads a Pro/Max subscriber (who pays a flat fee, not per-token). It lives in
+// usageCostNote() as a hover instead. '' when no usage. e.g. "2.3k tokens · 3 calls".
 export function usageLine(u) {
   if (!u) return '';
-  const cost = Number(u.cost_usd || 0);
   const tok = Number(u.input_tokens || 0) + Number(u.output_tokens || 0);
-  const tks = tok >= 1000 ? (tok / 1000).toFixed(1) + 'k' : String(tok);
-  let s = `$${cost.toFixed(4)} · ${tks} tokens`;
+  const tks = tok >= 1e6 ? (tok / 1e6).toFixed(1) + 'M' : tok >= 1000 ? (tok / 1000).toFixed(1) + 'k' : String(tok);
+  let s = `${tks} tokens`;
   if (u.calls) s += ` · ${u.calls} call${u.calls === 1 ? '' : 's'}`;
   if (u.errors) s += ` · ${u.errors} failed`;
   return s;
+}
+
+// The cost caveat shown on hover: the dollar is API-equivalent, NOT what a subscription user actually pays,
+// and this run counts toward the plan's usage limits (5-hour / weekly) which the cloud runner can't read.
+// '' when there's no cost. Keeps the chip honest for Pro/Max users.
+export function usageCostNote(u) {
+  if (!u) return '';
+  const cost = Number(u.cost_usd || 0);
+  const parts = [];
+  if (cost > 0) parts.push(`≈ $${cost.toFixed(2)} at API list price (not what a Pro/Max plan charges — that is a flat subscription).`);
+  parts.push('This run counts toward your Claude usage limits (5-hour / weekly); check Claude Code’s status for what’s left.');
+  return parts.join(' ');
 }
 
 // Group the stream by SUBJECT — a comment (apply-edits) or an agent (run-agents) — so the feed renders one

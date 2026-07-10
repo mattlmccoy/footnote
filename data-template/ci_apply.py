@@ -806,11 +806,15 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
 
 
 def _usage_say(u):
-    """Human one-liner for the usage event: '$0.0123 · 2.3k tokens · 3 Claude call(s) this run'."""
+    """Human one-liner for the usage event. Leads with tokens + calls (plan-agnostic); the dollar is shown
+    only as an API-equivalent aside because it is NOT what a Pro/Max subscriber pays (flat fee) — the app's
+    hover carries the fuller caveat. e.g. '2.3k tokens · 3 Claude call(s) this run (≈$0.01 API-equiv)'."""
     cost = u.get("cost_usd", 0.0) or 0.0
     tok = (u.get("input_tokens", 0) or 0) + (u.get("output_tokens", 0) or 0)
     tks = f"{tok/1000:.1f}k" if tok >= 1000 else str(tok)
-    part = f"${cost:.4f} · {tks} tokens · {u.get('calls', 0)} Claude call(s) this run"
+    part = f"{tks} tokens · {u.get('calls', 0)} Claude call(s) this run"
+    if cost > 0:
+        part += f" (≈${cost:.2f} API-equiv, not your subscription cost)"
     if u.get("errors"):
         part += f" · {u['errors']} failed call(s)"
     return part
