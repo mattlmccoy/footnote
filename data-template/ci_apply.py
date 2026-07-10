@@ -258,7 +258,7 @@ def _run_claude(directive, context, model, label):
     piped STDIN (the manuscript — too large for argv, which blew the OS arg-size limit). Returns stdout,
     or None on a missing CLI or non-zero exit so a broken/absent Claude leaves the job queued rather than
     crashing the whole drain."""
-    model = model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+    model = model or R.resolve_agent_model("", os.environ)   # no per-agent id → the global default model
     try:
         proc = subprocess.run(["claude", "-p", directive, "--output-format", "json", "--model", model],
                               input=context, capture_output=True, text=True)
@@ -287,9 +287,10 @@ def _run_claude(directive, context, model, label):
 def run_agent_cli(agent_id, task, model=None, catalog=None, field=None):
     """Invoke Claude Code (headless) as one review agent; returns a (capped) list of finding specs.
     Thin, live-CI-gated boundary. The directive is resolved from the catalog (real system prompt) with
-    a legacy fallback for unknown/bare names; findings are capped per agent (Q4 volume guard)."""
+    a legacy fallback for unknown/bare names; findings are capped per agent (Q4 volume guard). The model
+    is resolved PER AGENT (AGENT_MODELS override → global CLAUDE_MODEL → best default) unless one is passed."""
     directive = ci_agents.resolve_agent_directive(agent_id, catalog, field)
-    out = _run_claude(directive, agent_context(task), model, f"agent {agent_id}")
+    out = _run_claude(directive, agent_context(task), model or R.resolve_agent_model(agent_id, os.environ), f"agent {agent_id}")
     return ci_agents.cap_findings(parse_agent_findings(out)) if out is not None else []
 
 
@@ -677,7 +678,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
     usage = reset_usage()                      # per-run Claude spend tally for the Cloud Activity header
     caps = R.budget_caps(os.environ)
     usage["cap_calls"], usage["cap_usd"] = caps["calls"], caps["cost_usd"]   # for the app's budget gauge
-    model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+    model = R.resolve_agent_model("", os.environ)   # global default; individual agents may override via AGENT_MODELS
     ev("read", f"Starting review of {len(ids)} comment(s) on {ch} · model {model}.")
     work = dict(files)
     kept_review = review
@@ -983,7 +984,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             ausage = reset_usage()
             caps = R.budget_caps(os.environ)
             ausage["cap_calls"], ausage["cap_usd"] = caps["calls"], caps["cost_usd"]   # for the app's gauge
-            model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+            model = R.resolve_agent_model("", os.environ)   # global default; individual agents may override via AGENT_MODELS
             aev("read", f"Running {len(selected)} review agent(s) over {ch} · model {model}.")
             outputs = {}
             n = len(selected)
