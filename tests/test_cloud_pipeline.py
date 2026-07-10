@@ -135,3 +135,11 @@ def test_verify_refs_ignores_macro_parameters():
 def test_verify_refs_still_catches_real_undefined_with_macros_present():
     tex = r"\newcommand{\myref}[1]{\cref{#1}} \cref{eq:missing}"
     assert R.verify_refs(tex) == ["eq:missing"]
+
+
+# ---- em-dash guard: an edit must not INTRODUCE em-dashes (Matt's hard no-em-dash rule) ----
+
+def test_em_dash_count_counts_latex_and_unicode():
+    assert R.em_dash_count("a---b and c—d") == 2
+    assert R.em_dash_count("commas, only") == 0
+    assert R.em_dash_count("en--dash is fine") == 0        # -- (en-dash) is not an em-dash

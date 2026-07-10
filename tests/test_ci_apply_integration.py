@@ -507,3 +507,73 @@ def test_ensure_git_identity_preserves_an_existing_identity(tmp_path, monkeypatc
 
     assert subprocess.run(["git", "config", "--global", "user.name"],
                           capture_output=True, text=True).stdout.strip() == "Real Person"
+
+
+def test_apply_edits_blocks_an_edit_that_introduces_an_em_dash(workspace_repo, monkeypatch, tmp_path):
+    """The em-dash guard: a writer edit that adds '---' must NOT stage — it's flagged so the revise loop
+    (or the author) fixes it. Matt's hard no-em-dash rule, enforced deterministically."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "queued", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "reword"}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    def fake_claude(task):
+        # the writer slips an em-dash into source_after
+        return {"c1": {"id": "c1", "response": "Reworded.",
+                       "source_before": "\\alpha", "source_after": "\\beta---the tuned value",
+                       "prose_before": "the alpha term", "prose_after": "the beta term"}}
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("REVIEW_AGENTS", raising=False)
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    monkeypatch.setenv("REVISE_MAX", "1")           # one attempt -> straight to conflict
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude)
+
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["status"] == "conflict"                # the em-dash edit did not stage
+    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/02-methods"],
+                       capture_output=True, text=True)
+    assert "review-edits/02-methods" not in r.stdout
+    events = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
+    assert any("em-dash" in (e.get("say") or "").lower() for e in events)
+
+
+def test_commit_branch_re_push_replaces_an_existing_branch(tmp_path):
+    """Re-staging: a review-edits/<unit> branch is disposable and rebuilt from base each run (checkout -B),
+    so pushing over an existing remote branch with different history must force-update, not fail
+    non-fast-forward. Proves Matt's 're-run clean, replace it'."""
+    bare = tmp_path / "src.git"; _git(["init", "--bare", "-b", "main", str(bare)], tmp_path)
+    repo = tmp_path / "clone"; repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    _git(["config", "user.name", "t"], repo); _git(["config", "user.email", "t@t"], repo)
+    (repo / "f.tex").write_text("x = 1\n")
+    _git(["add", "-A"], repo); _git(["commit", "-m", "init"], repo)
+    _git(["remote", "add", "origin", str(bare)], repo)
+    _git(["push", "-u", "origin", "main"], repo)
+
+    # first stage (the "em-dash" version) — commit_branch pushes it to origin
+    ci_apply.commit_branch(repo, "review-edits/u", {"f.tex": "x = 2 --- v1\n"}, "main", "stage v1", push=True)
+    # second stage from base with different content — commit_branch must force-replace the remote branch
+    ci_apply.commit_branch(repo, "review-edits/u", {"f.tex": "x = 2, v2\n"}, "main", "stage v2", push=True)
+
+    remote = subprocess.run(["git", "--git-dir", str(bare), "show", "review-edits/u:f.tex"],
+                            capture_output=True, text=True)
+    assert remote.returncode == 0 and remote.stdout == "x = 2, v2\n"   # v2 replaced v1, no non-ff failure
+
+
+def test_push_remote_forces(tmp_path, monkeypatch):
+    """_push_remote force-updates the disposable review-edits branch (refspec '+HEAD:branch')."""
+    calls = {}
+    def fake_git(args, cwd, check=True):
+        calls["args"] = args
+        class R: returncode = 0
+        return R()
+    monkeypatch.setattr(ci_apply, "_git", fake_git)
+    ci_apply._push_remote(tmp_path, "review-edits/u", "tok", "owner/repo")
+    # the pushed refspec must be a force update
+    assert any(a.startswith("+") and ":review-edits/u" in a for a in calls["args"]) or "--force" in calls["args"]
