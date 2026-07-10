@@ -8,6 +8,7 @@ import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectR
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
+import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=0000000';
 startNetWatch();
 showBuildTag(import.meta.url);
 
@@ -66,11 +67,15 @@ const HUB_KEY = 'footnote:hub';
 const TOK_KEY = 'ghpat';
 const hdr = t => ({ Authorization: `Bearer ${t}`, Accept: 'application/vnd.github+json' });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-// repo + workflow: seeding a new project writes .github/workflows/*.yml (invite/notify/convert), which
-// GitHub blocks without the workflow scope. (The email wizard requests the same scopes separately.)
-const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
-// Fine-grained equivalent (least-privilege): All repositories + Contents, Administration, Workflows = Read/write.
-const FG_URL = 'https://github.com/settings/personal-access-tokens/new';
+// The Owner key. Classic repo + workflow is one-click AND correctly scoped (repo → Contents + Secrets +
+// Actions + Variables; workflow → the background Actions). The fine-grained page can't preselect the repo
+// or permissions via URL, so we deep-link it and spell out the exact permission list (tokenscopes.js).
+const TOKEN_URL = classicTokenUrl();
+const FG_URL = fineGrainedUrl('Footnote');
+// The fine-grained Owner-key permission list, rendered inline in the Connect help.
+const OWNER_FG_LIST = OWNER_KEY_PERMISSIONS
+  .filter(p => p.level === 'Read and write')
+  .map(p => `<b>${p.name}</b>`).join(', ');
 
 async function hubSha(hub, t) {
   try { const r = await fetch(`${API}/repos/${hub}/contents/projects.json?t=${Date.now()}`, { headers: hdr(t), cache: 'no-store' });
@@ -219,10 +224,10 @@ export async function launch() {
             <details class="fn-help">
               <summary>How do I get a token?</summary>
               <div class="fn-help-body">
-                <p><a href="${FG_URL}" target="_blank" rel="noopener">Fine-grained token →</a> <span class="fn-help-tag">recommended</span><br>
-                  <span class="fn-sub"><b>Repository access: All repositories</b>, and <b>Contents</b>, <b>Administration</b>, <b>Workflows</b> set to <b>Read and write</b> — scopes Footnote to exactly what it needs.</span></p>
-                <p><a href="${TOKEN_URL}" target="_blank" rel="noopener">Classic token →</a> <span class="fn-help-tag">one click</span><br>
-                  <span class="fn-sub"><code>repo</code> + <code>workflow</code> scopes — broader, covers all your repos.</span></p>
+                <p><a href="${TOKEN_URL}" target="_blank" rel="noopener">Classic token →</a> <span class="fn-help-tag">recommended · one click</span><br>
+                  <span class="fn-sub">The link pre-selects <code>repo</code> + <code>workflow</code> — the correctly-scoped Owner key in one click. Covers everything Footnote does (comments, rendering, AI, email, exports). Broader, but the simplest working path.</span></p>
+                <p><a href="${FG_URL}" target="_blank" rel="noopener">Fine-grained token →</a> <span class="fn-help-tag">least privilege</span><br>
+                  <span class="fn-sub"><b>Repository access: All repositories</b>, then set ${OWNER_FG_LIST} to <b>Read and write</b>. Scopes Footnote to exactly what it needs, but GitHub can’t pre-fill this page — set each permission by hand.</span></p>
                 <p class="fn-sub">New to wiring up Overleaf, GitHub, and Footnote? <a href="tutorials/setup.html" target="_blank" rel="noopener">Step-by-step setup guide →</a></p>
               </div>
             </details>

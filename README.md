@@ -8,13 +8,27 @@ entirely on free GitHub infrastructure (Pages + Actions), no server, no AI requi
 Footnote is a document-agnostic generalization of a dissertation-review portal. Everything instance-specific
 lives in one file: **`footnote.config.json`**.
 
-## Architecture (two repos + your source)
+## Architecture (three repo roles + the app)
+Footnote uses your repos in three roles. In the simple case (upload a `.tex`, or one workspace) they can be
+**one physical repo** — the Review repo is also the workspace, and the source lives inside it.
+- **Source repo** — the source of truth: your real LaTeX (often Overleaf-linked). Footnote only ever writes
+  a `review-edits/<unit>` branch here on approval; `main` is never touched by the tool.
+- **Review repo** — the working copy: comments, staged edits, the rendered reading view (HTML), the job
+  queue, and release/advisor state. An effective mirror of the source you review against. (This is the repo
+  older docs called the "data repo".)
+- **Workspace repo** — optional: one private repo that houses several projects' Review repos together. For a
+  single paper, the Review repo *is* the workspace.
 - **App repo (this one, public):** the static site (GitHub Pages) + config + workflows. Fork via
   *Use this template*.
-- **Data repo (private, yours):** review comments, release/advisor state, prebuilt chapter HTML. Holds no
-  code; the app reads/writes it with a fine-grained token scoped to *only* that repo.
-- **Your LaTeX source repo:** stays entirely yours. Footnote never holds a credential for it except your own
-  `SOURCE_TOKEN`, used only by the export/direct-edit CI (v1.1).
+
+Credentials (user-facing names; the underlying secret/variable names never change):
+- **Owner key** — your GitHub token; full control of your repos + Actions/Secrets. Needs Contents +
+  Administration + **Secrets + Actions + Variables** + Workflows (Read and write), or a classic
+  `repo` + `workflow` token. Missing Secrets/Actions/Variables breaks AI, email, model/budget, and apply.
+- **Reviewer key** — Contents-only, Review-repo-only, no expiration; the `&k=` in every magic link
+  (`ADVISOR_KEY`). Emailed to reviewers, so it must stay least-privilege — never an account PAT.
+- **Source key** — `SOURCE_TOKEN`; only when the Source repo is a separate repo you point Footnote at.
+- **Claude token** — `CLAUDE_CODE_OAUTH_TOKEN` (or an API key); only when the AI assistant is on.
 
 ## Setup (manual for now; a guided setup script is Phase 2)
 1. **Use this template** → create your app repo. Enable GitHub Pages (Settings → Pages → deploy from `main`).
@@ -63,10 +77,12 @@ The advisor bundle (`advisor.html`, `js/advisor.js`, generated reviewer shells) 
 construction** — grep-clean of assistant references, so external reviewers never see AI wording.
 
 ## Security
-- Scope the data-repo token to **only** your data repo, **Contents: Read and write**. Never use an account
-  PAT — the `ADVISOR_KEY` is emailed to reviewers, so it must be least-privilege.
+- The **Reviewer key** (`ADVISOR_KEY`, the `&k=` in the magic link) is emailed to reviewers, so scope it to
+  **only** your Review repo, **Contents: Read and write** — never an account PAT or a classic token.
+- The **Owner key** is broader by necessity (it seals secrets and dispatches Actions). Keep it in your
+  browser only; you can revoke it on GitHub at any time. Do not paste it where the Reviewer key belongs.
 - **⚠️ If you migrated from the original dissertation-hub:** rotate any `ADVISOR_KEY` that was a broad
-  account PAT to a data-repo-only fine-grained token.
+  account PAT to a Review-repo-only fine-grained token.
 
 ## Status
 v1 (in progress): config extraction / de-branding, onboarding, generic export CI. v1.1: in-app direct

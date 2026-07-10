@@ -149,7 +149,7 @@ const MARK = `<svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg"><rect 
 const OVERLEAF = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#138a07"/><path d="M13 13h13M13 20h20M13 27h13M13 33h9" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`;
 const GITHUB = `<svg viewBox="0 0 46 46"><rect width="46" height="46" rx="11" fill="#24292f"/><circle cx="16" cy="15" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="16" cy="31" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><circle cx="30" cy="18" r="3.2" fill="none" stroke="#fff" stroke-width="2.2"/><path d="M16 18v10M16 25c0-4 3.5-6.5 10-7" fill="none" stroke="#fff" stroke-width="2.2"/></svg>`;
 
-const FG_URL = 'https://github.com/settings/personal-access-tokens/new';
+const FG_URL = 'https://github.com/settings/personal-access-tokens/new?name=Footnote';
 const TOKEN_URL = 'https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote';
 
 // a copyable command / link row
@@ -202,31 +202,35 @@ const STEPS = [
   </div>
 
   <div class="pane on" data-pane="FG">
-    <p>A fine-grained token lets you grant Footnote <b>exactly</b> the access above and nothing more — the least-privilege choice.</p>
+    <p>A fine-grained token grants Footnote <b>exactly</b> the access above and nothing more — the least-privilege choice. GitHub can’t pre-fill this page, so set each item by hand from the list below (or use the one-click Classic token instead).</p>
     <ol class="acts">
       <li>Open the fine-grained token page:${copyRow(FG_URL,'Copy link')}</li>
-      <li>Set <b>Repository access → All repositories</b>. Footnote needs this to create your private review-data repo and to see your private source.</li>
-      <li>Under <b>Permissions → Repository</b>, set:
+      <li>Set <b>Repository access → All repositories</b>. Footnote needs this to create your private Review repo and to see your private source.</li>
+      <li>Under <b>Permissions → Repository</b>, set each of these to <b>Read and write</b>:
         <ul>
-          <li><b>Contents → Read and write</b> — read your source, store your review data.</li>
-          <li><b>Administration → Read and write</b> — create your private review-data repo.</li>
-          <li><b>Workflows → Read and write</b> — add the background Actions Footnote sets up.</li>
+          <li><b>Contents</b> — read your source, store your review data.</li>
+          <li><b>Administration</b> — create your private Review repo.</li>
+          <li><b>Secrets</b> — store your Claude token + email (SMTP) settings.</li>
+          <li><b>Actions</b> — run invites, rendering, and apply-edits.</li>
+          <li><b>Variables</b> — set the cloud model + budget caps.</li>
+          <li><b>Workflows</b> — install the background Actions Footnote uses.</li>
           <li><b>Metadata → Read-only</b> — added automatically.</li>
         </ul>
       </li>
-      <li>Pick an <b>expiration</b>, click <b>Generate token</b>, and copy the value (starts with <code>github_pat_</code>).</li>
+      <li>Set <b>Expiration → No expiration</b> (so nothing stops working), click <b>Generate token</b>, and copy the value (starts with <code>github_pat_</code>).</li>
     </ol>
-    <div class="note info"><span class="ic">◆</span><div>Want to avoid the Administration permission entirely? Create your review-data repo yourself on GitHub first, then a token with only <b>Contents</b> and <b>Workflows</b> (Read and write) is enough — just pick “use an existing repo” in Footnote.</div></div>
+    <div class="note warn"><span class="ic">⚠</span><div><b>Leave out Secrets, Actions, or Variables and the AI assistant, email invites, model/budget settings, and apply-edits will fail with a permission error</b> — even though reading and comments still work. If you only ever use comments and manual exports, Contents + Administration + Workflows is enough; add the other three when you turn on AI or email.</div></div>
+    <div class="note info"><span class="ic">◆</span><div>Want to avoid the Administration permission? Create your Review repo yourself on GitHub first, then a token without Administration is enough — just pick “use an existing repo” in Footnote.</div></div>
   </div>
 
   <div class="pane" data-pane="CL">
-    <p>A classic token is one click, but broader: the <code>repo</code> scope grants read/write to <b>all</b> your repositories, not just the ones Footnote uses.</p>
+    <p>A classic token is <b>one click and correctly scoped for everything</b> — the simplest working path. It’s broader, though: the <code>repo</code> scope grants read/write to <b>all</b> your repositories, not just the ones Footnote uses.</p>
     <ol class="acts">
       <li>Open the pre-filled token page (scopes already selected):${copyRow(TOKEN_URL,'Copy link')}</li>
-      <li>It pre-selects <code>repo</code> (read/write your repos) and <code>workflow</code> (add the background Actions). Set an <b>expiration</b>.</li>
+      <li>It pre-selects <code>repo</code> (Contents + Secrets + Actions + Variables on your repos) and <code>workflow</code> (install the background Actions). Set <b>Expiration → No expiration</b>.</li>
       <li>Click <b>Generate token</b> and copy the value (starts with <code>ghp_</code>).</li>
     </ol>
-    <div class="note warn"><span class="ic">⚠</span><div>Because <code>repo</code> covers every repository you own, prefer the fine-grained token if you'd rather scope Footnote down.</div></div>
+    <div class="note info"><span class="ic">◆</span><div>Because <code>repo</code> covers every repository you own, prefer the fine-grained token if you’d rather scope Footnote down — just be sure to include all six write permissions above.</div></div>
   </div>
 
   <div class="note warn"><span class="ic">⚠</span><div><b>Keep it private.</b> Don't paste it into chats, issues, or commits. GitHub shows it once. If it ever leaks, delete it on GitHub and make a new one — that instantly invalidates the old.</div></div>` },
