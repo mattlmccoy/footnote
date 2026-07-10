@@ -1778,7 +1778,8 @@ function openCloudActivity(jobId){
     <div style="padding:9px 16px 8px;border-bottom:.5px solid var(--border)">
       <div style="display:flex;align-items:center;gap:10px">
         <div id="ca-head" style="flex:1;min-width:0;font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Waiting for the cloud job to start…</div>
-        <span id="ca-usage" style="font-size:11px;color:var(--text-3);white-space:nowrap;flex-shrink:0"></span></div>
+        <a id="ca-usage" href="https://claude.ai/settings/usage" target="_blank" rel="noopener" style="font-size:11px;color:var(--text-3);white-space:nowrap;flex-shrink:0;text-decoration:none"></a></div>
+      <div id="ca-usagenote" style="font-size:10.5px;color:var(--text-3);margin-top:5px;display:none;line-height:1.4">Tokens are this run only. Your real remaining credits (5-hour / weekly) live in your <a href="https://claude.ai/settings/usage" target="_blank" rel="noopener" style="color:var(--accent,#2c64c4)">Claude usage settings ↗</a>.</div>
       <div id="ca-gauge" style="height:3px;border-radius:2px;background:var(--bg-3,#eef);margin-top:7px;display:none;overflow:hidden"><div id="ca-gaugefill" style="height:100%;width:0;background:var(--accent,#2c64c4);transition:width .35s ease"></div></div></div>
     <div id="ca-feed" style="flex:1;overflow:auto;padding:8px 12px"></div>`;
   document.body.appendChild(panel);
@@ -1831,8 +1832,9 @@ function openCloudActivity(jobId){
   function render(events){
     lastEvents = events;
     panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
-    const u = usageTotals(events), chip = panel.querySelector('#ca-usage');
-    if (chip){ chip.textContent = usageLine(u); chip.title = usageCostNote(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; chip.style.cursor = u ? 'help' : ''; }
+    const u = usageTotals(events), chip = panel.querySelector('#ca-usage'), note = panel.querySelector('#ca-usagenote');
+    if (chip){ chip.textContent = usageLine(u); chip.title = usageCostNote(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; }
+    if (note) note.style.display = u ? 'block' : 'none';
     const gg = usageGauge(u), bar = panel.querySelector('#ca-gauge'), fill = panel.querySelector('#ca-gaugefill');
     if (bar && fill){
       if (gg){ bar.style.display = 'block'; fill.style.width = gg.pct + '%'; fill.style.background = gg.level === 'high' ? 'var(--warn)' : gg.level === 'warn' ? '#c9a227' : 'var(--accent,#2c64c4)'; bar.title = `${gg.label} — the per-job budget cap (raise it in Settings)`; }
