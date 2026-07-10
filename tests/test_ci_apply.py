@@ -625,3 +625,28 @@ def test_claude_usage_handles_legacy_cost_field_and_garbage():
     import ci_apply as A
     assert abs(A.claude_usage(json.dumps({"cost_usd": 0.5, "usage": {}}))["cost_usd"] - 0.5) < 1e-9
     assert A.claude_usage("not json") == {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0}
+
+
+# --------------------------------------------------------------- per-agent model selection (future-proof)
+def test_default_model_is_the_best_tier_alias():
+    # "Opus for everything" default; alias resolves to the latest Opus via the CLI (future-proof).
+    assert R.DEFAULT_MODEL == "opus"
+
+
+def test_resolve_agent_model_falls_back_to_global_then_default():
+    assert R.resolve_agent_model("bugs", {}) == "opus"                                  # nothing set → default
+    assert R.resolve_agent_model("bugs", {"CLAUDE_MODEL": "sonnet"}) == "sonnet"        # global override
+    assert R.resolve_agent_model("bugs", {"CLAUDE_MODEL": "claude-opus-4-8"}) == "claude-opus-4-8"
+
+
+def test_resolve_agent_model_per_agent_override_wins_over_global():
+    env = {"CLAUDE_MODEL": "opus", "AGENT_MODELS": '{"clarity": "sonnet", "rigor": "opus"}'}
+    assert R.resolve_agent_model("clarity", env) == "sonnet"     # this agent overridden to cheaper
+    assert R.resolve_agent_model("rigor", env) == "opus"         # this agent kept on Opus
+    assert R.resolve_agent_model("unlisted", env) == "opus"      # not in the map → global default
+
+
+def test_resolve_agent_model_inherit_sentinel_and_bad_json_are_safe():
+    assert R.resolve_agent_model("x", {"AGENT_MODELS": '{"x": "default"}', "CLAUDE_MODEL": "sonnet"}) == "sonnet"
+    assert R.resolve_agent_model("x", {"AGENT_MODELS": "not json", "CLAUDE_MODEL": "opus"}) == "opus"
+    assert R.resolve_agent_model("x", {"AGENT_MODELS": "[]"}) == "opus"   # wrong shape → default

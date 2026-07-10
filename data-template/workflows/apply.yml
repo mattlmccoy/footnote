@@ -65,7 +65,15 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # ALTERNATIVE: a raw Anthropic API key (billed per token). Either one enables Claude jobs.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Model + budget levers set in Settings → Cloud model & budget. CLAUDE_MODEL is the global
+          # default every agent runs on (defaults to Opus); AGENT_MODELS is a JSON map {agentId: alias}
+          # overriding individual agents (e.g. cheaper Sonnet on light critics); the caps stop a job before
+          # it burns tokens. All are Actions variables the engine reads (ci_review_common.resolve_agent_model
+          # / budget_caps).
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          AGENT_MODELS: ${{ vars.AGENT_MODELS }}
+          COST_CAP_USD: ${{ vars.COST_CAP_USD }}
+          MAX_CLAUDE_CALLS: ${{ vars.MAX_CLAUDE_CALLS }}
           PROJECT: ${{ github.event.inputs.project }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 ci_apply.py

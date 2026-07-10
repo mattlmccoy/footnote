@@ -25,6 +25,7 @@ import { readProgress } from './cardstats.js?v=cfa6c99';
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=83ca70b';
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
+import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=0000000';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -3302,26 +3303,33 @@ async function renderSettingsAI(pane, t) {
   wirePmToggle(pane, t);
 }
 
-// The cloud model + per-job budget cap. Both are GitHub Actions variables the engine reads (CLAUDE_MODEL,
-// COST_CAP_USD, MAX_CLAUDE_CALLS) — set them here so a cloud run can't burn tokens blind, and pick a cheaper
-// model to cut cost. Only relevant in Cloud mode (local runs use your own Claude Code).
-const CLOUD_MODELS = [
-  { id: 'claude-opus-4-8', label: 'Opus 4.8 — most capable (highest cost)' },
-  { id: 'claude-sonnet-5', label: 'Sonnet 5 — balanced (lower cost)' },
-  { id: 'claude-haiku-4-5-20251001', label: 'Haiku 4.5 — fastest / cheapest' },
-];
+// The cloud model + per-job budget cap — all GitHub Actions variables the engine reads (CLAUDE_MODEL,
+// AGENT_MODELS, COST_CAP_USD, MAX_CLAUDE_CALLS). The DEFAULT model runs EVERYTHING (writer + every agent)
+// unless a specific agent is overridden below — so "Opus for everything" is one setting, and cost-cutting
+// a light agent to Sonnet is a per-agent choice. Model values are Claude Code CLI aliases (opus/sonnet/
+// haiku) that resolve to the LATEST of each tier, so the list stays current as new models ship. Only
+// relevant in Cloud mode (local runs use your own Claude Code).
+function _modelOptions(selected, includeInherit) {
+  const opts = includeInherit ? [{ value: AI_INHERIT, label: 'Default (use the model above)' }] : [];
+  for (const m of AI_MODELS) opts.push({ value: m.value, label: m.label });
+  const sel = String(selected == null ? '' : selected).trim();
+  if (sel && !opts.some(o => o.value === sel)) opts.push({ value: sel, label: sel });   // pinned legacy id
+  return opts.map(o => `<option value="${escapeHtml(o.value)}"${o.value === sel ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+}
 function modelBudgetCard() {
+  const inp = 'width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)';
   return `<div class="set-card" id="set-mb">
     <h4>Cloud model &amp; budget</h4>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">What the <b>cloud</b> review runs use. A cheaper model cuts cost; the caps stop a job before it burns tokens without bound. (Local runs use your own Claude Code and ignore these.)</div>
-    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Model</label>
-    <select id="mb-model" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:12px">
-      ${CLOUD_MODELS.map(m => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('')}</select>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">What the <b>cloud</b> review runs use. The default model runs <b>everything</b> — the writer and every review agent — unless you override an individual agent below. For a dissertation, leaving the default on <b>Opus</b> uses the best model throughout; drop a light, high-volume agent to Sonnet to trim cost. (Local runs use your own Claude Code and ignore these.)</div>
+    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Default model <span style="font-weight:400;color:var(--text-3)">— used by everything unless overridden</span></label>
+    <select id="mb-model" style="${inp};margin-bottom:12px">${_modelOptions(AI_DEFAULT_MODEL, false)}</select>
+    <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Per-agent overrides <span style="font-weight:400;color:var(--text-3)">— optional</span></summary>
+      <div id="mb-agents" style="margin-top:8px;font-size:11.5px;color:var(--text-3)">Loading your review agents…</div></details>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Cost cap (USD / job)
-        <input id="mb-cost" type="number" min="0" step="0.5" placeholder="off" style="display:block;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;font-weight:400"></label>
+        <input id="mb-cost" type="number" min="0" step="0.5" placeholder="off" style="${inp};margin-top:4px;font-weight:400"></label>
       <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Max Claude calls / job
-        <input id="mb-calls" type="number" min="1" step="1" placeholder="100" style="display:block;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;font-weight:400"></label>
+        <input id="mb-calls" type="number" min="1" step="1" placeholder="100" style="${inp};margin-top:4px;font-weight:400"></label>
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-top:8px">A job stops as soon as either cap is hit and tells you in Cloud Activity. Cost cap blank = off; calls default 100.</div>
     <div style="margin-top:12px;display:flex;gap:8px;align-items:center"><button class="btn btn-primary" id="mb-save" style="padding:5px 14px">Save</button><span id="mb-stat" style="font-size:11.5px;color:var(--text-3)"></span></div>
@@ -3329,22 +3337,42 @@ function modelBudgetCard() {
 }
 async function wireModelBudget(pane, t) {
   const sel = pane.querySelector('#mb-model'), cost = pane.querySelector('#mb-cost'),
-        calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat');
+        calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat'),
+        agentsBox = pane.querySelector('#mb-agents');
   if (!sel) return;
+  let agentModels = {};   // {agentId: alias} loaded from the AGENT_MODELS variable
   // best-effort prefill from the current variables (a scope-limited token just leaves defaults)
   try {
-    const [m, c, n] = await Promise.all([
+    const [m, am, c, n] = await Promise.all([
       getVariable(t, 'CLAUDE_MODEL').catch(() => null),
+      getVariable(t, 'AGENT_MODELS').catch(() => null),
       getVariable(t, 'COST_CAP_USD').catch(() => null),
       getVariable(t, 'MAX_CLAUDE_CALLS').catch(() => null)]);
-    if (m && CLOUD_MODELS.some(x => x.id === m)) sel.value = m;
+    if (m) { sel.innerHTML = _modelOptions(m, false); }   // reflect the saved default (adds a pinned id if legacy)
+    if (am) { try { const p = JSON.parse(am); if (p && typeof p === 'object') agentModels = p; } catch {} }
     if (c && Number(c) > 0) cost.value = c;
     if (n && Number(n) > 0) calls.value = n;
   } catch {}
+  // Per-agent overrides: one dropdown per cloud-runnable review agent (defaults to "inherit the default").
+  try {
+    const catalog = await loadAgentCatalog(t, _CFG);
+    const { runnable } = splitAgentsForCloud(catalog, _CFG.reviewAgents || []);
+    if (agentsBox) {
+      agentsBox.innerHTML = runnable.length
+        ? runnable.map(a => `<label style="display:flex;align-items:center;gap:8px;margin:6px 0">
+            <span style="flex:1;min-width:0;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(a.displayName || a.id)}">${escapeHtml(a.displayName || a.id)}</span>
+            <select data-agent-model="${escapeHtml(a.id)}" style="flex:0 0 auto;font:inherit;font-size:11.5px;padding:4px 6px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">${_modelOptions(agentModels[a.id] || AI_INHERIT, true)}</select></label>`).join('')
+        : 'No cloud review agents configured yet — add some in the Agents section.';
+    }
+  } catch (e) { if (agentsBox) agentsBox.textContent = 'Could not load your review agents: ' + ((e && e.message) || 'error'); }
   pane.querySelector('#mb-save').onclick = async () => {
     stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
+    // Build the per-agent map from the dropdowns; only non-inherit choices are persisted.
+    const map = {};
+    pane.querySelectorAll('[data-agent-model]').forEach(s => { if (s.value && s.value !== AI_INHERIT) map[s.dataset.agentModel] = s.value; });
     try {
       await setVariable(t, 'CLAUDE_MODEL', sel.value);
+      await setVariable(t, 'AGENT_MODELS', Object.keys(map).length ? JSON.stringify(map) : '');
       await setVariable(t, 'COST_CAP_USD', String(Number(cost.value) > 0 ? Number(cost.value) : 0));
       await setVariable(t, 'MAX_CLAUDE_CALLS', String(Number(calls.value) > 0 ? Math.round(Number(calls.value)) : 100));
       stat.style.color = 'var(--success)'; stat.textContent = 'Saved ✓ — applies to the next cloud run.';

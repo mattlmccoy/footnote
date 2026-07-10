@@ -716,6 +716,38 @@ def budget_caps(env):
             "errors": _i("MAX_CLAUDE_ERRORS", 5)}
 
 
+# The global default model for cloud runs — the best general tier. Everything (writer + every agent) runs
+# on this unless a specific agent is overridden. This is the "use Opus for everything" default. The value
+# is a Claude Code CLI `--model` alias (opus/sonnet/haiku) that resolves to the LATEST model of that tier,
+# so calls stay current as new models ship. Mirrors js/aimodels.js DEFAULT_MODEL.
+DEFAULT_MODEL = "opus"
+
+
+def resolve_agent_model(agent_id, env):
+    """The model one agent runs on, resolved per-agent with a global fallback:
+      1. AGENT_MODELS (an Actions variable = JSON map {agent_id: alias}) — this agent's override, if any;
+      2. else CLAUDE_MODEL — the global default the owner picked;
+      3. else DEFAULT_MODEL — the best tier.
+    The sentinel "default" (or an empty value) in the map means "inherit the global default". Values are
+    CLI `--model` aliases (opus/sonnet/haiku, latest of each tier) so calls stay current; a pinned claude-*
+    id also works. Malformed AGENT_MODELS degrades to the global default rather than crashing. Pure."""
+    env = env or {}
+    global_default = (env.get("CLAUDE_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    raw = env.get("AGENT_MODELS") or ""
+    per = {}
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                per = parsed
+        except (ValueError, TypeError):
+            per = {}
+    pref = str(per.get(agent_id) or "").strip()
+    if not pref or pref == "default":
+        return global_default
+    return pref
+
+
 def em_dash_count(text):
     """How many em-dashes are in ``text`` — both the Unicode ``—`` (U+2014) and the LaTeX ``---``. The
     en-dash (``--`` / ``–``) is intentionally NOT counted. Used delta-wise so the writer gate blocks an
