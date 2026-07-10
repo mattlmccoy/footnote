@@ -844,7 +844,25 @@ def _write_json(path, obj):
         json.dump(obj, f, indent=2, ensure_ascii=False)
 
 
+def ensure_git_identity():
+    """Give git a global identity if the runner has none. The headless Claude CLI runs incidental git
+    ops in the data-repo cwd (itself a git repo); with no configured user.name/user.email a runner rejects
+    the auto-derived hostname identity with 'fatal: empty ident name … not allowed', the CLI exits 1, and
+    the writer returns nothing (comment silently left queued). Idempotent + non-destructive: only fills a
+    MISSING name/email, never overrides an operator's own. Best-effort (never raises)."""
+    for key, val in (("user.name", "github-actions[bot]"),
+                     ("user.email", "41898282+github-actions[bot]@users.noreply.github.com")):
+        try:
+            cur = subprocess.run(["git", "config", "--global", key], capture_output=True, text=True)
+            if cur.returncode != 0 or not cur.stdout.strip():
+                subprocess.run(["git", "config", "--global", key, val], check=False,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            pass
+
+
 def main():
+    ensure_git_identity()
     token = os.environ.get("SOURCE_TOKEN", "")
     this_repo = os.environ.get("GITHUB_REPOSITORY", "")
     only = os.environ.get("PROJECT", "").strip()

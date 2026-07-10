@@ -468,3 +468,42 @@ def test_apply_edits_prose_edit_not_blocked_by_preexisting_undefined_ref(workspa
     assert c["status"] == "staged"    # the pre-existing eq:elsewhere must NOT block this ref-free edit
     events = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
     assert any(e.get("agent") == "verify_refs" and e["status"] == "ok" for e in events)
+
+
+def test_ensure_git_identity_configures_a_global_identity(tmp_path, monkeypatch):
+    """The headless Claude CLI does incidental git ops in the repo cwd; on a runner with no git identity
+    those abort with 'empty ident name' and the writer returns nothing. ensure_git_identity() writes a
+    global user.name/user.email so any git op (incl. our own commits) has a valid identity — no reliance
+    on fragile hostname auto-derivation (which the runner rejects)."""
+    home = tmp_path / "home"; home.mkdir()
+    gitconfig = home / ".gitconfig"
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+    assert not gitconfig.exists()
+
+    ci_apply.ensure_git_identity()
+
+    name = subprocess.run(["git", "config", "--global", "user.name"], capture_output=True, text=True).stdout.strip()
+    email = subprocess.run(["git", "config", "--global", "user.email"], capture_output=True, text=True).stdout.strip()
+    assert name and email          # a usable identity now exists
+
+    repo = tmp_path / "r"; repo.mkdir()
+    _git(["init", "-b", "main"], repo)
+    (repo / "f.txt").write_text("hi")
+    _git(["add", "-A"], repo)
+    assert subprocess.run(["git", "commit", "-m", "x"], cwd=str(repo),
+                          capture_output=True, text=True).returncode == 0
+
+
+def test_ensure_git_identity_preserves_an_existing_identity(tmp_path, monkeypatch):
+    """Idempotent + non-destructive: if the operator already set a git identity, keep it."""
+    home = tmp_path / "home"; home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(home / ".gitconfig"))
+    subprocess.run(["git", "config", "--global", "user.name", "Real Person"], check=True)
+    subprocess.run(["git", "config", "--global", "user.email", "real@example.com"], check=True)
+
+    ci_apply.ensure_git_identity()
+
+    assert subprocess.run(["git", "config", "--global", "user.name"],
+                          capture_output=True, text=True).stdout.strip() == "Real Person"
