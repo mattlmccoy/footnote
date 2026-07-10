@@ -5,7 +5,7 @@ import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { wordDiff } from './textdiff.js?v=112b6a1';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=9f87c88';   // instance config + chapter manifest; assistant-free by construction
-import { keyFromSearch, searchWithoutKey } from './invite.js?v=00c33f4';   // magic-link: key in the invite URL
+import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=00c33f4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
@@ -197,7 +197,7 @@ const fmtDate = ts => { if(!ts) return ''; const d=new Date(ts); if(isNaN(d)) re
 const read = document.getElementById('read');
 let current = null, review = null, released = [], responsesReleased = false;
 const _store = makeSafeStore();   // Safari Private / storage-blocked degrades to in-memory instead of throwing
-const tok = () => _store.get('ghpat');
+const tok = () => readReviewerKey(_store);   // reviewer key from its own slot (falls back to legacy ghpat)
 // Honest, dismissible notice when the browser blocks storage — never a blank page (Lane E F4).
 function storageWarn(){
   if (typeof document === 'undefined' || document.getElementById('storewarn')) return;
@@ -224,19 +224,22 @@ function keyModal({ current = '', allowClear = false, title = 'Enter your access
       <input id="km-in" type="text" inputmode="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="ghp_…" value="${escapeHtml(current || '')}"
         style="width:100%;box-sizing:border-box;padding:11px 12px;border:.5px solid var(--border-2);border-radius:9px;font:inherit;font-size:14px;background:var(--bg);color:var(--text);outline:none">
       <div id="km-err" style="min-height:16px;font-size:12px;color:var(--danger,#c0392b);margin:7px 2px 0"></div>
+      <div id="km-warn" style="font-size:12px;color:#8a5a00;line-height:1.5;margin:0 2px"></div>
       <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;margin-top:12px">
         ${allowClear ? `<button class="btn" id="km-clear" style="margin-right:auto;color:var(--text-3)">Remove key</button>` : ''}
         <button class="btn" id="km-cancel">Cancel</button>
         <button class="btn btn-primary" id="km-save">Save key</button></div></div>`;
     document.body.appendChild(back);
-    const inp = back.querySelector('#km-in'), err = back.querySelector('#km-err');
+    const inp = back.querySelector('#km-in'), err = back.querySelector('#km-err'), warn = back.querySelector('#km-warn');
+    const showWarn = () => { if (warn) warn.textContent = reviewerKeyWarning(inp.value); };
+    showWarn();
     const done = v => { back.remove(); document.removeEventListener('keydown', onKey, true); resolve(v); };
     const save = () => { const r = validateKey(inp.value); if (!r.ok){ err.textContent = r.error; inp.style.borderColor = 'var(--danger,#c0392b)'; inp.focus(); return; } done(r.value); };
     const onKey = e => { if (e.key === 'Escape'){ e.stopPropagation(); done(null); } };
     back.querySelector('#km-save').onclick = save;
     back.querySelector('#km-cancel').onclick = () => done(null);
     back.querySelector('#km-clear')?.addEventListener('click', () => done(''));
-    inp.addEventListener('input', () => { err.textContent = ''; inp.style.borderColor = 'var(--accent)'; });
+    inp.addEventListener('input', () => { err.textContent = ''; inp.style.borderColor = 'var(--accent)'; showWarn(); });
     inp.addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); save(); } });
     back.addEventListener('mousedown', e => { if (e.target === back) done(null); });
     document.addEventListener('keydown', onKey, true);
@@ -247,8 +250,8 @@ function keyModal({ current = '', allowClear = false, title = 'Enter your access
 // so the whole portal shares one humane, validated entry path. v===null → cancelled (no change).
 function applyKeyChoice(v){
   if (v === null) return;
-  if (v){ if (!_store.set('ghpat', v)) storageWarn(); keyBad = false; }
-  else { _store.set('ghpat', ''); }
+  if (v){ if (!writeReviewerKey(_store, v)) storageWarn(); keyBad = false; }
+  else { clearReviewerKey(_store); }
   boot();
 }
 let keyBad = false, revoked = false;
@@ -1635,7 +1638,7 @@ async function boot(){
   // history or shared by copying the URL. Reviewers just click — no token to paste.
   const _mk = keyFromSearch(location.search);
   if (_mk) {
-    if (!_store.set('ghpat', _mk)) storageWarn();   // never throws — a blocked browser degrades, it doesn't blank
+    if (!writeReviewerKey(_store, _mk)) storageWarn();   // never throws — a blocked browser degrades, it doesn't blank
     try { history.replaceState(null, '', location.pathname + searchWithoutKey(location.search) + location.hash); } catch (e) {}
     keyBad = false;
   }
