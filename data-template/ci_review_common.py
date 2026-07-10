@@ -430,6 +430,59 @@ def process_merge_job(job, review, files, ts):
 # deterministic code applies via literal_replace and stages on the review branch for author approval.
 # Author-oversight invariant: Claude output only ever becomes a staged edit on review-edits/<unit>.
 
+def unit_source_files(files, entry):
+    """The files an agent/writer needs to review or edit ONE unit: the unit's source file + everything it
+    transitively ``\\input``/``\\include``/``\\subfile``s, PLUS shared preamble/macro files and ``.bib``
+    (citation context). Drops OTHER units' sources — so reviewing one chapter doesn't ship the whole
+    manuscript to Claude (the live-test cost bomb: ~362k tokens/agent because every agent got the entire
+    dissertation). Returns ``files`` UNCHANGED when ``entry`` is missing/unknown (safe fallback — no
+    savings, no regression). Pure."""
+    import re
+    files = files or {}
+    def norm(p):
+        return str(p).replace("\\", "/").lstrip("./")
+    if not entry or entry not in files:
+        return dict(files)
+    by_key = {norm(p): p for p in files}
+    by_stem = {}
+    for p in files:
+        np = norm(p)
+        by_stem.setdefault(np[:-4] if np.endswith(".tex") else np, p)
+
+    def resolve(target):
+        t = norm(target.strip())
+        for cand in (t, t + ".tex"):
+            if cand in by_key:
+                return by_key[cand]
+        if t in by_stem:
+            return by_stem[t]
+        base = t.split("/")[-1]
+        for p in files:                                   # last resort: basename match
+            if norm(p).split("/")[-1] in (base, base + ".tex"):
+                return p
+        return None
+
+    keep, seen, queue = {}, set(), [entry]
+    inc = re.compile(r"\\(?:input|include|subfile)\s*\{([^}]+)\}")
+    while queue:
+        p = queue.pop()
+        if p in seen or p not in files:
+            continue
+        seen.add(p)
+        keep[p] = files[p]
+        for m in inc.findall(files.get(p, "") or ""):
+            r = resolve(m)
+            if r and r not in seen:
+                queue.append(r)
+    # shared context every unit may reference: bibliographies + the preamble/macro/acronym files
+    for p, t in files.items():
+        np = norm(p).lower()
+        if np.endswith(".bib") or "preamble/" in ("/" + np) or any(
+                np.split("/")[-1].startswith(k) for k in ("macros", "packages", "acronyms", "preamble", "commands")):
+            keep[p] = t
+    return keep
+
+
 def author_source(files):
     """The author-editable subset of a source tree for Claude's context: ``.tex`` and ``.bib`` only.
     Drops vendored/build files (``.cls``/``.sty``/``.bbl``/``.bst``/``.txt``) Claude never edits —
