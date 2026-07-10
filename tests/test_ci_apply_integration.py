@@ -277,11 +277,14 @@ def test_run_agents_appends_critique_comments(workspace_repo, monkeypatch):
     n = ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
     assert n == 1
 
-    comments = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"]
+    # findings land as the AI reviewer's SUBMITTED comments (accept/decline flow), not the owner review
+    comments = json.loads((data / "proj" / "advisor" / "ai-review-agents" / "02-methods.json").read_text())["comments"]
     assert len(comments) == 1
     assert comments[0]["author"] == "adversary"
     assert comments[0]["body"] == "state the assumption behind alpha"
-    assert comments[0]["anchor"]["quote"] == "\\alpha" and comments[0]["status"] == "open"
+    assert comments[0]["anchor"]["quote"] == "\\alpha" and comments[0]["status"] == "submitted"
+    reg = json.loads((data / "proj" / "advisors.json").read_text())
+    assert any(a["id"] == "ai-review-agents" and a["email"] == "" for a in reg["advisors"])  # invite-safe
     assert json.loads((data / "proj" / "jobs.json").read_text()) == []
     # agents never touch source
     assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
