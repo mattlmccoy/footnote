@@ -56,37 +56,37 @@ def test_run_local_job_runs_only_local_agents_and_skips_ci_ones():
         calls.append(agent_id)
         return [{"quote": "x", "body": f"{agent_id} ran locally", "tag": "run"}]
 
-    new_review = R and L.run_local_job(job, review, cat, fake_agent, "2026-07-06T00:00:00Z",
-                                       idgen=lambda i: f"l{i}")
+    fc = L.run_local_job(job, review, cat, fake_agent, "2026-07-06T00:00:00Z", idgen=lambda i: f"l{i}")
     assert calls == ["heatr"]                            # rigor (CI) was NOT run locally
-    bodies = [c["body"] for c in new_review["comments"]]
-    assert bodies == ["heatr ran locally"]
-    assert new_review["comments"][0]["author"] == "heatr"
+    assert [c["body"] for c in fc] == ["heatr ran locally"]
+    assert fc[0]["author"] == "heatr" and fc[0]["status"] == "submitted"   # → AI reviewer, accept/decline
 
 
 def test_run_local_job_with_no_local_agents_is_a_noop():
     cat = C.builtin_catalog()
     review = {"comments": [{"id": "e", "status": "open"}]}
     job = {"type": "run-agents", "chapter": "ch1", "agents": ["rigor", "clarity"]}
-    new_review = L.run_local_job(job, review, cat, lambda a, t: [{"body": "nope"}], "t",
-                                 idgen=lambda i: f"l{i}")
-    assert new_review["comments"] == [{"id": "e", "status": "open"}]   # unchanged
+    fc = L.run_local_job(job, review, cat, lambda a, t: [{"body": "nope"}], "t", idgen=lambda i: f"l{i}")
+    assert fc == []                                       # no local agents → nothing
 
 
 # --------------------------------------------------------------- process_prefix (working-tree drain)
-def test_process_prefix_runs_local_job_writes_comments_and_removes_job(tmp_path, monkeypatch):
+def test_process_prefix_routes_findings_to_the_ai_reviewer_and_removes_job(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    (tmp_path / "reviews").mkdir()
     import json
     (tmp_path / "jobs.json").write_text(json.dumps([
         {"id": "j1", "type": "run-agents", "chapter": "ch1", "agents": ["heatr"]},
     ]), encoding="utf-8")
-    (tmp_path / "reviews" / "ch1.json").write_text(json.dumps({"comments": []}), encoding="utf-8")
     cat = _catalog_with_local()
     n = L.process_prefix("", cat, agent_fn=lambda a, t: [{"quote": "q", "body": f"{a} ran", "tag": "run"}])
     assert n == 1
-    review = json.loads((tmp_path / "reviews" / "ch1.json").read_text())
-    assert review["comments"][0]["author"] == "heatr" and review["comments"][0]["body"] == "heatr ran"
+    # findings land as the AI reviewer's SUBMITTED comments (accept/decline flow), NOT the owner review
+    adv = json.loads((tmp_path / "advisor" / "ai-review-agents" / "ch1.json").read_text())
+    assert adv["comments"][0]["author"] == "heatr" and adv["comments"][0]["body"] == "heatr ran"
+    assert adv["comments"][0]["status"] == "submitted"
+    reg = json.loads((tmp_path / "advisors.json").read_text())
+    ai = next(a for a in reg["advisors"] if a["id"] == "ai-review-agents")
+    assert ai["email"] == "" and ai.get("ai") is True     # invite-safe (never emailed)
     assert json.loads((tmp_path / "jobs.json").read_text()) == []       # job removed after handling
 
 

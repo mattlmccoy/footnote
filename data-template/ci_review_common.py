@@ -347,6 +347,26 @@ def process_apply_direct_job(job, review, files, ts):
 # never land. A comment's source edit is its verbatim ``edit`` (apply-direct) or ``source_edit``
 # (Claude) — the same shape, so both merge uniformly.
 
+def agent_findings_comments(job, outputs_by_agent, ts, idgen):
+    """Agent findings shaped as SUBMITTED reviewer comments (author=<agentId>) for the AI-reviewer's advisor
+    file — so the owner gets the same accept/decline/reply/send-to-Claude flow as human reviewer feedback,
+    the same in LOCAL and CLOUD. Returns a bare list (the caller merges into advisor/<AI>/<unit>.json); the
+    older process_run_agents_job (status 'open', appended to the owner review) is the pre-reviewer behavior.
+    Pure: ``idgen(i)`` supplies unique ids; inputs not mutated."""
+    out, i = [], 0
+    for agent in (job.get("agents") or []):
+        for spec in (outputs_by_agent.get(agent) or []):
+            out.append({
+                "id": idgen(i), "author": agent, "kind": "text", "status": "submitted",
+                "read": False, "sent": False,
+                "anchor": {"quote": spec.get("quote", ""), "section": spec.get("section", ""),
+                           "synctex": None, "rects": [], "figure": None, "confirmed": False},
+                "tag": spec.get("tag", "other"), "body": spec.get("body", ""), "created_ts": ts,
+            })
+            i += 1
+    return out
+
+
 def process_run_agents_job(job, review, outputs_by_agent, ts, idgen):
     """Append read-only critique comments produced by the review agents. ``outputs_by_agent`` maps
     each agent id to a list of finding specs ({quote, body, tag, section?}); each becomes a comment

@@ -1001,9 +1001,10 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 say = f"{len(findings)} finding(s)" if findings else "no issues found"
                 aev("agent", say, agent=a, status="ok", usage=dict(ausage),
                     findings=R.finding_summaries(findings))
-            new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
-                                                  idgen=lambda i, j=jid: f"a_{j}_{i}")
-            _write_json(R.review_path(prefix, ch), new_review)
+            # route findings to the "AI Review Agents" reviewer so the owner gets the accept/decline flow
+            # (FROM REVIEWERS), same as human feedback — not buried as owner-side open comments.
+            fc = R.agent_findings_comments(job, outputs, _now_iso(), idgen=lambda i, j=jid: f"a_{j}_{i}")
+            route_findings_to_reviewer(prefix, ch, fc, _now_iso())
             if ausage.get("errors") and ausage.get("calls", 0) == 0:
                 aev("usage", "Claude did not run — the connection or credentials failed (check your Claude "
                     "token or remaining credits). Nothing was charged.", status="conflict", usage=dict(ausage))
@@ -1072,6 +1073,37 @@ def _write_json(path, obj):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, indent=2, ensure_ascii=False)
+
+
+# The synthetic reviewer that run-agents findings are attributed to, so the owner gets the accept/decline
+# flow. email="" → ci_invite skips it (never emailed); ai:true marks it non-human.
+AI_REVIEWER_ID = "ai-review-agents"
+AI_REVIEWER_NAME = "AI Review Agents"
+
+
+def route_findings_to_reviewer(prefix, unit, new_comments, ts):
+    """Deliver agent findings as the AI reviewer's SUBMITTED comments for <unit> (advisor/<AI>/<unit>.json),
+    and register that reviewer in advisors.json if missing. Merges (dedupes by id) so re-runs don't
+    duplicate. Files are written relative to cwd; the cloud writeback + the local runner then commit them.
+    Shared by CLOUD (ci_apply run-agents) and LOCAL (ci_local) so both behave the same."""
+    if not new_comments:
+        return
+    adv_path = f"{prefix}advisors.json"
+    reg = R.load_json(adv_path, {}) or {}
+    if not isinstance(reg, dict):
+        reg = {"advisors": []}
+    advisors = reg.setdefault("advisors", [])
+    if not any(isinstance(a, dict) and a.get("id") == AI_REVIEWER_ID for a in advisors):
+        advisors.append({"id": AI_REVIEWER_ID, "name": AI_REVIEWER_NAME, "email": "",
+                         "title": "Automated critic", "ai": True, "invited": True, "added_ts": ts})
+        _write_json(adv_path, reg)
+    af = f"{prefix}advisor/{AI_REVIEWER_ID}/{unit}.json"
+    cur = R.load_json(af, {"comments": []})
+    if not isinstance(cur, dict):
+        cur = {"comments": []}
+    have = {c.get("id") for c in (cur.get("comments") or []) if isinstance(c, dict)}
+    cur["comments"] = [*(cur.get("comments") or []), *[c for c in new_comments if c.get("id") not in have]]
+    _write_json(af, cur)
 
 
 def ensure_git_identity():

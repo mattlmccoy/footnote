@@ -59,17 +59,18 @@ def run_local_job(job, review, catalog, agent_fn, ts, idgen, field=""):
     """Run the LOCAL agents selected by a run-agents job and fold their findings into the review.
 
     Only agents whose catalog entry is ``execution: "local"`` are run here (CI agents are left for CI).
-    ``agent_fn(agent_id, task)`` is the injectable local-Claude boundary; findings are folded via the
-    shared ``process_run_agents_job``. Pure: ``ts`` injected, inputs not mutated.
+    ``agent_fn(agent_id, task)`` is the injectable local-Claude boundary. Returns the findings shaped as
+    SUBMITTED reviewer comments (via ``R.agent_findings_comments``) — the caller routes them to the AI
+    reviewer so LOCAL and CLOUD both give the owner the accept/decline flow. Pure: ``ts`` injected.
     """
     selected = [a for a in (job.get("agents") or []) if ci_agents.runnable_local(a, catalog)]
     if not selected:
-        return review
+        return []
     task = R.build_apply_task(job, review, R.author_source(job.get("_source") or {})) \
         if job.get("_source") else {"chapter": job.get("chapter")}
     outputs = {a: (agent_fn(a, task) or []) for a in selected}
     local_job = {**job, "agents": selected}
-    return R.process_run_agents_job(local_job, review, outputs, ts, idgen=idgen)
+    return R.agent_findings_comments(local_job, outputs, ts, idgen=idgen)
 
 
 # --------------------------------------------------------------- live Claude boundary (local)
@@ -118,6 +119,7 @@ def process_prefix(prefix, catalog, agent_fn=None, generate_fn=None):
     remove the job (a job with only CI agents is left for the CI drain). author-agent: generate the
     described agent, merge it into agents.json as a DRAFT, remove the job. Returns the number of jobs
     handled. ``agent_fn`` / ``generate_fn`` are the injectable Claude boundaries."""
+    import ci_apply  # shared reviewer-routing (register the AI reviewer + write its advisor file)
     if agent_fn is None:
         agent_fn = lambda aid, task, c=catalog: run_local_agent_cli(aid, task, catalog=c)
     if generate_fn is None:
@@ -153,9 +155,9 @@ def process_prefix(prefix, catalog, agent_fn=None, generate_fn=None):
         ch = job.get("chapter")
         review = R.load_json(R.review_path(prefix, ch), {"comments": []})
         jid = job.get("id")
-        new_review = run_local_job(job, review, catalog, agent_fn, _now_iso(),
-                                   idgen=lambda i, j=jid: f"l_{j}_{i}", field=job.get("field") or "")
-        _write_json(R.review_path(prefix, ch), new_review)
+        fc = run_local_job(job, review, catalog, agent_fn, _now_iso(),
+                           idgen=lambda i, j=jid: f"l_{j}_{i}", field=job.get("field") or "")
+        ci_apply.route_findings_to_reviewer(prefix, ch, fc, _now_iso())   # AI reviewer → accept/decline flow
         jobs = R.remove_job(jobs, jid)
         done += 1
     _write_json(R.jobs_path(prefix), jobs)

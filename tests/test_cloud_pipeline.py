@@ -228,3 +228,19 @@ def test_unit_source_files_falls_back_to_all_when_entry_unknown():
     files = {"a.tex": "1", "b.tex": "2"}
     assert R.unit_source_files(files, None) == files          # unknown unit → everything (safe)
     assert R.unit_source_files(files, "missing.tex") == files
+
+
+# ---- agent findings routed to the AI reviewer (accept/decline flow), local + cloud ----
+
+def test_agent_findings_comments_are_submitted_reviewer_comments():
+    job = {"agents": ["clarity", "rigor"]}
+    outputs = {
+        "clarity": [{"quote": "foo", "body": "run-on sentence", "tag": "clarity", "section": "Intro"}],
+        "rigor": [{"quote": "bar", "body": "unsupported claim"}],
+    }
+    out = R.agent_findings_comments(job, outputs, "T", idgen=lambda i: f"a_{i}")
+    assert [c["id"] for c in out] == ["a_0", "a_1"]
+    assert out[0]["author"] == "clarity" and out[0]["status"] == "submitted"   # shows in FROM REVIEWERS
+    assert out[0]["anchor"]["quote"] == "foo" and out[0]["tag"] == "clarity"
+    assert out[0]["body"] == "run-on sentence" and out[0]["read"] is False
+    assert out[1]["author"] == "rigor" and out[1]["tag"] == "other"            # default tag
