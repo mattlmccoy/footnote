@@ -82,6 +82,33 @@ export function reviewerKeyWarning(v) {
   return '';
 }
 
+// Live status for one credential in the Settings "Access & tokens" view, from a probed context. Returns
+// { glyph: 'ok'|'warn'|null, text }. Pure so the status copy is unit-tested. glyph maps to the same ✓/●
+// markers the rest of Settings uses; null = neutral/not-applicable (no marker).
+export function credentialStatus(id, ctx = {}) {
+  switch (id) {
+    case 'owner':
+      if (!ctx.hasOwnerKey) return { glyph: 'warn', text: 'Not set — Footnote can’t read your repo without it.' };
+      if (ctx.ownerScopeOk === false) return { glyph: 'warn', text: 'Connected, but missing Secrets/Actions/Variables — AI, email, model/budget, and apply-edits will fail. Re-create it with the full scope (or a classic repo + workflow token).' };
+      return { glyph: 'ok', text: 'Connected — stored only in this browser.' };
+    case 'reviewer':
+      return ctx.reviewerSet
+        ? { glyph: 'ok', text: 'Set — carried in every reviewer invite link. Manage on the Reviewers page.' }
+        : { glyph: 'warn', text: 'Not set — set it up on the Reviewers page (Connect email seals it as ADVISOR_KEY).' };
+    case 'source':
+      if (!ctx.sourceExternal) return { glyph: null, text: 'Not needed — your source lives in your Review repo.' };
+      return ctx.sourceSet
+        ? { glyph: 'ok', text: 'Set — sealed as SOURCE_TOKEN.' }
+        : { glyph: 'warn', text: 'Not set — needed because your Source repo is separate.' };
+    case 'claude':
+      return ctx.claudeConnected
+        ? { glyph: 'ok', text: 'Connected.' }
+        : { glyph: null, text: 'Not set — only needed when the AI assistant is on.' };
+    default:
+      return { glyph: null, text: '' };
+  }
+}
+
 // Credential descriptors for the Settings "Access & tokens" view. `secret`/`storage` are the STABLE
 // internal names; `label`/`forWhat`/`repo`/`scope` are the user-facing, standardized-vocabulary copy.
 export const CREDENTIALS = [

@@ -23,6 +23,8 @@ import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
+import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=0000000';
+import { repoExplainerHtml } from './repoexplainer.js?v=0000000';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -1677,7 +1679,7 @@ function openAccessKeySheet(ownerTok){
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   scrim.innerHTML = `<div class="sheet" style="max-width:520px">
     <div style="font-size:16px;font-weight:600;margin-bottom:4px">Reviewer access key</div>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">One shared token that every reviewer's link carries, so they click and they're in — no code to paste. Use a <b>least-privilege</b> token, <b>not</b> your account password. Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>. On that page, set the <b>Expiration</b> dropdown (near the top) to <b>No expiration</b> so your reviewers' links never stop working.</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px;line-height:1.55">This is your <b>Reviewer key</b> — one shared token that every reviewer's link carries, so they click and they're in — no code to paste. It gets emailed, so it must be <b>least-privilege</b>: <b>not</b> your Owner key or account password. Create a <a href="https://github.com/settings/personal-access-tokens/new?name=Footnote%20reviewer%20key" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> your Review repo <code>${escapeHtml(repo)}</code> and <b>Contents: Read and write</b>. On that page, set the <b>Expiration</b> dropdown (near the top) to <b>No expiration</b> so your reviewers' links never stop working.</div>
     <input id="ak-input" type="password" placeholder="paste the reviewer access token" style="width:100%;box-sizing:border-box;padding:9px 10px;border:.5px solid var(--border);border-radius:8px;font:inherit;font-size:12.5px">
     <div id="ak-stat" style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -3028,41 +3030,92 @@ async function renderSettingsEmail(pane, t) {
 }
 // Access section: the browser PAT (read/write on the data repo) + the optional source-repo token
 // (only when the paper's LaTeX lives in a separate repo). Replaces the old ⋯ prompt() flow.
-function renderSettingsAccess(pane, t) {
+// Access & tokens — ONE view listing every credential (Owner key / Reviewer key / Source key / Claude
+// token) with what it's for, which repo it touches, the exact scope, live status, and a create link. Uses
+// the standardized vocabulary. The Reviewer key is DISPLAYED here but managed on the Reviewers page (its
+// SMTP-invite coupling stays there by design); Claude is also reachable from the AI section.
+async function renderSettingsAccess(pane, t) {
   const has = !!tok();
+  // Source is "external" only when it's a separate repo (not living inside the Review/Workspace repo).
+  const sourceExternal = !!(_CFG.sourceRepo && _CFG.sourceRepo !== _CFG.dataRepo && !_CFG.srcPrefix);
+  const byId = Object.fromEntries(CREDENTIALS.map(c => [c.id, c]));
+  const OWNER_URL = classicTokenUrl(), FG_URL = fineGrainedUrl('Footnote');
+  const g = st => st.glyph === 'ok' ? '<span class="ok">✓</span>' : st.glyph === 'warn' ? '<span class="warn">●</span>' : '<span style="color:var(--text-3)">○</span>';
+  const meta = c => `<div style="font-size:11px;color:var(--text-3);margin:2px 0 8px"><b>Touches:</b> ${escapeHtml(c.repo)}<br><b>Scope:</b> ${escapeHtml(c.scope)}</div>`;
+  const inp = 'flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)';
+
+  // one probe of the Review repo's Actions secrets → status for source/reviewer/claude + the owner scope
+  let names = null, ownerScopeOk = null;
+  if (t) { try { names = await listSecretNames(t); ownerScopeOk = true; } catch (e) { if (e && e.code === 'NOSCOPE') ownerScopeOk = false; } }
+  const nameSet = new Set(names || []);
+  const st = (id, extra) => credentialStatus(id, extra);
+  const ownerSt = st('owner', { hasOwnerKey: has, ownerScopeOk });
+  const revSt = st('reviewer', { reviewerSet: nameSet.has('ADVISOR_KEY') });
+  const srcSt = st('source', { sourceExternal, sourceSet: nameSet.has('SOURCE_TOKEN') });
+  const claudeSt = st('claude', { claudeConnected: claudeConnectionStatus(names || []).claude });
+
   pane.innerHTML = `
+    <details class="set-card" style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px">How Footnote uses your repos</summary>
+      <div style="margin-top:8px">${repoExplainerHtml({ compact: true })}</div></details>
+
     <div class="set-card">
-      <h4>Access token</h4>
-      <div class="set-status">${has?'<span class="ok">✓</span> Connected — stored only in this browser.':'<span class="warn">●</span> Not set — Footnote can’t read your repo without it.'}</div>
-      <div style="display:flex;gap:8px;margin-top:10px">
-        <input id="set-pat" type="password" placeholder="fine-grained PAT · Contents: read/write on ${escapeHtml(DATA_REPO)}" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+      <h4>${escapeHtml(byId.owner.label)}</h4>
+      <div class="set-status">${g(ownerSt)} ${escapeHtml(ownerSt.text)}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.owner.forWhat)}</div>
+      ${meta(byId.owner)}
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <input id="set-pat" type="password" placeholder="ghp_… or github_pat_… — the Owner key" style="${inp}">
         <button class="btn btn-primary" id="set-pat-save" style="padding:5px 12px">Save</button>
         ${has?'<button class="btn" id="set-pat-clear" style="padding:5px 12px">Remove</button>':''}
       </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:6px"><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Create a fine-grained PAT →</a></div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">Create one: <a href="${OWNER_URL}" target="_blank" rel="noopener">classic token</a> (recommended · one click, correctly scoped) or a <a href="${FG_URL}" target="_blank" rel="noopener">fine-grained token</a> (least privilege — set the permissions above by hand).</div>
     </div>
+
     <div class="set-card">
-      <h4>Source repo token <span style="font-weight:400;color:var(--text-3)">— only for external source</span></h4>
-      <div style="font-size:11.5px;color:var(--text-3);margin-bottom:8px">Only needed if this paper’s LaTeX lives in a <b>separate</b> repo (not imported into ${escapeHtml(DATA_REPO)}). Sealed into your data repo’s Actions secrets as <code>SOURCE_TOKEN</code>.</div>
-      <div style="display:flex;gap:8px">
-        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: write on the source repo" style="flex:1;font:inherit;font-size:12.5px;padding:6px 8px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)">
+      <h4>${escapeHtml(byId.reviewer.label)}</h4>
+      <div class="set-status">${g(revSt)} ${escapeHtml(revSt.text)}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.reviewer.forWhat)}</div>
+      ${meta(byId.reviewer)}
+      <button class="btn" id="set-rev-manage" style="padding:5px 12px;margin-top:2px">Manage on Reviewers page</button>
+    </div>
+
+    <div class="set-card">
+      <h4>${escapeHtml(byId.source.label)} <span style="font-weight:400;color:var(--text-3)">— only for a separate Source repo</span></h4>
+      <div class="set-status">${g(srcSt)} ${escapeHtml(srcSt.text)}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.source.forWhat)}</div>
+      ${meta(byId.source)}
+      ${sourceExternal ? `<div style="display:flex;gap:8px;margin-top:6px">
+        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: read/write on the Source repo" style="${inp}">
         <button class="btn" id="set-srctok-save" style="padding:5px 12px">Save</button>
         <span id="set-srctok-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
       </div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px"><a href="${FG_URL}" target="_blank" rel="noopener">Create a fine-grained token →</a> on the Source repo.</div>` : ''}
+    </div>
+
+    <div class="set-card">
+      <h4>${escapeHtml(byId.claude.label)}</h4>
+      <div class="set-status">${g(claudeSt)} ${escapeHtml(claudeSt.text)}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.claude.forWhat)}</div>
+      ${meta(byId.claude)}
+      <button class="btn" id="set-claude-manage" style="padding:5px 12px;margin-top:2px">Connect / manage Claude</button>
     </div>`;
+
   pane.querySelector('#set-pat-save').onclick = () => {
     const v = pane.querySelector('#set-pat').value.trim();
     if (!v){ flash('Paste a token first.'); return; }
-    localStorage.setItem('ghpat', v); flash('Token saved.'); openSettingsPage('access');
+    localStorage.setItem('ghpat', v); flash('Owner key saved.'); openSettingsPage('access');
   };
   const clr = pane.querySelector('#set-pat-clear');
-  if (clr) clr.onclick = () => { if (confirm('Remove the saved access token from this browser?')){ localStorage.removeItem('ghpat'); flash('Token removed.'); openSettingsPage('access'); } };
-  pane.querySelector('#set-srctok-save').onclick = async () => {
+  if (clr) clr.onclick = () => { if (confirm('Remove the saved Owner key from this browser?')){ localStorage.removeItem('ghpat'); flash('Owner key removed.'); openSettingsPage('access'); } };
+  pane.querySelector('#set-rev-manage').onclick = () => openReleasePanel();
+  pane.querySelector('#set-claude-manage').onclick = () => openClaudeDialog(t);
+  const srcBtn = pane.querySelector('#set-srctok-save');
+  if (srcBtn) srcBtn.onclick = async () => {
     const v = pane.querySelector('#set-srctok').value.trim(); const stat = pane.querySelector('#set-srctok-stat');
     if (!v){ stat.textContent = 'Paste a token first.'; return; }
     stat.style.color = 'var(--text-3)'; stat.textContent = 'Sealing…';
-    try { await setAiSecrets(t, sealToBase64, { sourceToken: v }); stat.style.color = 'var(--success)'; stat.textContent = 'Saved SOURCE_TOKEN.'; pane.querySelector('#set-srctok').value = ''; }
-    catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = isScopeError(e) ? 'Token lacks Secrets write.' : 'Failed: ' + e.message; }
+    try { await setAiSecrets(t, sealToBase64, { sourceToken: v }); stat.style.color = 'var(--success)'; stat.textContent = 'Saved Source key (SOURCE_TOKEN).'; pane.querySelector('#set-srctok').value = ''; }
+    catch(e){ stat.style.color = 'var(--warn)'; stat.textContent = isScopeError(e) ? 'Your Owner key lacks Secrets write — re-create it with the full scope.' : 'Failed: ' + e.message; }
   };
 }
 // Agents section. B1 (the catalog) lands here later; for now it carries the existing comma-separated
@@ -3751,7 +3804,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
          <label style="font-size:12px">Send the test to<input id="ce-test" type="email" value="${escapeHtml(S.testTo)}" placeholder="your@email.com" style="${inputCss};margin-bottom:9px"></label>
          <div style="border-top:.5px solid var(--border);margin-top:2px;padding-top:9px">
            <label style="font-size:12px">Reviewer access key <span style="color:var(--text-3);font-weight:400">(the token reviewers paste to read ${UNIT}s + comment)</span>
-             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">Use a <b>least-privilege</b> GitHub token — <b>not</b> your account password/PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>, and set <b>Expiration → No expiration</b> so it never needs rotating. Leave blank to keep the current one.</div>
+             <div style="font-size:11px;color:var(--text-3);font-weight:400;margin:3px 0 4px;line-height:1.5">This is your <b>Reviewer key</b> — a <b>least-privilege</b> GitHub token, <b>not</b> your Owner key or account PAT (it gets emailed to every reviewer). Create a <a href="https://github.com/settings/personal-access-tokens/new?name=Footnote%20reviewer%20key" target="_blank" rel="noopener">fine-grained token</a> with access to <b>only</b> your Review repo <code>${dataRepoParts(_CFG).repo}</code> and <b>Contents: Read and write</b>, and set <b>Expiration → No expiration</b> so it never needs rotating. Leave blank to keep the current one.</div>
              <input id="ce-advkey" type="password" value="${escapeHtml(S.advkey)}" placeholder="paste the reviewer access token (or leave blank)" style="${inputCss}"></label>
          </div>`,
         backBtn + `<button id="ce-go" class="btn btn-primary" style="padding:5px 12px;font-size:12px"><i class="ti ti-send"></i> Connect &amp; send test</button>` + cancelBtn);
