@@ -47,6 +47,25 @@ export function agentCatalogHtml(rows, { editable = false } = {}) {
   return `<div style="display:grid;gap:6px">${cards}</div>`;
 }
 
+// Split a project's configured reviewAgents into the ones that can run in the CLOUD (read-only critics)
+// vs the rest (doers + local-only agents), using the catalog's category/execution. Mirrors the engine's
+// runnable_in_ci: a `doer` or an `execution:"local"` agent can't run as a cloud critic; an id with no
+// catalog metadata is treated as a runnable critic (the engine's legacy fallback). Preserves reviewAgents
+// order. Returns { runnable:[{id,displayName,description}], localOnly:[{id,displayName,reason}] }. Pure.
+export function splitAgentsForCloud(catalog, reviewAgents) {
+  const byId = new Map((catalog || []).filter(a => a && a.id).map(a => [a.id, a]));
+  const runnable = [], localOnly = [];
+  for (const id of (reviewAgents || [])) {
+    const a = byId.get(id);
+    const isDoer = a && a.category === 'doer';
+    const isLocal = a && a.execution === 'local';
+    const row = { id, displayName: (a && a.displayName) || id, description: (a && a.description) || '' };
+    if (isDoer || isLocal) localOnly.push({ ...row, reason: isLocal ? 'local' : 'doer' });
+    else runnable.push(row);
+  }
+  return { runnable, localOnly };
+}
+
 // Fetch the agent catalog for the current instance: the data repo's OWN agents.json first (repo-level;
 // includes any user-authored overlay agents), falling back to the app's shipped ./data-template/agents.json
 // (the builtin mirror) when there is no token or the repo has none yet. Returns [] on total failure.

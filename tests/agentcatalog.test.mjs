@@ -128,3 +128,30 @@ test('writeAgentsJson reads, transforms, and PUTs agents.json back with its sha'
   const written = JSON.parse(Buffer.from(putBody.content, 'base64').toString());
   assert.deepEqual(written.map(a => a.id), ['rigor', 'new']);
 });
+
+import { splitAgentsForCloud } from '../js/agentcatalog.js';
+
+test('splitAgentsForCloud: only critics that run in the cloud are runnable; doers + local are set aside', () => {
+  const catalog = [
+    { id: 'rigor', displayName: 'Rigor', description: 'checks claims', category: 'critic' },
+    { id: 'writer', displayName: 'Writer', category: 'doer' },
+    { id: 'dissertation-adversary', displayName: 'Adversary', category: 'critic', execution: 'local' },
+    { id: 'clarity', displayName: 'Clarity', category: 'critic' },
+  ];
+  const { runnable, localOnly } = splitAgentsForCloud(catalog, ['rigor', 'writer', 'dissertation-adversary', 'clarity']);
+  assert.deepEqual(runnable.map(a => a.id), ['rigor', 'clarity']);
+  assert.equal(runnable[0].displayName, 'Rigor');
+  assert.deepEqual(localOnly.map(a => a.id).sort(), ['dissertation-adversary', 'writer']);
+});
+
+test('splitAgentsForCloud: an id with no catalog metadata is treated as a runnable critic (legacy)', () => {
+  const { runnable, localOnly } = splitAgentsForCloud([], ['mystery']);
+  assert.deepEqual(runnable.map(a => a.id), ['mystery']);
+  assert.equal(localOnly.length, 0);
+});
+
+test('splitAgentsForCloud: only agents in reviewAgents are considered', () => {
+  const catalog = [{ id: 'rigor', category: 'critic' }, { id: 'clarity', category: 'critic' }];
+  const { runnable } = splitAgentsForCloud(catalog, ['rigor']);
+  assert.deepEqual(runnable.map(a => a.id), ['rigor']);
+});
