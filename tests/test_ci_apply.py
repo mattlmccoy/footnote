@@ -551,3 +551,18 @@ def test_process_apply_edits_job_anchors_a_hard_wrapped_passage():
     assert applied is True
     assert new_files["chapters/ch_fundamentals.tex"] == after + "\n"   # wrapped span replaced by after
     assert new_review["comments"][0]["status"] == "staged"
+
+
+def test_build_apply_task_forwards_the_comment_thread():
+    """A comment answered as a question can get a follow-up in its thread (owner: 'now put this in the
+    text'). The writer must SEE that back-and-forth to act on it — otherwise a re-send re-answers the
+    original question and ignores the follow-up (the c_mrele6go_0 case)."""
+    thread = [{"author": "you", "text": "Great answer — now explain it in the text.",
+               "ts": "2026-07-10T00:00:00Z"}]
+    review = {"comments": [dict(_comment("c1", "explain this"), thread=thread,
+                                claude={"response": "It is the melt fraction..."})]}
+    job = {"chapter": "ch_modeling", "comment_ids": ["c1"]}
+    task = R.build_apply_task(job, review, {"m.tex": "x"})
+    c1 = task["comments"][0]
+    assert c1["thread"] == thread                       # the follow-up conversation is forwarded
+    assert c1["prior_response"] == "It is the melt fraction..."   # and Claude's earlier answer

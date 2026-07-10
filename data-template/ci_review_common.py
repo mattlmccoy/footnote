@@ -455,6 +455,11 @@ def build_apply_task(job, review, files):
             "revise_note": c.get("revise_note", ""),
             "edit": c.get("edit"),
             "from_advisor": c.get("from_advisor"),
+            # the follow-up conversation: when the owner replies to Claude's answer ("now put this in the
+            # text"), the writer must see the thread + its own prior answer to ACT on the follow-up rather
+            # than re-answering the original question.
+            "thread": c.get("thread") or [],
+            "prior_response": (c.get("claude") or {}).get("response", ""),
         })
     return {"chapter": job.get("chapter"), "source": dict(files), "comments": out_comments,
             "revision": bool(job.get("revision")), "revise_note": job.get("revise_note", "")}
