@@ -577,3 +577,83 @@ def test_push_remote_forces(tmp_path, monkeypatch):
     ci_apply._push_remote(tmp_path, "review-edits/u", "tok", "owner/repo")
     # the pushed refspec must be a force update
     assert any(a.startswith("+") and ":review-edits/u" in a for a in calls["args"]) or "--force" in calls["args"]
+
+
+def test_apply_edits_preserves_staged_wording_on_non_revision_redrain(workspace_repo, monkeypatch, tmp_path):
+    """Re-draining an already-staged comment (NOT a revision) must reuse the exact staged edit and NOT
+    re-run the writer — so a preview rebuild / idempotent re-run can't re-roll wording the author liked."""
+    data, bare = workspace_repo
+    # a comment already carrying a staged writer edit (source_edit + staged_edit + claude.branch)
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "staged", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "reword",
+         "source_edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
+         "staged_edit": {"before": "the alpha term", "after": "the beta term"},
+         "claude": {"branch": "review-edits/02-methods", "response": "Reworded to beta."}}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
+    fake = tmp_path / "fake.sh"
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    called = {"writer": False}
+    def fake_claude(task):
+        called["writer"] = True                 # MUST NOT be called on a non-revision re-drain
+        return {"c1": {"id": "c1", "response": "DIFFERENT wording", "source_before": "\\alpha",
+                       "source_after": "\\gamma", "prose_before": "the alpha term", "prose_after": "the gamma term"}}
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude)
+
+    assert called["writer"] is False            # writer preserved, not re-run
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["status"] == "staged"
+    assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}   # SAME wording
+    # the branch carries the original \beta, not the writer's \gamma
+    branched = subprocess.run(["git", "--git-dir", str(bare), "show", "review-edits/02-methods:proj/source/methods.tex"],
+                              capture_output=True, text=True).stdout
+    assert "\\beta" in branched and "\\gamma" not in branched
+
+
+def test_apply_edits_revision_DOES_re_run_the_writer(workspace_repo, monkeypatch, tmp_path):
+    """A revision (owner reply / request-changes) still re-runs the writer even though an edit is staged."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "c1", "kind": "text", "status": "queued", "tag": "clarity",
+         "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "reword",
+         "source_edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
+         "staged_edit": {"before": "the alpha term", "after": "the beta term"},
+         "claude": {"branch": "review-edits/02-methods", "response": "old"}}]}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"],
+         "revision": True, "revise_note": "make it gamma", "status": "queued"}]))
+    fake = tmp_path / "fake.sh"
+    fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
+                    'printf "<p>rendered body padding for a realistic size.</p>%.0s" {1..12} >> "$2"\n')
+    fake.chmod(0o755)
+    import ci_render
+    monkeypatch.setattr(ci_render, "CHAPTER_HTML", str(fake))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    called = {"writer": False}
+    def fake_claude(task):
+        called["writer"] = True
+        return {"c1": {"id": "c1", "response": "revised", "source_before": "\\alpha", "source_after": "\\gamma",
+                       "prose_before": "the alpha term", "prose_after": "the gamma term"}}
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_claude)
+
+    assert called["writer"] is True            # a revision re-runs the writer
+    c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
+    assert c["staged_edit"]["after"] == "the gamma term"   # new wording from the revision

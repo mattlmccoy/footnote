@@ -589,3 +589,20 @@ def test_parse_claude_edits_extracts_object_map_wrapped_in_prose():
 def test_parse_claude_edits_still_empty_on_pure_prose():
     import ci_apply as A
     assert A.parse_claude_edits(json.dumps({"result": "I could not find a good place to edit."})) == {}
+
+
+def test_staged_edit_spec_reconstructs_a_reusable_spec():
+    # a comment that already carries a staged writer edit → rebuildable WITHOUT re-running the writer
+    c = {"id": "c1",
+         "source_edit": {"op": "replace", "find": "old text", "replacement": "new wording"},
+         "staged_edit": {"before": "old", "after": "new"},
+         "claude": {"response": "reworded"}}
+    spec = R.staged_edit_spec(c)
+    assert spec["source_before"] == "old text" and spec["source_after"] == "new wording"
+    assert spec["prose_before"] == "old" and spec["prose_after"] == "new"
+    assert spec["response"] == "reworded"
+
+
+def test_staged_edit_spec_none_when_nothing_staged():
+    assert R.staged_edit_spec({"id": "c1"}) is None
+    assert R.staged_edit_spec({"id": "c1", "source_edit": {"op": "insert", "find": "", "replacement": "x"}}) is None

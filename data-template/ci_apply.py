@@ -633,6 +633,25 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         if comment is None:
             continue
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
+
+        # PRESERVE staged wording: a NON-revision re-drain of an already-staged comment must NOT re-run the
+        # writer (which re-rolls the wording). Reuse the exact staged edit — re-apply + re-preview only.
+        # A revision (owner reply / request-changes) sets job.revision and DOES re-run the writer.
+        reuse = None if job.get("revision") else R.staged_edit_spec(comment)
+        if reuse:
+            _tr, _tf, _br, _applied = R.process_apply_edits_job(
+                {**job, "comment_ids": [cid]}, kept_review, work, {cid: reuse}, _now_iso())
+            if _applied:
+                work, kept_review = _tf, _tr
+                staged += 1
+                ev("agent", "Keeping your previously staged edit (writer not re-run).", comment=cid,
+                   agent="writer", status="ok",
+                   edit={"before": reuse.get("prose_before", ""), "after": reuse.get("prose_after", "")})
+                ev("stage", f"Re-staged your existing edit on review-edits/{ch} (wording unchanged).",
+                   comment=cid, status="ok")
+                continue
+            # the stored edit no longer anchors (source moved under it) — fall through to a fresh writer pass
+
         revise_note, attempt, outcome = "", 1, None
         while outcome is None:
             # the configured writer DOER drafts this comment's edit (Figure Drafter for a figure comment,
