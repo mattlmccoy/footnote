@@ -85,3 +85,14 @@ test('groupStream groups run-agents by agent with status + findings', () => {
   assert.deepEqual(groups[0].findings, [{tag:'rigor',text:'cite this'}]);
   assert.equal(groups[1].key, 'clarity'); assert.equal(groups[1].status, 'running');  // still going
 });
+
+import { usageGauge } from '../js/cloudprogress.js';
+
+test('usageGauge shows progress toward the call cap, with severity', () => {
+  assert.equal(usageGauge(null), null);
+  assert.equal(usageGauge({ calls: 5 }), null);                 // no cap known → no gauge
+  assert.deepEqual(usageGauge({ calls: 6, cap_calls: 100 }), { pct: 6, calls: 6, cap: 100, level: 'ok', label: '6 / 100 calls' });
+  assert.equal(usageGauge({ calls: 65, cap_calls: 100 }).level, 'warn');
+  assert.equal(usageGauge({ calls: 95, cap_calls: 100 }).level, 'high');
+  assert.equal(usageGauge({ calls: 200, cap_calls: 100 }).pct, 100);   // clamps
+});

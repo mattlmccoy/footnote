@@ -1,14 +1,14 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=f0898b1';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=5fdbd60';
-import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=079b317';
+import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=stopbtn1';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=2df623a';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote } from './cloudprogress.js?v=3c936f9';
+import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge } from './cloudprogress.js?v=gauge1';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=318f4ae';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1773,15 +1773,28 @@ function openCloudActivity(jobId){
   panel.innerHTML = `<div style="padding:13px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:9px">
       <i class="ti ti-robot-face" style="font-size:18px;flex-shrink:0"></i><b style="flex:1;white-space:nowrap">Cloud activity</b>
       <label style="font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="ca-debug">details</label>
+      <button class="btn" id="ca-stop" style="padding:3px 10px;color:var(--warn);border-color:var(--warn);display:inline-flex;align-items:center;gap:3px"><i class="ti ti-player-stop"></i>Stop</button>
       <button class="btn" id="ca-x" style="padding:3px 10px">Close</button></div>
-    <div style="padding:9px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px">
-      <div id="ca-head" style="flex:1;min-width:0;font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Waiting for the cloud job to start…</div>
-      <span id="ca-usage" style="font-size:11px;color:var(--text-3);white-space:nowrap;flex-shrink:0"></span></div>
+    <div style="padding:9px 16px 8px;border-bottom:.5px solid var(--border)">
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="ca-head" style="flex:1;min-width:0;font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Waiting for the cloud job to start…</div>
+        <span id="ca-usage" style="font-size:11px;color:var(--text-3);white-space:nowrap;flex-shrink:0"></span></div>
+      <div id="ca-gauge" style="height:3px;border-radius:2px;background:var(--bg-3,#eef);margin-top:7px;display:none;overflow:hidden"><div id="ca-gaugefill" style="height:100%;width:0;background:var(--accent,#2c64c4);transition:width .35s ease"></div></div></div>
     <div id="ca-feed" style="flex:1;overflow:auto;padding:8px 12px"></div>`;
   document.body.appendChild(panel);
-  let stop = false, debug = false, lastEvents = [];
+  let stop = false, debug = false, lastEvents = [], stopping = false;
   panel.querySelector('#ca-x').onclick = () => { stop = true; panel.remove(); };
   panel.querySelector('#ca-debug').onchange = e => { debug = e.target.checked; render(lastEvents); };
+  panel.querySelector('#ca-stop').onclick = async () => {
+    const btn = panel.querySelector('#ca-stop');
+    if (!confirm('Stop this cloud job now? Work already staged is kept; anything in progress is cancelled.')) return;
+    btn.disabled = true; btn.textContent = 'Stopping…'; stopping = true;
+    try {
+      const run = await applyRun(tok());
+      if (run && (run.status === 'in_progress' || run.status === 'queued')) { await cancelRun(tok(), run.id); flash('Stopping the cloud job — this can take a few seconds.'); }
+      else { flash('No running cloud job to stop (it may have already finished).'); }
+    } catch(e){ flash(isScopeError(e) ? 'Your access token needs Actions access to stop a run.' : 'Couldn’t stop: ' + ((e && e.message) || 'error')); btn.disabled = false; btn.innerHTML = '<i class="ti ti-player-stop"></i>Stop'; stopping = false; }
+  };
   if (!document.getElementById('ca-css')) {
     const st = document.createElement('style'); st.id = 'ca-css';
     st.textContent = '@keyframes caspin{to{transform:rotate(360deg)}}.ca-spin{display:inline-block;animation:caspin 1.1s linear infinite}';
@@ -1800,22 +1813,34 @@ function openCloudActivity(jobId){
         <span style="color:var(--text-2)">${escapeHtml(f.text || '')}</span></div>`).join('')}</div>`;
   const editToggle = e => e.edit && (e.edit.before || e.edit.after) ? `<details style="margin:4px 0 0 22px"><summary style="cursor:pointer;color:var(--text-3);font-size:11px">show diff</summary><div style="font-family:var(--mono);font-size:11px;white-space:pre-wrap;margin-top:3px"><span style="color:var(--warn)">- ${escapeHtml(e.edit.before || '')}</span>\n<span style="color:var(--success)">+ ${escapeHtml(e.edit.after || '')}</span></div></details>` : '';
   const statusWord = g => g.status === 'running' ? 'working…' : g.status === 'conflict' ? 'flagged' : 'done';
-  // one card per subject (agent or comment) — header + findings (agents) or narrated steps (comments)
-  const card = g => `<div style="margin:7px 0;border:.5px solid var(--border);border-radius:10px;padding:9px 11px;background:var(--bg)">
-      <div style="display:flex;gap:8px;align-items:center">
+  // one COLLAPSIBLE card per subject (agent or comment): the header is the <summary>; expand for the
+  // findings (agents) or the narrated steps + diff (comments). Open by default so insight is visible; the
+  // user can collapse a card once they've read it.
+  const cardBody = g => g.kind === 'agent'
+    ? (g.findings.length ? fList(g.findings)
+       : `<div style="font-size:11.5px;color:var(--text-3);margin-top:3px;padding-left:22px">${escapeHtml((g.last && g.last.say) || (g.status === 'running' ? 'thinking…' : ''))}</div>`)
+    : g.events.filter(e => e.phase !== 'read').map(e => `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;padding-left:22px">${e.agent ? `<b style="font-weight:600">${escapeHtml(e.agent)}</b> · ` : ''}${escapeHtml(e.say || '')}</div>${editToggle(e)}`).join('');
+  const card = g => `<details ${g.status === 'running' ? 'open' : (g.findings.length || g.kind === 'comment' ? 'open' : '')} style="margin:7px 0;border:.5px solid var(--border);border-radius:10px;background:var(--bg);overflow:hidden">
+      <summary style="list-style:none;cursor:pointer;padding:9px 11px;display:flex;gap:8px;align-items:center">
         <span style="width:14px;text-align:center;flex-shrink:0">${dot(g.status)}</span>
         <b style="font-size:12.5px">${escapeHtml(g.key)}</b>
-        <span style="font-size:10.5px;color:var(--text-3);margin-left:auto;text-transform:uppercase;letter-spacing:.03em">${statusWord(g)}</span></div>
-      ${g.kind === 'agent'
-        ? (g.findings.length ? fList(g.findings)
-           : `<div style="font-size:11.5px;color:var(--text-3);margin-top:3px;padding-left:22px">${escapeHtml((g.last && g.last.say) || '')}</div>`)
-        : g.events.filter(e => e.phase !== 'read').map(e => `<div style="font-size:11.5px;color:var(--text-2);margin-top:3px;padding-left:22px">${e.agent ? `<b style="font-weight:600">${escapeHtml(e.agent)}</b> · ` : ''}${escapeHtml(e.say || '')}</div>${editToggle(e)}`).join('')}
-      ${debug ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-3);padding-left:22px;margin-top:4px">${escapeHtml(JSON.stringify(g.events.map(e => ({ seq: e.seq, phase: e.phase, status: e.status }))))}</div>` : ''}</div>`;
+        ${g.findings.length ? `<span style="font-size:10.5px;color:var(--text-3);background:var(--bg-3,#eef);border-radius:9px;padding:0 6px">${g.findings.length}</span>` : ''}
+        <span style="font-size:10.5px;color:var(--text-3);margin-left:auto;text-transform:uppercase;letter-spacing:.03em">${statusWord(g)}</span></summary>
+      <div style="padding:0 11px 9px">${cardBody(g)}
+      ${debug ? `<div style="font-family:var(--mono);font-size:10px;color:var(--text-3);padding-left:22px;margin-top:4px">${escapeHtml(JSON.stringify(g.events.map(e => ({ seq: e.seq, phase: e.phase, status: e.status }))))}</div>` : ''}</div></details>`;
   function render(events){
     lastEvents = events;
     panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
     const u = usageTotals(events), chip = panel.querySelector('#ca-usage');
     if (chip){ chip.textContent = usageLine(u); chip.title = usageCostNote(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; chip.style.cursor = u ? 'help' : ''; }
+    const gg = usageGauge(u), bar = panel.querySelector('#ca-gauge'), fill = panel.querySelector('#ca-gaugefill');
+    if (bar && fill){
+      if (gg){ bar.style.display = 'block'; fill.style.width = gg.pct + '%'; fill.style.background = gg.level === 'high' ? 'var(--warn)' : gg.level === 'warn' ? '#c9a227' : 'var(--accent,#2c64c4)'; bar.title = `${gg.label} — the per-job budget cap (raise it in Settings)`; }
+      else bar.style.display = 'none';
+    }
+    // Stop button: shown while the run is live; hidden once the job reaches a terminal event or is stopping
+    const done = isTerminal(events), sbtn = panel.querySelector('#ca-stop');
+    if (sbtn) sbtn.style.display = (done || stopping) ? 'none' : 'inline-flex';
     const g = groupStream(events);
     panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(jobRow).join('') + g.groups.map(card).join('');
   }

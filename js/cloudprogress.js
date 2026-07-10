@@ -102,3 +102,15 @@ export function groupStream(events) {
   });
   return { jobEvents, groups };
 }
+
+// A budget gauge from the usage tally: progress toward the per-job call cap so the user SEES how close a
+// run is to the limit (not just an abstract token count). null when no cap is known. Pure.
+export function usageGauge(u) {
+  if (!u) return null;
+  const cap = Number(u.cap_calls || 0);
+  if (!(cap > 0)) return null;
+  const calls = Number(u.calls || 0);
+  const pct = Math.min(100, Math.round((calls / cap) * 100));
+  const level = pct >= 90 ? 'high' : pct >= 60 ? 'warn' : 'ok';
+  return { pct, calls, cap, level, label: `${calls} / ${cap} calls` };
+}
