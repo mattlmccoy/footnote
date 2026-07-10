@@ -1758,7 +1758,7 @@ function openSendMenu(){
   menu.innerHTML = cloudRow + sendMenuActions(assistantOn(), _CFG.reviewAgents).map(a => rowFor[a]).join('');
   document.body.appendChild(menu);
   menu.querySelectorAll('.smi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
-    el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else if (el.dataset.type === 'cloud-activity') openCloudActivity(_lastCloud); else sendJob(el.dataset.type); }; });
+    el.onclick = () => { menu.remove(); if (el.dataset.type === 'export') exportDialog(current); else if (el.dataset.type === 'cloud-activity') openCloudActivity(_lastCloud); else if (el.dataset.type === 'run-agents') agentPickerDialog(current); else sendJob(el.dataset.type); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-send' && !e.target.closest?.('#btn-send')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 // Live "watch it work" view for a cloud review job. Polls <prefix>progress/<job>.jsonl every ~2.5s and
@@ -1896,6 +1896,52 @@ async function queueExport(scope, formats, opts){
   jobs.push({ id:'j_'+Date.now().toString(36), type:'export', chapter:scope, formats, opts,
     status:'queued', requested_ts:new Date().toISOString() });
   await putJson(t, 'jobs.json', jobs, sha, `export: queue ${scope} (${formats.join(',')})`);
+}
+
+// Pick which review agents run over the CURRENT chapter (a subset of the configured reviewAgents), so
+// you can target one critic instead of the whole panel. The engine already honors job.agents.
+function agentPickerDialog(scope){
+  const agents = _CFG.reviewAgents || [];
+  if (!agents.length){ flash('No review agents are configured for this project.'); return; }
+  document.getElementById('agdlg')?.remove();
+  const title = `${unitLabel(chMeta(scope), UNIT)} · ${escapeHtml(shortTitle(chMeta(scope).title))}`;
+  const back = document.createElement('div'); back.id = 'agdlg';
+  back.style.cssText = 'position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center';
+  back.innerHTML = `<div class="expcard" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,92vw);padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:3px">Run review agents</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:14px">Read-only critique of ${title}. Pick which agents to run; each appends its findings as comments.</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px"><button class="btn" id="ag-all" style="padding:2px 8px;font-size:11px">All</button><button class="btn" id="ag-none" style="padding:2px 8px;font-size:11px">None</button></div>
+      <div style="max-height:44vh;overflow:auto">${agents.map(a => `<label class="exp-row"><input type="checkbox" class="ag-a" value="${escapeHtml(a)}" checked> ${escapeHtml(a)}</label>`).join('')}</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px">
+        <button class="btn" id="ag-cancel">Cancel</button>
+        <button class="btn btn-primary" id="ag-go"><i class="ti ti-robot-face"></i>Run selected</button></div>
+      <div id="ag-stat" style="font-size:12px;color:var(--text-3);margin-top:8px"></div></div>`;
+  document.body.appendChild(back);
+  const q = s => back.querySelector(s), boxes = () => [...back.querySelectorAll('.ag-a')];
+  back.onclick = e => { if (e.target === back) back.remove(); };
+  q('#ag-cancel').onclick = () => back.remove();
+  q('#ag-all').onclick = () => boxes().forEach(b => b.checked = true);
+  q('#ag-none').onclick = () => boxes().forEach(b => b.checked = false);
+  q('#ag-go').onclick = async () => {
+    const picked = boxes().filter(b => b.checked).map(b => b.value);
+    if (!picked.length){ q('#ag-stat').textContent = 'Pick at least one agent.'; return; }
+    q('#ag-stat').textContent = 'Queuing…';
+    try {
+      await queueRunAgents(scope, picked);
+      q('#ag-stat').textContent = `Queued ${picked.length} agent(s) ✓ — findings will appear as comments in a few minutes.`;
+      flash(`Requested review of ${unitLabel(chMeta(scope), UNIT)} by ${picked.length} agent(s)`);
+      setTimeout(() => back.remove(), 1500);
+    } catch(e){ q('#ag-stat').textContent = 'Failed: ' + e.message; }
+  };
+}
+async function queueRunAgents(scope, agents){
+  const t = tok(); if (!t) throw new Error('add your access token first');
+  await syncUp();
+  const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
+  const jobs = Array.isArray(json) ? json : [];
+  jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:scope,
+    agents, field:(_CFG.doc && _CFG.doc.field) || '', status:'queued', requested_ts:new Date().toISOString() });
+  await putJson(t, 'jobs.json', jobs, sha, `review: agents ${scope} (${agents.length})`);
 }
 // all export jobs (done + in-flight), newest first — for the home Downloads section
 async function listExports(){
