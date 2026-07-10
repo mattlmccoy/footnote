@@ -8,7 +8,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine } from './cloudprogress.js?v=8c1cb15';
+import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote } from './cloudprogress.js?v=usage2';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=318f4ae';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1770,12 +1770,13 @@ function openCloudActivity(jobId){
   document.getElementById('cloud-activity')?.remove();
   const panel = document.createElement('div'); panel.id = 'cloud-activity';
   panel.style.cssText = 'position:fixed;top:0;right:0;height:100vh;width:min(460px,92vw);z-index:60;background:var(--bg);border-left:.5px solid var(--border-2);box-shadow:-14px 0 44px rgba(0,0,0,.14);display:flex;flex-direction:column';
-  panel.innerHTML = `<div style="padding:13px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px">
-      <i class="ti ti-robot-face"></i><b style="flex:1">Cloud activity</b>
-      <span id="ca-usage" title="Claude usage this run" style="font-size:11px;color:var(--text-3);white-space:nowrap"></span>
+  panel.innerHTML = `<div style="padding:13px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:9px">
+      <i class="ti ti-robot-face" style="font-size:18px;flex-shrink:0"></i><b style="flex:1;white-space:nowrap">Cloud activity</b>
       <label style="font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="ca-debug">details</label>
       <button class="btn" id="ca-x" style="padding:3px 10px">Close</button></div>
-    <div id="ca-head" style="padding:10px 16px;font-size:12.5px;color:var(--text-2);border-bottom:.5px solid var(--border)">Waiting for the cloud job to start…</div>
+    <div style="padding:9px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px">
+      <div id="ca-head" style="flex:1;min-width:0;font-size:12.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Waiting for the cloud job to start…</div>
+      <span id="ca-usage" style="font-size:11px;color:var(--text-3);white-space:nowrap;flex-shrink:0"></span></div>
     <div id="ca-feed" style="flex:1;overflow:auto;padding:8px 12px"></div>`;
   document.body.appendChild(panel);
   let stop = false, debug = false, lastEvents = [];
@@ -1814,7 +1815,7 @@ function openCloudActivity(jobId){
     lastEvents = events;
     panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
     const u = usageTotals(events), chip = panel.querySelector('#ca-usage');
-    if (chip){ chip.textContent = usageLine(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; }
+    if (chip){ chip.textContent = usageLine(u); chip.title = usageCostNote(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; chip.style.cursor = u ? 'help' : ''; }
     const g = groupStream(events);
     panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(jobRow).join('') + g.groups.map(card).join('');
   }
