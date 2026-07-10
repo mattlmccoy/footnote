@@ -332,6 +332,13 @@ def run_writer_cli(task, catalog=None, field="", writer_id="writer", model=None)
     return specs
 
 
+def _unit_sourcefile(prefix, unit_id):
+    """The chapters.json ``sourceFile`` for one unit (or None) — used to scope an agent/writer's context to
+    just that unit's source instead of the whole manuscript (the big cost lever)."""
+    rows = ci_render.load_units(prefix)
+    return next((r.get("sourceFile") for r in rows if r.get("id") == unit_id), None)
+
+
 def read_text_files(root):
     """Every text source file under ``root`` as ``{relpath: text}`` (skips binaries/figures)."""
     out = {}
@@ -657,6 +664,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
     CONFLICT (never a silent stub). Every step is narrated. Author-oversight preserved: staged edits only
     land on review-edits/<unit>. Returns (new_review, applied_count)."""
     ch = job.get("chapter")
+    unit_sf = _unit_sourcefile(prefix, ch)   # scope the writer's context to this unit's source (cost lever)
     jid = job.get("id")
     ids = job.get("comment_ids") or []
     seq = [0]
@@ -720,7 +728,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
             wjob = {**job, "comment_ids": [cid]}
             if attempt > 1:
                 wjob = {**wjob, "revision": True, "revise_note": revise_note}
-            wtask = R.build_apply_task(wjob, kept_review, R.author_source(work))
+            wtask = R.build_apply_task(wjob, kept_review, R.author_source(R.unit_source_files(work, unit_sf)))
             spec = (writer_call(comment, wtask) or {}).get(cid) or {}
             trial_review, trial_files, branch, applied = R.process_apply_edits_job(
                 {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
@@ -953,7 +961,10 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 print(f"[apply] {prefix}{ch}: run-agents has local agent(s) — leaving for the local "
                       f"runner (ci_local) — skipping", file=sys.stderr)
                 continue
-            task = R.build_apply_task(job, review, R.author_source(files))
+            # scope the agent's context to THIS unit's source (+ shared macros/bib), not the whole
+            # manuscript — each agent reading the entire dissertation is the live-test cost bomb.
+            unit_files = R.unit_source_files(files, _unit_sourcefile(prefix, ch))
+            task = R.build_apply_task(job, review, R.author_source(unit_files))
             # Resolve each selected agent's real system prompt via the catalog (legacy fallback for
             # unknown names). doc.field for the domain critic arrives on the job (client-supplied).
             field = job.get("field") or os.environ.get("DOC_FIELD") or ""

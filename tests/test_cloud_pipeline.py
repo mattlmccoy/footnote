@@ -196,3 +196,35 @@ def test_finding_summaries_caps_and_truncates():
 def test_finding_summaries_tolerates_junk():
     assert R.finding_summaries(None) == []
     assert R.finding_summaries([{"body": ""}, {"nope": 1}]) == []   # nothing sayable → dropped
+
+
+# ---- unit_source_files: send an agent/writer only the unit under review, not the whole manuscript ----
+
+def test_unit_source_files_scopes_to_the_unit_plus_shared_context():
+    files = {
+        "main.tex": "\\include{chapters/ch_intro}\\include{chapters/ch_platform}",
+        "chapters/ch_intro.tex": "Intro prose. \\cite{a}",
+        "chapters/ch_platform.tex": "Platform prose. \\input{sections/machine}",
+        "sections/machine.tex": "Machine sub-section.",
+        "preamble/macros.tex": "\\newcommand{\\Qrf}{Q}",
+        "refs.bib": "@article{a,...}",
+    }
+    out = R.unit_source_files(files, "chapters/ch_platform.tex")
+    assert "chapters/ch_platform.tex" in out          # the unit
+    assert "sections/machine.tex" in out              # its \input, transitively
+    assert "preamble/macros.tex" in out               # shared macros
+    assert "refs.bib" in out                          # citation context
+    assert "chapters/ch_intro.tex" not in out         # OTHER unit dropped (the cost saving)
+    assert "main.tex" not in out                      # the include-everything root dropped
+
+
+def test_unit_source_files_resolves_input_without_extension():
+    files = {"chapters/c.tex": "\\input{sections/x}", "sections/x.tex": "x"}
+    out = R.unit_source_files(files, "chapters/c.tex")
+    assert set(out) == {"chapters/c.tex", "sections/x.tex"}
+
+
+def test_unit_source_files_falls_back_to_all_when_entry_unknown():
+    files = {"a.tex": "1", "b.tex": "2"}
+    assert R.unit_source_files(files, None) == files          # unknown unit → everything (safe)
+    assert R.unit_source_files(files, "missing.tex") == files
