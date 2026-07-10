@@ -187,6 +187,37 @@ def _first_json_value(text):
     return None
 
 
+def claude_usage(raw):
+    """Extract billed usage from a claude ``--output-format json`` envelope: ``{cost_usd, input_tokens,
+    output_tokens}``. ``input_tokens`` sums the fresh + cache-read + cache-creation input (the whole
+    context billed). Newer CLIs use ``total_cost_usd``, older ``cost_usd``. Zeros on anything unparseable.
+    Powers the Cloud Activity usage header so a run's spend is visible, not blind. Pure."""
+    import json
+    zero = {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0}
+    try:
+        env = json.loads(raw)
+    except (ValueError, TypeError):
+        return dict(zero)
+    if not isinstance(env, dict):
+        return dict(zero)
+    cost = env.get("total_cost_usd", env.get("cost_usd", 0.0)) or 0.0
+    u = env.get("usage") or {}
+    def _i(k):
+        try:
+            return int(u.get(k, 0) or 0)
+        except (ValueError, TypeError):
+            return 0
+    return {"cost_usd": float(cost),
+            "input_tokens": _i("input_tokens") + _i("cache_read_input_tokens") + _i("cache_creation_input_tokens"),
+            "output_tokens": _i("output_tokens")}
+
+
+def reset_usage():
+    """Start a fresh per-job usage tally (cost/tokens/calls/errors). _run_claude accumulates into it."""
+    _run_claude.usage = {"cost_usd": 0.0, "input_tokens": 0, "output_tokens": 0, "calls": 0, "errors": 0}
+    return _run_claude.usage
+
+
 def parse_claude_edits(raw):
     """Recover the ``{comment_id: edit_spec}`` map from Claude's apply-edits output (envelope, fenced
     block, array, or object map). Returns {} on anything unparseable (the caller leaves the job for a
@@ -233,10 +264,23 @@ def _run_claude(directive, context, model, label):
                               input=context, capture_output=True, text=True)
     except OSError as e:
         print(f"[apply] {label}: claude CLI unavailable ({e}) — leaving job", file=sys.stderr)
+        acc = getattr(_run_claude, "usage", None)
+        if acc is not None:
+            acc["errors"] += 1
         return None
+    acc = getattr(_run_claude, "usage", None)
     if proc.returncode != 0:
         print(f"[apply] {label}: claude CLI failed ({proc.returncode}): {proc.stderr[:300]}", file=sys.stderr)
+        if acc is not None:
+            acc["errors"] += 1
+            acc["last_error"] = (proc.stderr or "")[:200]
         return None
+    if acc is not None:
+        u = claude_usage(proc.stdout)
+        acc["cost_usd"] += u["cost_usd"]
+        acc["input_tokens"] += u["input_tokens"]
+        acc["output_tokens"] += u["output_tokens"]
+        acc["calls"] += 1
     return proc.stdout
 
 
@@ -622,6 +666,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         seq[0] += 1
         return e
 
+    usage = reset_usage()                      # per-run Claude spend tally for the Cloud Activity header
     ev("read", f"Starting review of {len(ids)} comment(s) on {ch}.")
     work = dict(files)
     kept_review = review
@@ -735,8 +780,27 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
                f"updated — its access token is read-only — so approve here and merge to the source "
                f"with a write-scoped token.)", status="ok")
     _write_json(R.review_path(prefix, ch), kept_review)
+    # usage header: how much Claude this run spent (so a reviewer isn't burning credits blind). When a
+    # call FAILED (bad/expired token or exhausted credits) and nothing ran, say so explicitly instead of
+    # a silent "0 staged" — that was the confusing "it fails to launch with no feedback" case.
+    if usage.get("errors") and usage.get("calls", 0) == 0:
+        ev("usage", "Claude did not run — the connection or credentials failed (check your Claude token "
+           "or remaining credits). Nothing was charged.", status="conflict", usage=dict(usage))
+    else:
+        ev("usage", _usage_say(usage), usage=dict(usage))
     ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts.")
     return kept_review, staged
+
+
+def _usage_say(u):
+    """Human one-liner for the usage event: '$0.0123 · 2.3k tokens · 3 Claude call(s) this run'."""
+    cost = u.get("cost_usd", 0.0) or 0.0
+    tok = (u.get("input_tokens", 0) or 0) + (u.get("output_tokens", 0) or 0)
+    tks = f"{tok/1000:.1f}k" if tok >= 1000 else str(tok)
+    part = f"${cost:.4f} · {tks} tokens · {u.get('calls', 0)} Claude call(s) this run"
+    if u.get("errors"):
+        part += f" · {u['errors']} failed call(s)"
+    return part
 
 
 def _mark_conflict(review, cid, reason):

@@ -27,6 +27,14 @@ export function netHealth({ online, recent } = {}) {
   return 'ok';
 }
 
+// Whether to show the banner given the live state and the state the user last dismissed. Dismissing
+// silences only THAT exact state; escalating to a different state (e.g. slow → offline) shows again so a
+// real degradation isn't hidden. 'ok'/empty never shows. Pure.
+export function shouldShow(state, dismissedState) {
+  if (!state || state === 'ok') return false;
+  return state !== dismissedState;
+}
+
 // Honest per-state copy. Empty string means "show nothing".
 export function bannerText(state) {
   if (state === 'offline') return 'You’re offline — Footnote can’t reach GitHub. Pages and comments can’t load or save until your connection is back.';
@@ -38,6 +46,7 @@ export function bannerText(state) {
 // ---- browser wiring (not unit-tested; verified in the browser) ----
 
 let _started = false;
+let _dismissed = null;      // the state the user last dismissed (silence only that exact state)
 
 function ensureBanner() {
   let el = document.getElementById('fn-netbanner');
@@ -46,9 +55,15 @@ function ensureBanner() {
     el.id = 'fn-netbanner';
     el.setAttribute('role', 'status');
     el.setAttribute('aria-live', 'polite');
-    el.style.cssText = 'position:fixed;left:0;right:0;top:0;z-index:99999;display:none;padding:7px 16px;' +
-      'text-align:center;font:500 12.5px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#fff;' +
-      'box-shadow:0 1px 4px rgba(0,0,0,.18)';
+    // BOTTOM banner (was top, where it covered the toolbar) — a thin bar the user can dismiss, like the
+    // update toast. Centered content + a close button; never blocks the top bar.
+    el.style.cssText = 'position:fixed;left:0;right:0;bottom:0;z-index:99999;display:none;' +
+      'align-items:center;gap:12px;padding:7px 16px;' +
+      'font:500 12.5px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;color:#fff;' +
+      'box-shadow:0 -1px 4px rgba(0,0,0,.18)';
+    el.innerHTML = '<span id="fn-netbanner-txt" style="flex:1;text-align:center"></span>' +
+      '<button id="fn-netbanner-x" aria-label="Dismiss" title="Dismiss" ' +
+      'style="all:unset;cursor:pointer;padding:0 6px;font-size:15px;line-height:1;opacity:.85">×</button>';
     document.body.appendChild(el);
   }
   return el;
@@ -56,11 +71,14 @@ function ensureBanner() {
 
 function paint(state) {
   const el = ensureBanner();
+  if (state === 'ok') _dismissed = null;            // recovered → a later degradation should show again
   const txt = bannerText(state);
-  if (!txt) { el.style.display = 'none'; return; }
+  if (!shouldShow(state, _dismissed) || !txt) { el.style.display = 'none'; return; }
   el.style.background = (state === 'offline' || state === 'unreachable') ? '#b3261e' : '#8a6a00';   // red / amber
-  el.textContent = txt;
-  el.style.display = 'block';
+  el.querySelector('#fn-netbanner-txt').textContent = txt;
+  el.style.display = 'flex';
+  const x = el.querySelector('#fn-netbanner-x');
+  x.onclick = () => { _dismissed = state; el.style.display = 'none'; };   // silence THIS state until it changes
 }
 
 // Start watching. Wraps window.fetch to sample every request, listens to online/offline, and repaints the

@@ -8,7 +8,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, isTerminal, summaryLine } from './cloudprogress.js?v=6179fd2';
+import { parseEvents, groupByComment, isTerminal, summaryLine, usageTotals, usageLine } from './cloudprogress.js?v=usage1';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson } from './agentcatalog.js?v=a1734d0';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1772,6 +1772,7 @@ function openCloudActivity(jobId){
   panel.style.cssText = 'position:fixed;top:0;right:0;height:100vh;width:min(460px,92vw);z-index:60;background:var(--bg);border-left:.5px solid var(--border-2);box-shadow:-14px 0 44px rgba(0,0,0,.14);display:flex;flex-direction:column';
   panel.innerHTML = `<div style="padding:13px 16px;border-bottom:.5px solid var(--border);display:flex;align-items:center;gap:10px">
       <i class="ti ti-robot-face"></i><b style="flex:1">Cloud activity</b>
+      <span id="ca-usage" title="Claude usage this run" style="font-size:11px;color:var(--text-3);white-space:nowrap"></span>
       <label style="font-size:11px;color:var(--text-3);display:flex;align-items:center;gap:4px"><input type="checkbox" id="ca-debug">details</label>
       <button class="btn" id="ca-x" style="padding:3px 10px">Close</button></div>
     <div id="ca-head" style="padding:10px 16px;font-size:12.5px;color:var(--text-2);border-bottom:.5px solid var(--border)">Waiting for the cloud job to start…</div>
@@ -1789,6 +1790,8 @@ function openCloudActivity(jobId){
   function render(events){
     lastEvents = events;
     panel.querySelector('#ca-head').textContent = summaryLine(events) || 'Working…';
+    const u = usageTotals(events), chip = panel.querySelector('#ca-usage');
+    if (chip){ chip.textContent = usageLine(u); chip.style.color = (u && u.errors) ? 'var(--warn)' : 'var(--text-3)'; }
     const g = groupByComment(events);
     const block = c => `<div style="margin:8px 0;border:.5px solid var(--border);border-radius:9px;padding:8px 10px">
         <div style="font-size:11px;color:var(--text-3);margin-bottom:4px">${escapeHtml(c.comment)}${c.done ? '' : ' · in progress'}</div>
