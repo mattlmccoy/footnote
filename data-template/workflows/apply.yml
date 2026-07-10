@@ -66,6 +66,11 @@ jobs:
           # ALTERNATIVE: a raw Anthropic API key (billed per token). Either one enables Claude jobs.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
+          # Cost levers set in Settings → Cloud model & budget. CRITIC_MODEL runs the read-only critics on a
+          # cheaper model (defaults to Sonnet in the engine); the caps stop a job before it burns tokens.
+          CRITIC_MODEL: ${{ vars.CRITIC_MODEL }}
+          COST_CAP_USD: ${{ vars.COST_CAP_USD }}
+          MAX_CLAUDE_CALLS: ${{ vars.MAX_CLAUDE_CALLS }}
           PROJECT: ${{ github.event.inputs.project }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: python3 ci_apply.py

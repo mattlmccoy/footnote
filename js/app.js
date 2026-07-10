@@ -3314,9 +3314,13 @@ function modelBudgetCard() {
   return `<div class="set-card" id="set-mb">
     <h4>Cloud model &amp; budget</h4>
     <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">What the <b>cloud</b> review runs use. A cheaper model cuts cost; the caps stop a job before it burns tokens without bound. (Local runs use your own Claude Code and ignore these.)</div>
-    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Model</label>
-    <select id="mb-model" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:12px">
+    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Writer model <span style="font-weight:400;color:var(--text-3)">— makes the edits</span></label>
+    <select id="mb-model" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:10px">
       ${CLOUD_MODELS.map(m => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('')}</select>
+    <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Critic model <span style="font-weight:400;color:var(--text-3)">— read-only reviewers; cheaper by default</span></label>
+    <select id="mb-critic" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:6px">
+      ${CLOUD_MODELS.map(m => `<option value="${m.id}">${escapeHtml(m.label)}</option>`).join('')}</select>
+    <div style="font-size:11px;color:var(--text-3);margin-bottom:12px">Critics only read and comment, so a cheaper model here cuts cost a lot (each critic reads the unit). Defaults to Sonnet.</div>
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Cost cap (USD / job)
         <input id="mb-cost" type="number" min="0" step="0.5" placeholder="off" style="display:block;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:4px;font-weight:400"></label>
@@ -3328,16 +3332,19 @@ function modelBudgetCard() {
   </div>`;
 }
 async function wireModelBudget(pane, t) {
-  const sel = pane.querySelector('#mb-model'), cost = pane.querySelector('#mb-cost'),
-        calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat');
+  const sel = pane.querySelector('#mb-model'), critic = pane.querySelector('#mb-critic'),
+        cost = pane.querySelector('#mb-cost'), calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat');
   if (!sel) return;
+  if (critic) critic.value = 'claude-sonnet-5';   // cheaper default; engine also defaults CRITIC_MODEL→Sonnet
   // best-effort prefill from the current variables (a scope-limited token just leaves defaults)
   try {
-    const [m, c, n] = await Promise.all([
+    const [m, cr, c, n] = await Promise.all([
       getVariable(t, 'CLAUDE_MODEL').catch(() => null),
+      getVariable(t, 'CRITIC_MODEL').catch(() => null),
       getVariable(t, 'COST_CAP_USD').catch(() => null),
       getVariable(t, 'MAX_CLAUDE_CALLS').catch(() => null)]);
     if (m && CLOUD_MODELS.some(x => x.id === m)) sel.value = m;
+    if (critic && cr && CLOUD_MODELS.some(x => x.id === cr)) critic.value = cr;
     if (c && Number(c) > 0) cost.value = c;
     if (n && Number(n) > 0) calls.value = n;
   } catch {}
@@ -3345,6 +3352,7 @@ async function wireModelBudget(pane, t) {
     stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
     try {
       await setVariable(t, 'CLAUDE_MODEL', sel.value);
+      if (critic) await setVariable(t, 'CRITIC_MODEL', critic.value);
       await setVariable(t, 'COST_CAP_USD', String(Number(cost.value) > 0 ? Number(cost.value) : 0));
       await setVariable(t, 'MAX_CLAUDE_CALLS', String(Number(calls.value) > 0 ? Math.round(Number(calls.value)) : 100));
       stat.style.color = 'var(--success)'; stat.textContent = 'Saved ✓ — applies to the next cloud run.';

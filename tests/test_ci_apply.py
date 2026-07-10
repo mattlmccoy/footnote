@@ -30,6 +30,21 @@ def test_literal_replace_raises_when_the_target_is_ambiguous():
         R.literal_replace("cat and cat", "cat", "dog")
 
 
+# --------------------------------------------------------------- critic model (cost lever)
+def test_critic_model_defaults_to_sonnet():
+    # Read-only critics don't need the top-tier model; defaulting them to Sonnet cuts cloud cost.
+    assert A.critic_model({}) == "claude-sonnet-5"
+
+
+def test_critic_model_honors_an_explicit_CRITIC_MODEL_override():
+    assert A.critic_model({"CRITIC_MODEL": "claude-haiku-4-5-20251001"}) == "claude-haiku-4-5-20251001"
+
+
+def test_critic_model_is_independent_of_the_writer_CLAUDE_MODEL():
+    # Setting the writer's model to Opus must NOT drag the critics up to Opus (that's the cost trap).
+    assert A.critic_model({"CLAUDE_MODEL": "claude-opus-4-8"}) == "claude-sonnet-5"
+
+
 # --------------------------------------------------------------- job plumbing
 def test_remove_job_drops_only_the_named_job():
     jobs = [{"id": "j1"}, {"id": "j2"}, {"id": "j3"}]

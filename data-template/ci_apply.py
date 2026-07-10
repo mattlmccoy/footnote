@@ -118,7 +118,14 @@ def apply_instructions(unit_id):
 
 
 def claude_context(task):
-    """The apply-edits task (unit id, source files, comments) as the piped-stdin context. Pure/testable."""
+    """The apply-edits task (unit id, source files, comments) as the piped-stdin context. Pure/testable.
+
+    COST TODO (writer-context trim): the critic path is already unit-scoped (agent_context sends only
+    {chapter, proposed_edit}), so the remaining cost lever is the WRITER's context here — `task` carries
+    the unit's source files. Trimming it to just the file(s) the edit touches would cut input tokens, but
+    it risks starving edits that need surrounding source, so it needs its own change with a verify_refs
+    gate + a live before/after cost check. Not done here; the critic-model default (Sonnet) is the safe win.
+    """
     import json
     return "TASK:\n" + json.dumps(task, ensure_ascii=False, indent=2)
 
@@ -284,12 +291,21 @@ def _run_claude(directive, context, model, label):
     return proc.stdout
 
 
+def critic_model(env):
+    """The model the read-only critic/review agents run on. Defaults to Sonnet — a live test showed one
+    Opus critic reading the unit cost ~$3.57 / 362k tokens, and critics don't need the top tier. The
+    dedicated ``CRITIC_MODEL`` knob overrides it; it is INTENTIONALLY independent of the writer's
+    ``CLAUDE_MODEL`` so choosing Opus for the writer doesn't silently drag every critic up to Opus. Pure."""
+    return (env or {}).get("CRITIC_MODEL") or "claude-sonnet-5"
+
+
 def run_agent_cli(agent_id, task, model=None, catalog=None, field=None):
     """Invoke Claude Code (headless) as one review agent; returns a (capped) list of finding specs.
     Thin, live-CI-gated boundary. The directive is resolved from the catalog (real system prompt) with
-    a legacy fallback for unknown/bare names; findings are capped per agent (Q4 volume guard)."""
+    a legacy fallback for unknown/bare names; findings are capped per agent (Q4 volume guard). Critics
+    default to the cheaper critic model (CRITIC_MODEL/Sonnet) unless an explicit model is passed."""
     directive = ci_agents.resolve_agent_directive(agent_id, catalog, field)
-    out = _run_claude(directive, agent_context(task), model, f"agent {agent_id}")
+    out = _run_claude(directive, agent_context(task), model or critic_model(os.environ), f"agent {agent_id}")
     return ci_agents.cap_findings(parse_agent_findings(out)) if out is not None else []
 
 
