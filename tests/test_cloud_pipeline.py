@@ -165,3 +165,29 @@ def test_budget_caps_defaults_and_overrides():
     assert R.budget_caps({}) == {"cost_usd": 0.0, "calls": 100}          # cost off, call backstop on
     assert R.budget_caps({"COST_CAP_USD": "2.5", "MAX_CLAUDE_CALLS": "20"}) == {"cost_usd": 2.5, "calls": 20}
     assert R.budget_caps({"MAX_CLAUDE_CALLS": "garbage"})["calls"] == 100  # tolerate bad input
+
+
+# ---- finding_summaries: compact per-agent finding list for the live feed ----
+
+def test_finding_summaries_compact_list():
+    findings = [
+        {"tag": "rigor", "body": "The percolation claim needs a citation for the 0.03 loss factor."},
+        {"tag": "clarity", "quote": "nearly transparent", "body": "Ambiguous: reflection vs absorption."},
+    ]
+    out = R.finding_summaries(findings)
+    assert out == [
+        {"tag": "rigor", "text": "The percolation claim needs a citation for the 0.03 loss factor."},
+        {"tag": "clarity", "text": "Ambiguous: reflection vs absorption."},
+    ]
+
+
+def test_finding_summaries_caps_and_truncates():
+    many = [{"body": "x" * 400} for _ in range(20)]
+    out = R.finding_summaries(many, limit=5, width=120)
+    assert len(out) == 5
+    assert len(out[0]["text"]) <= 121 and out[0]["text"].endswith("…")
+
+
+def test_finding_summaries_tolerates_junk():
+    assert R.finding_summaries(None) == []
+    assert R.finding_summaries([{"body": ""}, {"nope": 1}]) == []   # nothing sayable → dropped

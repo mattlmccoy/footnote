@@ -723,7 +723,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
             trial_review, trial_files, branch, applied = R.process_apply_edits_job(
                 {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
             diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
-            ev("agent", "Writer: " + (spec.get("response") or "proposed a change."),
+            ev("agent", (spec.get("response") or "proposed a change."),
                comment=cid, agent="writer", status="running", edit=diff)
             if not applied:
                 kept_review = trial_review   # already marked conflict (couldn't anchor) or answered (question)
@@ -757,7 +757,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
                 ev("verify", "References check out; no em-dashes.", comment=cid, agent="verify_refs", status="ok")
                 verdicts = _critic_reviews(agent_fn, review_agents, ch, spec, catalog, field)
                 for v in verdicts:
-                    ev("agent", f"{v['agent']}: {v['say']}", comment=cid, agent=v["agent"],
+                    ev("agent", v["say"], comment=cid, agent=v["agent"],
                        status="ok" if v["approved"] else "conflict")
                 tally = R.critics_verdict(verdicts)
                 approved = tally["approved"]
@@ -963,10 +963,13 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                     aev("stage", f"Stopped at your cloud budget cap ({_usage_say(ausage)}) — {n - i} agent(s) "
                         f"not run. Raise the cap in Settings or pick fewer agents.", status="conflict", usage=dict(ausage))
                     break
-                aev("agent", f"{a} ({i + 1} of {n}): reviewing…", agent=a, status="running", usage=dict(ausage))
+                # the app bolds the agent name already, so the `say` must NOT repeat it.
+                aev("agent", f"reviewing… ({i + 1} of {n})", agent=a, status="running", usage=dict(ausage))
                 findings = resolver(a, task) or []
                 outputs[a] = findings
-                aev("agent", f"{a} ({i + 1} of {n}): {len(findings)} finding(s).", agent=a, status="ok", usage=dict(ausage))
+                say = f"{len(findings)} finding(s)" if findings else "no issues found"
+                aev("agent", say, agent=a, status="ok", usage=dict(ausage),
+                    findings=R.finding_summaries(findings))
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
                                                   idgen=lambda i, j=jid: f"a_{j}_{i}")
             _write_json(R.review_path(prefix, ch), new_review)
