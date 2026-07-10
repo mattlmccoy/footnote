@@ -144,7 +144,47 @@ def _parse_claude_json(raw):
     try:
         return json.loads(text)
     except (ValueError, TypeError):
+        pass
+    # Fallback: the model narrated AROUND the JSON (common on a hard edit) instead of returning it bare
+    # or fenced. Recover the first balanced top-level array/object embedded in the prose.
+    return _first_json_value(text)
+
+
+def _first_json_value(text):
+    """The first balanced JSON array ``[...]`` or object ``{...}`` embedded anywhere in ``text`` (decoded),
+    or None. Scans for an opening bracket and matches it accounting for strings/escapes, so prose on either
+    side of the payload does not defeat the parse. Prefers whichever of ``[`` / ``{`` appears first."""
+    import json
+    s = text or ""
+    starts = [i for i in (s.find("["), s.find("{")) if i >= 0]
+    if not starts:
         return None
+    for start in sorted(starts):
+        open_ch = s[start]
+        close_ch = "]" if open_ch == "[" else "}"
+        depth, in_str, esc = 0, False, False
+        for i in range(start, len(s)):
+            ch = s[i]
+            if in_str:
+                if esc:
+                    esc = False
+                elif ch == "\\":
+                    esc = True
+                elif ch == '"':
+                    in_str = False
+                continue
+            if ch == '"':
+                in_str = True
+            elif ch in "[{":
+                depth += 1
+            elif ch in "]}":
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(s[start:i + 1])
+                    except (ValueError, TypeError):
+                        break        # this candidate isn't valid JSON; try the next start
+    return None
 
 
 def parse_claude_edits(raw):
@@ -237,7 +277,15 @@ def run_writer_cli(task, catalog=None, field="", writer_id="writer", model=None)
     """Produce apply-edits specs using the CONFIGURED Writer/Editor agent's prompt (not the generic
     copy-editor). Live-CI-gated boundary; the parse is pure."""
     out = _run_claude(writer_directive(catalog, field, writer_id), claude_context(task), model, "writer:" + writer_id)
-    return parse_claude_edits(out) if out is not None else {}
+    if out is None:
+        return {}
+    specs = parse_claude_edits(out)
+    if not specs:
+        # the CLI succeeded but nothing parsed — log the raw head so an empty-spec (comment silently left
+        # queued) is diagnosable in the run log instead of invisible.
+        print(f"[apply] writer:{writer_id}: no parseable edit spec recovered — raw head: {(out or '')[:500]!r}",
+              file=sys.stderr)
+    return specs
 
 
 def read_text_files(root):

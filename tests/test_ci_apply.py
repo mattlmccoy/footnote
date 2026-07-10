@@ -566,3 +566,26 @@ def test_build_apply_task_forwards_the_comment_thread():
     c1 = task["comments"][0]
     assert c1["thread"] == thread                       # the follow-up conversation is forwarded
     assert c1["prior_response"] == "It is the melt fraction..."   # and Claude's earlier answer
+
+
+def test_parse_claude_edits_extracts_array_wrapped_in_prose():
+    import ci_apply as A
+    # the empty-spec bug: on a hard edit the model narrates around the JSON instead of returning it bare
+    # or fenced. We must still recover the array embedded in the prose.
+    inner = ('I looked at the melt-fraction equation and here is the edit:\n'
+             '[{"id":"c1","response":"added grounding","source_before":"x","source_after":"y"}]\n'
+             'Let me know if you want it placed elsewhere.')
+    envelope = json.dumps({"type": "result", "result": inner})
+    edits = A.parse_claude_edits(envelope)
+    assert edits["c1"]["source_after"] == "y"
+
+
+def test_parse_claude_edits_extracts_object_map_wrapped_in_prose():
+    import ci_apply as A
+    raw = 'Sure! {"c1": {"id":"c1","response":"done"}} — hope that helps'
+    assert A.parse_claude_edits(raw)["c1"]["response"] == "done"
+
+
+def test_parse_claude_edits_still_empty_on_pure_prose():
+    import ci_apply as A
+    assert A.parse_claude_edits(json.dumps({"result": "I could not find a good place to edit."})) == {}
