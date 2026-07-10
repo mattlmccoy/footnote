@@ -25,7 +25,7 @@ import { readProgress } from './cardstats.js?v=cfa6c99';
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=83ca70b';
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
-import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=0000000';
+import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 startNetWatch();
 showBuildTag(import.meta.url);
