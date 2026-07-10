@@ -608,6 +608,35 @@ def verify_refs(tex):
     return sorted(refs - labels)
 
 
+def over_budget(usage, cap_usd=0.0, cap_calls=0):
+    """True once the running Claude usage hits a configured per-job cap (0 = that cap is off). The caller
+    checks this BEFORE each Claude call and, when it trips, stops the loop and narrates why — so a cloud
+    job can't burn tokens without bound. Pure; ``usage`` is the {cost_usd, calls, …} accumulator."""
+    u = usage or {}
+    if cap_usd and (u.get("cost_usd", 0.0) or 0.0) >= cap_usd:
+        return True
+    if cap_calls and (u.get("calls", 0) or 0) >= cap_calls:
+        return True
+    return False
+
+
+def budget_caps(env):
+    """Resolve the per-job budget caps from the environment (Actions variables): COST_CAP_USD (float, 0 =
+    off) and MAX_CLAUDE_CALLS (int). MAX_CLAUDE_CALLS defaults to a generous backstop (100) so a
+    pathological loop is always bounded even when the owner sets nothing; the cost cap is opt-in. Pure."""
+    def _f(k, d):
+        try:
+            return float((env or {}).get(k) or d)
+        except (ValueError, TypeError):
+            return d
+    def _i(k, d):
+        try:
+            return int(float((env or {}).get(k) or d))
+        except (ValueError, TypeError):
+            return d
+    return {"cost_usd": _f("COST_CAP_USD", 0.0), "calls": _i("MAX_CLAUDE_CALLS", 100)}
+
+
 def em_dash_count(text):
     """How many em-dashes are in ``text`` — both the Unicode ``—`` (U+2014) and the LaTeX ``---``. The
     en-dash (``--`` / ``–``) is intentionally NOT counted. Used delta-wise so the writer gate blocks an

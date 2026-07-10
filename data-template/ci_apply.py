@@ -667,16 +667,27 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         return e
 
     usage = reset_usage()                      # per-run Claude spend tally for the Cloud Activity header
-    ev("read", f"Starting review of {len(ids)} comment(s) on {ch}.")
+    caps = R.budget_caps(os.environ)
+    model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+    ev("read", f"Starting review of {len(ids)} comment(s) on {ch} · model {model}.")
     work = dict(files)
     kept_review = review
     staged = 0
     conflicts = 0
+    stopped = False
     max_attempts = int(os.environ.get("REVISE_MAX", "2"))
-    for cid in ids:
+    for idx, cid in enumerate(ids):
         comment = next((c for c in review.get("comments", []) if c.get("id") == cid), None)
         if comment is None:
             continue
+        # budget guard: stop before starting a comment that would push past the per-job cap, so a big
+        # queue can't burn tokens without bound. A reuse (no writer call) is exempt — it spends nothing.
+        needs_writer = job.get("revision") or not R.staged_edit_spec(comment)
+        if needs_writer and R.over_budget(usage, caps["cost_usd"], caps["calls"]):
+            ev("stage", f"Stopped at your cloud budget cap ({_usage_say(usage)}) — {len(ids) - idx} comment(s) "
+               f"not processed. Raise the cap in Settings or send fewer at once.", status="conflict", usage=dict(usage))
+            stopped = True
+            break
         ev("read", f"Comment {cid}: {(comment.get('body', '') or '')[:140]}", comment=cid)
 
         # PRESERVE staged wording: a NON-revision re-drain of an already-staged comment must NOT re-run the
@@ -755,7 +766,8 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
             if dec == "stage":
                 work, kept_review = trial_files, trial_review
                 staged += 1
-                ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid, status="ok")
+                ev("stage", f"Staged this change on review-edits/{ch} for your review.", comment=cid,
+                   status="ok", usage=dict(usage))          # running spend → live header
                 outcome = "staged"
             elif dec == "revise":
                 revise_note, attempt = reason, attempt + 1
@@ -763,7 +775,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
                 kept_review = _mark_conflict(kept_review, cid, reason)
                 conflicts += 1
                 ev("stage", f"Couldn't satisfy the review after {attempt} attempt(s) — flagged for you: {reason}",
-                   comment=cid, status="conflict")
+                   comment=cid, status="conflict", usage=dict(usage))
                 outcome = "conflict"
 
     if staged:
@@ -788,7 +800,8 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
            "or remaining credits). Nothing was charged.", status="conflict", usage=dict(usage))
     else:
         ev("usage", _usage_say(usage), usage=dict(usage))
-    ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts.")
+    tail = " (stopped early at the budget cap)" if stopped else ""
+    ev("done", f"Done — {staged} change(s) staged for your review, {conflicts} flagged as conflicts{tail}.")
     return kept_review, staged
 
 
@@ -940,13 +953,20 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 aseq[0] += 1
                 return e
             ausage = reset_usage()
-            aev("read", f"Running {len(selected)} review agent(s) over {ch}.")
+            caps = R.budget_caps(os.environ)
+            model = os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
+            aev("read", f"Running {len(selected)} review agent(s) over {ch} · model {model}.")
             outputs = {}
-            for a in selected:
-                aev("agent", f"{a}: reviewing {ch}…", agent=a, status="running")
+            n = len(selected)
+            for i, a in enumerate(selected):
+                if R.over_budget(ausage, caps["cost_usd"], caps["calls"]):
+                    aev("stage", f"Stopped at your cloud budget cap ({_usage_say(ausage)}) — {n - i} agent(s) "
+                        f"not run. Raise the cap in Settings or pick fewer agents.", status="conflict", usage=dict(ausage))
+                    break
+                aev("agent", f"{a} ({i + 1} of {n}): reviewing…", agent=a, status="running", usage=dict(ausage))
                 findings = resolver(a, task) or []
                 outputs[a] = findings
-                aev("agent", f"{a}: {len(findings)} finding(s).", agent=a, status="ok")
+                aev("agent", f"{a} ({i + 1} of {n}): {len(findings)} finding(s).", agent=a, status="ok", usage=dict(ausage))
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
                                                   idgen=lambda i, j=jid: f"a_{j}_{i}")
             _write_json(R.review_path(prefix, ch), new_review)

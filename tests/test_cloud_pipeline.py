@@ -143,3 +143,25 @@ def test_em_dash_count_counts_latex_and_unicode():
     assert R.em_dash_count("a---b and c—d") == 2
     assert R.em_dash_count("commas, only") == 0
     assert R.em_dash_count("en--dash is fine") == 0        # -- (en-dash) is not an em-dash
+
+
+# ---- over_budget: stop a job before it burns tokens without bound ----
+
+def test_over_budget_off_by_default():
+    assert R.over_budget({"cost_usd": 99, "calls": 999}, cap_usd=0, cap_calls=0) is False
+
+
+def test_over_budget_cost_cap():
+    assert R.over_budget({"cost_usd": 0.49, "calls": 3}, cap_usd=0.50) is False
+    assert R.over_budget({"cost_usd": 0.50, "calls": 3}, cap_usd=0.50) is True
+
+
+def test_over_budget_call_cap():
+    assert R.over_budget({"cost_usd": 0.01, "calls": 39}, cap_calls=40) is False
+    assert R.over_budget({"cost_usd": 0.01, "calls": 40}, cap_calls=40) is True
+
+
+def test_budget_caps_defaults_and_overrides():
+    assert R.budget_caps({}) == {"cost_usd": 0.0, "calls": 100}          # cost off, call backstop on
+    assert R.budget_caps({"COST_CAP_USD": "2.5", "MAX_CLAUDE_CALLS": "20"}) == {"cost_usd": 2.5, "calls": 20}
+    assert R.budget_caps({"MAX_CLAUDE_CALLS": "garbage"})["calls"] == 100  # tolerate bad input
