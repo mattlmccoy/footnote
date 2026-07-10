@@ -931,11 +931,32 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             # run-agents is READ-ONLY: skip any catalogued doer (writer/responder/…) and any local
             # agent so it can't run as a CI critic. Unknown/legacy names stay runnable (legacy prompt).
             selected = [a for a in agents if ci_agents.runnable_in_ci(a, catalog)]
-            outputs = {a: (resolver(a, task) or []) for a in selected}
+            # Narrate the run + track usage so a run-agents job shows the SAME Cloud Activity feed + usage
+            # header as apply-edits (it also spends Claude — a reviewer shouldn't run it blind).
             jid = job.get("id")
+            aseq = [0]
+            def aev(phase, say, **kw):
+                e = _emit(prefix, jid, aseq[0], phase, say, **kw)
+                aseq[0] += 1
+                return e
+            ausage = reset_usage()
+            aev("read", f"Running {len(selected)} review agent(s) over {ch}.")
+            outputs = {}
+            for a in selected:
+                aev("agent", f"{a}: reviewing {ch}…", agent=a, status="running")
+                findings = resolver(a, task) or []
+                outputs[a] = findings
+                aev("agent", f"{a}: {len(findings)} finding(s).", agent=a, status="ok")
             new_review = R.process_run_agents_job(job, review, outputs, _now_iso(),
                                                   idgen=lambda i, j=jid: f"a_{j}_{i}")
             _write_json(R.review_path(prefix, ch), new_review)
+            if ausage.get("errors") and ausage.get("calls", 0) == 0:
+                aev("usage", "Claude did not run — the connection or credentials failed (check your Claude "
+                    "token or remaining credits). Nothing was charged.", status="conflict", usage=dict(ausage))
+            else:
+                aev("usage", _usage_say(ausage), usage=dict(ausage))
+            total = sum(len(v) for v in outputs.values())
+            aev("done", f"Done — {total} finding(s) added as comments from {len(selected)} agent(s).")
             jobs = R.remove_job(jobs, job.get("id"))
             done += 1
             continue
