@@ -1927,10 +1927,11 @@ function agentPickerDialog(scope){
     if (!picked.length){ q('#ag-stat').textContent = 'Pick at least one agent.'; return; }
     q('#ag-stat').textContent = 'Queuing…';
     try {
-      await queueRunAgents(scope, picked);
+      const jid = await queueRunAgents(scope, picked);
       q('#ag-stat').textContent = `Queued ${picked.length} agent(s) ✓ — findings will appear as comments in a few minutes.`;
       flash(`Requested review of ${unitLabel(chMeta(scope), UNIT)} by ${picked.length} agent(s)`);
-      setTimeout(() => back.remove(), 1500);
+      back.remove();
+      if (jid && processingMode(_CFG) === 'cloud') openCloudActivity(jid);   // watch it live + usage, like apply-edits
     } catch(e){ q('#ag-stat').textContent = 'Failed: ' + e.message; }
   };
 }
@@ -1939,9 +1940,11 @@ async function queueRunAgents(scope, agents){
   await syncUp();
   const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
   const jobs = Array.isArray(json) ? json : [];
-  jobs.push({ id:'j_'+Date.now().toString(36), type:'run-agents', chapter:scope,
+  const jid = 'j_'+Date.now().toString(36);
+  jobs.push({ id:jid, type:'run-agents', chapter:scope,
     agents, field:(_CFG.doc && _CFG.doc.field) || '', status:'queued', requested_ts:new Date().toISOString() });
   await putJson(t, 'jobs.json', jobs, sha, `review: agents ${scope} (${agents.length})`);
+  return jid;
 }
 // all export jobs (done + in-flight), newest first — for the home Downloads section
 async function listExports(){

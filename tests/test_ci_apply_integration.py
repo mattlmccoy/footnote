@@ -657,3 +657,31 @@ def test_apply_edits_revision_DOES_re_run_the_writer(workspace_repo, monkeypatch
     assert called["writer"] is True            # a revision re-runs the writer
     c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
     assert c["staged_edit"]["after"] == "the gamma term"   # new wording from the revision
+
+
+def test_run_agents_emits_progress_and_usage(workspace_repo, monkeypatch):
+    """A run-agents job must produce a Cloud Activity feed (progress/<job>.jsonl) and a usage event —
+    so selecting an agent to run on a chapter shows the same live view + spend as an apply-edits job."""
+    data, bare = workspace_repo
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": []}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id": "g1", "type": "run-agents", "chapter": "02-methods",
+         "agents": ["adversary"], "status": "queued"}]))
+    _git(["add", "-A"], data); _git(["commit", "-m", "queue"], data); _git(["push", "origin", "main"], data)
+
+    def fake_agent(agent_id, task):
+        return [{"quote": "\\alpha", "body": "state the assumption", "tag": "rigor"}]
+
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    monkeypatch.delenv("SOURCE_REPO", raising=False)
+    ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
+
+    prog = data / "proj" / "progress" / "g1.jsonl"
+    assert prog.exists()
+    events = [json.loads(l) for l in prog.read_text().splitlines() if l.strip()]
+    phases = [e["phase"] for e in events]
+    assert "read" in phases and "usage" in phases and "done" in phases
+    assert any(e.get("agent") == "adversary" for e in events)
+    assert any(e["phase"] == "usage" and "usage" in e for e in events)   # header tally present
