@@ -403,6 +403,41 @@ def comment_source_edit(comment):
     return {"find": spec.get("find"), "replacement": spec.get("replacement", "")}
 
 
+def overlapping_edit_ids(spans):
+    """Two reviewers editing the same passage. ``spans`` is an iterable of ``(id, file, start, end)``
+    target ranges; returns the set of ids whose ``[start, end)`` overlaps another span's range in the
+    SAME file. Adjacent/touching ranges (``end == start``) do NOT overlap. Deterministic and order-
+    independent, so both sides of a collision are flagged rather than whichever applied first winning."""
+    spans = list(spans)
+    out = set()
+    for i in range(len(spans)):
+        id1, f1, s1, e1 = spans[i]
+        for j in range(i + 1, len(spans)):
+            id2, f2, s2, e2 = spans[j]
+            if f1 == f2 and s1 < e2 and s2 < e1:
+                out.add(id1)
+                out.add(id2)
+    return out
+
+
+def _approved_edit_spans(review, files):
+    """Target span of each approved comment's edit that maps to exactly one file at exactly one place
+    (the only case where a single literal_replace is unambiguous). Feeds overlapping_edit_ids."""
+    spans = []
+    for c in (review.get("comments") or []):
+        if c.get("status") != "approved":
+            continue
+        edit = comment_source_edit(c)
+        find = edit.get("find") if edit else None
+        if not find:
+            continue
+        hits = [p for p, text in files.items() if text.count(find) == 1]
+        if len(hits) == 1:
+            start = files[hits[0]].find(find)
+            spans.append((c.get("id"), hits[0], start, start + len(find)))
+    return spans
+
+
 def process_merge_job(job, review, files, ts):
     """Publish the APPROVED edits for a unit. Reapplies each approved comment's source edit to the
     working files via literal_replace (rejected/other comments are ignored, so their edits never
@@ -418,6 +453,9 @@ def process_merge_job(job, review, files, ts):
     by_id = {c.get("id"): c for c in (review.get("comments") or [])}
     updated = dict(by_id)
     merged = []
+    # C2c: flag approved edits that target the same passage as another approved edit BEFORE applying —
+    # otherwise the first to apply wins and the second silently fails to match (order-dependent).
+    colliding = overlapping_edit_ids(_approved_edit_spans(review, work))
     for c in (review.get("comments") or []):
         if c.get("status") != "approved":
             continue
@@ -426,6 +464,9 @@ def process_merge_job(job, review, files, ts):
         if not edit:                                   # approved but no source change (e.g. answered)
             updated[cid] = {**c, "status": "merged"}
             merged.append(cid)
+            continue
+        if cid in colliding:
+            updated[cid] = conflict_comment(c, "overlaps another approved edit on the same passage — resolve manually", ts)
             continue
         find = edit["find"]
         hits = [p for p, text in work.items() if find and text.count(find) >= 1]
