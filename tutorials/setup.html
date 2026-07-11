@@ -197,12 +197,12 @@ const STEPS = [
   </ol>
   <div class="note info"><span class="ic">◆</span><div>A <b>free</b> GitHub account is enough for everything in Footnote, including unlimited <b>private</b> repositories. You do not need GitHub Pro.</div></div>` },
 
-{ nav:'Access token', eyebrow:'Step 2', title:'Create a GitHub access token',
+{ nav:'Owner key', eyebrow:'Step 2', title:'Create your Owner key',
   body:`
-  <p class="lead">Footnote works directly against <b>your own</b> GitHub — there is no Footnote server. It uses a personal access token, like an app-specific password, that stays in your browser and that you can revoke at any time.</p>
+  <p class="lead">Footnote works directly against <b>your own</b> GitHub — there is no Footnote server. Your <b>Owner key</b> is a GitHub personal access token, like an app-specific password, that stays in your browser and that you can revoke at any time. (Footnote calls it the Owner key everywhere; the separate <b>Reviewer key</b> you email to reviewers is created later, in Step 7.)</p>
 
   <h2>Exactly what Footnote does with it</h2>
-  <div class="note info"><span class="ic">◆</span><div><b>It can:</b> read the LaTeX source repo you point it at (<b>read-only</b> — it never edits your source); create <b>one</b> private repo for your review data and write to it (your project list, reviewer comments, release state, staged edits); and add a few GitHub Actions to that repo for optional email invites and export conversion.</div></div>
+  <div class="note info"><span class="ic">◆</span><div><b>It can:</b> read the LaTeX source repo you point it at (<b>read-only</b> — it never edits your source); create <b>one</b> private <b>Review repo</b> and write to it (your project list, reviewer comments, release state, staged edits); and add a few GitHub Actions to that repo for optional email invites and export conversion.</div></div>
   <div class="note ok"><span class="ic">🔒</span><div><b>It can't:</b> reach anything you don't grant. There's no server — the token is stored only in <b>this browser</b> and sent only to <b>GitHub's</b> API, never to us. It touches no other repos, emails no one until you ask, and you can <b>revoke it on GitHub anytime</b> to cut off access instantly.</div></div>
 
   <h2>Create the token</h2>
@@ -249,7 +249,7 @@ const STEPS = [
   body:`
   <p class="lead">This is the <b>Connect</b> step of Footnote's onboarding — the first screen you saw when you opened your account.</p>
   <ol class="acts">
-    <li>In Footnote's onboarding, find the <b>Access token</b> field (placeholder <code>ghp_… or github_pat_…</code>).</li>
+    <li>In Footnote's onboarding, find the <b>Owner key</b> field (placeholder <code>ghp_… or github_pat_…</code>).</li>
     <li>Paste the token you just generated and press Enter.</li>
     <li>Footnote lists your repositories to confirm the connection. You'll see a small line like <code>42 repos · 7 private</code>.</li>
   </ol>
@@ -326,7 +326,7 @@ const STEPS = [
     <li>In the <b>release</b> matrix, tick which chapters each reviewer can see. Release on your own schedule — share the intro now, the rest later.</li>
     <li>(Optional) Use the <b>Connect email</b> wizard to send invites automatically. It sets a few GitHub <b>Actions secrets</b> (SMTP + a least-privilege access key) so invites go out on their own. You can also just copy each reviewer's link and send it yourself.</li>
   </ol>
-  <div class="note warn"><span class="ic">⚠</span><div>The reviewer <b>access key</b> is emailed out, so it must be <b>least-privilege</b> — a fine-grained token scoped to <b>only</b> your workspace/data repo, Contents: Read and write. Never hand reviewers a broad account token.</div></div>
+  <div class="note warn"><span class="ic">⚠</span><div>The reviewer <b>Reviewer key</b> (access key) is emailed out, so it must be <b>least-privilege</b> — a fine-grained token scoped to <b>only</b> your <b>Review repo</b>, Contents: Read and write. Never hand reviewers your Owner key or a broad account token.</div></div>
   <div class="note info"><span class="ic">◆</span><div>Reviewers open their link, see the rendered document, and highlight-to-comment. Overleaf's own comments live in raw LaTeX and are limited to paid collaborators — this is the gap Footnote fills.</div></div>` },
 
 { nav:'Review & back to Overleaf', eyebrow:'Step 8', title:'The review loop, and back to Overleaf',

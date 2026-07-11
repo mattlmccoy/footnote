@@ -219,7 +219,7 @@ export async function launch() {
           <p class="fn-lead">A clean reading surface for your document, comments and suggested edits from your reviewers, and clean exports — running entirely on your GitHub. No server.</p>
           <div class="fn-card">
             <div class="fn-step">Connect GitHub</div>
-            <label class="fn-field">Access token <span class="fn-sub">must include your <b>private</b> repos</span><span class="fn-term"><span class="fn-termsig">❯</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></span></label>
+            <label class="fn-field">Owner key <span class="fn-sub">your GitHub token — must include your <b>private</b> repos</span><span class="fn-term"><span class="fn-termsig">❯</span><input id="fn-tok" type="password" placeholder="ghp_… or github_pat_…" autocomplete="off"></span></label>
             <p class="fn-hint fn-trust">Runs in your browser against your own GitHub — the token is stored only here and sent only to GitHub, never to us.</p>
             <details class="fn-help">
               <summary>How do I get a token?</summary>

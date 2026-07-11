@@ -1,7 +1,7 @@
 # Footnote
 
-**Google Docs for native-LaTeX writing and reviewing.** Point Footnote at your own LaTeX source repo and
-a private data repo, invite reviewers, and get a clean reading surface with click-to-comment, suggested
+**Google Docs for native-LaTeX writing and reviewing.** Point Footnote at your own LaTeX Source repo and
+a private Review repo, invite reviewers, and get a clean reading surface with click-to-comment, suggested
 edits, per-reviewer release gating, threaded resolution with attribution, and export with comments — running
 entirely on free GitHub infrastructure (Pages + Actions), no server, no AI required.
 
@@ -32,15 +32,15 @@ Credentials (user-facing names; the underlying secret/variable names never chang
 
 ## Setup (manual for now; a guided setup script is Phase 2)
 1. **Use this template** → create your app repo. Enable GitHub Pages (Settings → Pages → deploy from `main`).
-2. Create a **private data repo** (e.g. `my-review-data`).
+2. Create a **private Review repo** (e.g. `my-review-data`).
 3. Copy `footnote.config.example.json` → `footnote.config.json` and edit: `owner`, `dataRepo`, `doc`,
    `deadline`, `advisors`, and your `chapters` manifest (`{id, n, title, sourceFile}`).
 4. Run `node scripts/gen-shells.mjs` to generate the per-reviewer shells (`<id>.html`, `review-lab.html`)
    from `config.advisors`. Commit them.
-5. Add the reviewer content to your data repo under `content/<id>.html` (Phase 3 automates this from your
+5. Add the reviewer content to your Review repo under `content/<id>.html` (Phase 3 automates this from your
    `.tex` via CI).
 6. To enable advisor email invites, set the Actions **secrets** (`SMTP_USER`, `SMTP_PASS`, `SMTP_HOST`,
-   `SMTP_PORT`, `SMTP_FROM`, `ADVISOR_KEY`) and **variables** (`AUTHOR_NAME`, `PORTAL_BASE`) on your data
+   `SMTP_PORT`, `SMTP_FROM`, `ADVISOR_KEY`) and **variables** (`AUTHOR_NAME`, `PORTAL_BASE`) on your Review
    repo. The in-app *Connect email* wizard can do this for you (owner portal → Reviewers).
 
 ## `footnote.config.json`
