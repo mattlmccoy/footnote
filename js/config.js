@@ -192,6 +192,42 @@ export function sourceLabel(cfg, parsed) {
   return { text: parsed ? '' : 'point Footnote at your LaTeX, or upload it' };
 }
 
+// ---- external-source resolution (mirror of the cloud's ci_render.resolve_source priority) ----
+// The cloud knows the source repo via: project.sourceRepo → committed <prefix>source.json marker →
+// SOURCE_REPO Actions var. The BROWSER only ever looked at project.sourceRepo, so a source recorded ONLY
+// in the source.json marker (the rfam case: phd-dissertation as the source of truth, separate from the
+// Review repo) read as "no external source" and the Source-key card wrongly said "not needed". These pure
+// helpers let the browser see the marker too. Unit-tested in tests/sourceinfo.test.mjs.
+
+// The sourceRepo named by a parsed <prefix>source.json marker ('' if absent/malformed).
+export function sourceMarkerRepo(marker) {
+  if (!marker || typeof marker !== 'object') return '';
+  return String(marker.sourceRepo || '').trim();
+}
+
+// The 'owner' segment of an 'owner/repo' full name ('' if not owner/repo shaped).
+export function repoOwner(fullName) {
+  const s = String(fullName == null ? '' : fullName).trim();
+  const i = s.indexOf('/');
+  return i > 0 ? s.slice(0, i) : '';
+}
+
+// Resolve whether this project's source is a SEPARATE repo, and if so which one and whether the owner owns
+// it (so their Owner key already reaches it — no distinct Source key needed). `markerRepo` is the repo from
+// the committed source.json marker (pass '' if not fetched/absent). Returns { external, repo, owned }.
+export function resolveSourceInfo(cfg, markerRepo) {
+  const dataRepo = (cfg && cfg.dataRepo) || '';
+  const inWorkspace = !!(cfg && cfg.srcPrefix);   // uploaded into the Review/Workspace repo → not separate
+  const fromProject = (cfg && cfg.sourceRepo) || '';
+  // priority: an external project.sourceRepo, else the marker — either must be a different repo than data.
+  let repo = '';
+  if (!inWorkspace && fromProject && fromProject !== dataRepo) repo = fromProject;
+  else { const m = String(markerRepo || '').trim(); if (m && m !== dataRepo) repo = m; }
+  if (!repo) return { external: false, repo: '', owned: false };
+  const owned = !!repoOwner(repo) && repoOwner(repo) === repoOwner(dataRepo);
+  return { external: true, repo, owned };
+}
+
 // Build a reviewer (advisor) portal invite URL. Advisors have no hub access, so the link carries the data
 // repo (&data=) directly; for a consolidated workspace project it also carries the project id (&p=<id>) so
 // the advisor bundle prefixes all its data paths with <id>/. base is the site URL (…/, trailing slash).

@@ -6,7 +6,7 @@ import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from '.
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
-import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel } from './config.js?v=9f87c88';
+import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel, sourceMarkerRepo, resolveSourceInfo } from './config.js?v=9f87c88';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
 import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge } from './cloudprogress.js?v=770202d';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=318f4ae';
@@ -1675,7 +1675,7 @@ const advisorUrl = (id, name) => advisorInviteUrl(portalBase(), { id, name, data
 // copy-link becomes a working magic link immediately, and (best-effort) seals it as the ADVISOR_KEY
 // secret so emailed invites carry it too. If the owner's sign-in can't write secrets, the local cache
 // still makes shareable links work and we say how to enable it for email.
-function openAccessKeySheet(ownerTok){
+function openAccessKeySheet(ownerTok, onSaved){
   const repo = dataRepoParts(_CFG).repo;
   const scrim = document.createElement('div'); scrim.className = 'scrim';
   scrim.innerHTML = `<div class="sheet" style="max-width:520px">
@@ -1708,9 +1708,7 @@ function openAccessKeySheet(ownerTok){
         ? 'Saved for shareable links. To also send it in <b>email</b> invites, connect email — that step uses a token that can write secrets.'
         : 'Saved for shareable links. (Couldn’t seal it for email: ' + escapeHtml((e && e.message) || 'error') + '.)';
     }
-    const lbl = document.getElementById('adv-key-state'); if (lbl) lbl.textContent = 'Set — reviewer links sign reviewers in automatically.';
-    const btn = document.getElementById('adv-setkey'); if (btn) btn.textContent = 'Update key';
-    setTimeout(close, 2400);
+    setTimeout(() => { close(); if (onSaved) { try { onSaved(); } catch (e) {} } }, 2400);
   };
   setTimeout(() => { const i = $('#ak-input'); if (i) i.focus(); }, 30);
 }
@@ -3037,8 +3035,14 @@ async function renderSettingsEmail(pane, t) {
 // SMTP-invite coupling stays there by design); Claude is also reachable from the AI section.
 async function renderSettingsAccess(pane, t) {
   const has = !!tok();
-  // Source is "external" only when it's a separate repo (not living inside the Review/Workspace repo).
-  const sourceExternal = !!(_CFG.sourceRepo && _CFG.sourceRepo !== _CFG.dataRepo && !_CFG.srcPrefix);
+  // Source is "external" when it's a SEPARATE repo — either named in the project config OR recorded only in
+  // the committed source.json marker (the rfam case: phd-dissertation, separate from the Review repo). The
+  // browser used to look only at project.sourceRepo, so a marker-only source read as "not needed". Fetch the
+  // marker (best-effort) and resolve the same way the cloud does. `owned` = the Owner key already reaches it.
+  let markerRepo = '';
+  if (t) { try { const { json } = await getJson(t, dataPath(_CFG, 'source.json')); markerRepo = sourceMarkerRepo(json); } catch {} }
+  const srcInfo = resolveSourceInfo(_CFG, markerRepo);
+  const sourceExternal = srcInfo.external;
   const byId = Object.fromEntries(CREDENTIALS.map(c => [c.id, c]));
   const OWNER_URL = classicTokenUrl(), FG_URL = fineGrainedUrl('Footnote');
   const g = st => st.glyph === 'ok' ? '<span class="ok">✓</span>' : st.glyph === 'warn' ? '<span class="warn">●</span>' : '<span style="color:var(--text-3)">○</span>';
@@ -3052,7 +3056,7 @@ async function renderSettingsAccess(pane, t) {
   const st = (id, extra) => credentialStatus(id, extra);
   const ownerSt = st('owner', { hasOwnerKey: has, ownerScopeOk });
   const revSt = st('reviewer', { reviewerSet: nameSet.has('ADVISOR_KEY') });
-  const srcSt = st('source', { sourceExternal, sourceSet: nameSet.has('SOURCE_TOKEN') });
+  const srcSt = st('source', { sourceExternal, sourceOwned: srcInfo.owned, sourceSet: nameSet.has('SOURCE_TOKEN') });
   const claudeSt = st('claude', { claudeConnected: claudeConnectionStatus(names || []).claude });
 
   pane.innerHTML = `
@@ -3077,20 +3081,21 @@ async function renderSettingsAccess(pane, t) {
       <div class="set-status">${g(revSt)} ${escapeHtml(revSt.text)}</div>
       <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.reviewer.forWhat)}</div>
       ${meta(byId.reviewer)}
-      <button class="btn" id="set-rev-manage" style="padding:5px 12px;margin-top:2px">Manage on Reviewers page</button>
+      <button class="btn btn-primary" id="set-rev-manage" style="padding:5px 12px;margin-top:2px">${nameSet.has('ADVISOR_KEY') ? 'Update Reviewer key' : 'Set Reviewer key'}</button>
     </div>
 
     <div class="set-card">
       <h4>${escapeHtml(byId.source.label)} <span style="font-weight:400;color:var(--text-3)">— only for a separate Source repo</span></h4>
       <div class="set-status">${g(srcSt)} ${escapeHtml(srcSt.text)}</div>
+      ${sourceExternal ? `<div style="font-size:11.5px;color:var(--text-2);margin:6px 0 2px">Your source of truth is a separate repo: <code>${escapeHtml(srcInfo.repo)}</code>${srcInfo.owned ? ' (you own it).' : ' (a repo you don’t own).'}</div>` : ''}
       <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.source.forWhat)}</div>
       ${meta(byId.source)}
       ${sourceExternal ? `<div style="display:flex;gap:8px;margin-top:6px">
-        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: read/write on the Source repo" style="${inp}">
+        <input id="set-srctok" type="password" placeholder="fine-grained PAT · Contents: read/write on ${escapeHtml(srcInfo.repo)}" style="${inp}">
         <button class="btn" id="set-srctok-save" style="padding:5px 12px">Save</button>
         <span id="set-srctok-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
       </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:6px"><a href="${FG_URL}" target="_blank" rel="noopener">Create a fine-grained token →</a> on the Source repo.</div>` : ''}
+      <div style="font-size:11px;color:var(--text-3);margin-top:6px">${srcInfo.owned ? 'Optional — your Owner key already reaches this repo. Add one only to use a narrower, source-only token. ' : ''}<a href="${FG_URL}" target="_blank" rel="noopener">Create a fine-grained token →</a> on <code>${escapeHtml(srcInfo.repo)}</code>.</div>` : ''}
     </div>
 
     <div class="set-card">
@@ -3108,7 +3113,7 @@ async function renderSettingsAccess(pane, t) {
   };
   const clr = pane.querySelector('#set-pat-clear');
   if (clr) clr.onclick = () => { if (confirm('Remove the saved Owner key from this browser?')){ localStorage.removeItem('ghpat'); flash('Owner key removed.'); openSettingsPage('access'); } };
-  pane.querySelector('#set-rev-manage').onclick = () => openReleasePanel();
+  pane.querySelector('#set-rev-manage').onclick = () => openAccessKeySheet(t, () => openSettingsPage('access'));
   pane.querySelector('#set-claude-manage').onclick = () => openClaudeDialog(t);
   const srcBtn = pane.querySelector('#set-srctok-save');
   if (srcBtn) srcBtn.onclick = async () => {
@@ -3497,11 +3502,9 @@ async function openReleasePanel(opts){
     <div id="adv-list"></div>
     <div id="adv-stat" style="font-size:12px;color:var(--text-3);margin:6px 0 18px"></div>
     <div id="adv-email-banner"></div>
-    <div style="display:flex;align-items:center;gap:8px;margin:0 0 12px">
-      <label style="font-size:12.5px;color:var(--text-2);white-space:nowrap">Reviewer access key</label>
-      <span id="adv-key-state" style="flex:1;font-size:12px;color:var(--text-3)">${advisorKey() ? 'Set — reviewer links sign reviewers in automatically.' : 'Not set — reviewer links will prompt for a code.'}</span>
-      <button class="btn" id="adv-setkey" style="padding:6px 12px">${advisorKey() ? 'Update key' : 'Set access key'}</button>
-    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-3);border:.5px solid var(--border);border-radius:8px;padding:8px 11px;margin:0 0 12px">
+      <i class="ti ti-key"></i> Reviewer key: ${advisorKey() ? 'set' : 'not set'} — carried in every reviewer invite link.
+      <button id="adv-key-tosettings" class="btn" style="padding:3px 10px;font-size:11px;margin-left:auto">Manage in Settings</button></div>
     <div id="rel-board"></div>
     <div class="rel-sec" style="margin-top:26px">Inbox — comments received</div>${inboxHtml}
     <div id="rel-preflight" style="margin-top:26px"></div>`;
@@ -4108,7 +4111,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     setTimeout(() => inp.focus(), 30);
   };
   document.getElementById('adv-add').onclick = addAdvisor;
-  { const sk = document.getElementById('adv-setkey'); if (sk) sk.onclick = () => openAccessKeySheet(t); }
+  { const sk = document.getElementById('adv-key-tosettings'); if (sk) sk.onclick = () => openSettingsPage('access'); }
   renderAdvList();
   if (openEmailOnLoad) openConnectForm();   // Settings → Email deep-link opens the SMTP wizard directly
 

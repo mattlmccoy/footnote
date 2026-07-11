@@ -93,13 +93,16 @@ export function credentialStatus(id, ctx = {}) {
       return { glyph: 'ok', text: 'Connected — stored only in this browser.' };
     case 'reviewer':
       return ctx.reviewerSet
-        ? { glyph: 'ok', text: 'Set — carried in every reviewer invite link. Manage on the Reviewers page.' }
-        : { glyph: 'warn', text: 'Not set — set it up on the Reviewers page (Connect email seals it as ADVISOR_KEY).' };
+        ? { glyph: 'ok', text: 'Set — carried in every reviewer invite link.' }
+        : { glyph: 'warn', text: 'Not set — set it below so reviewer links sign reviewers in.' };
     case 'source':
       if (!ctx.sourceExternal) return { glyph: null, text: 'Not needed — your source lives in your Review repo.' };
-      return ctx.sourceSet
-        ? { glyph: 'ok', text: 'Set — sealed as SOURCE_TOKEN.' }
-        : { glyph: 'warn', text: 'Not set — needed because your Source repo is separate.' };
+      if (ctx.sourceSet) return { glyph: 'ok', text: 'Set — sealed as SOURCE_TOKEN.' };
+      // External source you OWN (e.g. your own Overleaf-linked repo): your Owner key already reaches it, so
+      // a distinct Source key is optional — not a warning. Only a third-party source you don't own needs one.
+      return ctx.sourceOwned
+        ? { glyph: null, text: 'Your source is a separate repo you own — your Owner key already covers it. A Source key is only needed for a source you don’t own.' }
+        : { glyph: 'warn', text: 'Not set — your source is a separate repo you don’t own. Add a Source key with Contents access to it.' };
     case 'claude':
       return ctx.claudeConnected
         ? { glyph: 'ok', text: 'Connected.' }

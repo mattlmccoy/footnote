@@ -89,13 +89,18 @@ test('credentialStatus(reviewer): reflects whether ADVISOR_KEY is set', () => {
   assert.equal(credentialStatus('reviewer', { reviewerSet: true }).glyph, 'ok');
   const off = credentialStatus('reviewer', { reviewerSet: false });
   assert.equal(off.glyph, 'warn');
-  assert.match(off.text, /Reviewers/i);   // points to the Reviewers page
+  assert.match(off.text, /set it below|sign reviewers in/i);   // managed inline in Settings now
 });
 
-test('credentialStatus(source): only warns when the source is external and unset', () => {
-  assert.equal(credentialStatus('source', { sourceExternal: false }).glyph, null);   // not needed
+test('credentialStatus(source): reflects external / owned / set', () => {
+  assert.equal(credentialStatus('source', { sourceExternal: false }).glyph, null);   // in the Review repo → not needed
   assert.equal(credentialStatus('source', { sourceExternal: true, sourceSet: true }).glyph, 'ok');
-  assert.equal(credentialStatus('source', { sourceExternal: true, sourceSet: false }).glyph, 'warn');
+  // external + you OWN it (rfam: phd-dissertation) → Owner key covers it, NOT a warning
+  const owned = credentialStatus('source', { sourceExternal: true, sourceSet: false, sourceOwned: true });
+  assert.equal(owned.glyph, null);
+  assert.match(owned.text, /Owner key|own/i);
+  // external + third-party source you DON'T own → a Source key is genuinely needed
+  assert.equal(credentialStatus('source', { sourceExternal: true, sourceSet: false, sourceOwned: false }).glyph, 'warn');
 });
 
 test('credentialStatus(claude): muted when off, ok when connected', () => {
