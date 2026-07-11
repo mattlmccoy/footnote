@@ -340,7 +340,7 @@ function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your ${DOC}</div>
     <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your Review repo <code>${DATA_REPO}</code>. Paste your Owner key (exact permissions under Settings &rarr; Access &amp; tokens), set <b>Expiration → No expiration</b> so it never needs replacing — stored only in this browser.</div>
-    <button class="btn" id="connect">Add access token</button></div>`;
+    <button class="btn" id="connect">Add your Owner key</button></div>`;
   document.getElementById('connect').onclick = () => { const v = prompt('Owner key (fine-grained PAT on your Review repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
 
@@ -2849,7 +2849,7 @@ function openMoreMenu(){
   menu.innerHTML = `
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
-    <div class="mmi" data-act="token"><i class="ti ti-key"></i>Access token${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
+    <div class="mmi" data-act="token"><i class="ti ti-key"></i>Owner key${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
     <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
     <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
@@ -3297,7 +3297,7 @@ async function renderSettingsAI(pane, t) {
     const stat = pane.querySelector('#set-ai-run-stat'); stat.style.color='var(--text-3)'; stat.textContent='Ensuring engine…';
     try { await ensureApplyEngine(DATA_REPO, t); stat.textContent='Dispatching…'; await dispatchApply(t, _CFG.dataPrefix ? _projectId : '');
       stat.style.color='var(--success)'; stat.textContent='Apply run started — watch your repo’s Actions tab.'; }
-    catch(e){ stat.style.color='var(--warn)'; stat.textContent = (e.message==='workflow-scope'||isScopeError(e)) ? 'Your access token needs Actions + Workflows access to run apply — update it under Access token (or use a classic repo+workflow token).' : 'Failed: '+escapeHtml((e && e.message)||'error'); }
+    catch(e){ stat.style.color='var(--warn)'; stat.textContent = (e.message==='workflow-scope'||isScopeError(e)) ? 'Your Owner key needs Actions + Workflows access to run apply — update it under Access &amp; tokens (or use a classic repo+workflow token).' : 'Failed: '+escapeHtml((e && e.message)||'error'); }
   };
   const off = pane.querySelector('#set-ai-off'); if (off) off.onclick = () => { toggleAssistant(); openSettingsPage('ai'); };
   wirePmToggle(pane, t);
