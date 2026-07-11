@@ -27,6 +27,7 @@ import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from '
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
+import { isAiComment } from './aicomment.js?v=0000000';
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -1089,9 +1090,10 @@ function renderAdvisorSection(pane){
 function buildAdvCard(c){
   const card = document.createElement('div'); card.className = 'ccard adv' + (c.read?' is-read':''); card.dataset.aid = c.id;
   const notes = (advNotesState.notes[c.id]||[]);
+  const ai = isAiComment(c);
   card.innerHTML = `<div class="row">
       <label class="rel-read"><input type="checkbox" class="adv-readbox" ${c.read?'checked':''}>read</label>
-      <span class="chip advchip"><i class="ti ti-user" style="font-size:11px;margin-right:3px"></i>${escapeHtml(whoLabel(c))}</span>
+      <span class="chip advchip" style="${ai?'background:var(--info-bg);color:var(--info)':''}"><i class="ti ti-${ai?'robot-face':'user'}" style="font-size:11px;margin-right:3px"></i>${escapeHtml(whoLabel(c))}</span>
       ${c.tag&&c.tag!=='other'?`<span class="chip" style="margin-left:5px">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:10px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>`:''}
       ${c.sent?'<span class="status" style="margin-left:auto;background:var(--info-bg);color:var(--info)">sent</span>':c.status==='submitted'?'<span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span>':''}</div>
     <div class="snip">"${escapeHtml((c.anchor?.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
@@ -1099,11 +1101,17 @@ function buildAdvCard(c){
     ${notes.map(n=>`<div class="rel-note"><i class="ti ti-lock" style="font-size:12px"></i> ${escapeHtml(n.text)} <span style="color:var(--text-3);font-size:11px">· private · ${fmtDate(n.ts)}</span></div>`).join('')}
     <div class="advacts">
       <button class="btn aj"><i class="ti ti-arrow-right"></i>Jump</button>
+      ${ai ? `
+      ${assistantOn() ? `<button class="btn btn-primary a-act" ${c.sent?'disabled title="Already sent to Claude"':''}><i class="ti ti-check"></i>${c.sent?'Sent to Claude':'Act on it'}</button>` : ''}
+      <button class="btn a-dismiss"><i class="ti ti-x"></i>Dismiss</button>
+      ${assistantOn() ? `<button class="btn a-morework"><i class="ti ti-pencil"></i>Request further work</button>` : ''}
+      ` : `
       <button class="btn a-reply"><i class="ti ti-message"></i>Reply</button>
       <button class="btn a-note"><i class="ti ti-note"></i>Private note</button>
       <button class="btn a-suggest"><i class="ti ti-pencil"></i>Suggest edit</button>
       <button class="btn a-rec"><i class="ti ti-message-check"></i>${c.resolution?'Update':'Resolution'}</button>
-      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button>` : ''}</div>
+      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button>` : ''}
+      `}</div>
     <div class="rel-pop a-replybox" style="display:none"><textarea rows="2" placeholder="Reply to ${escapeHtml(whoLabel(c))} — they'll see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-reply-save">Send reply</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-notebox" style="display:none"><textarea rows="2" placeholder="Private note — only you see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-note-save">Save note</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-suggestbox" style="display:none"><div class="sug-passage">Editing this passage:<blockquote>"${escapeHtml(c.anchor?.quote||'')}"</blockquote><button class="btn a-jump2" style="padding:2px 8px;font-size:11px"><i class="ti ti-arrow-right"></i>Read it in context</button></div>
@@ -1111,6 +1119,7 @@ function buildAdvCard(c){
       <textarea class="a-sug-find" rows="2" placeholder="Exact text to find (verbatim)…">${escapeHtml(c.edit?.find ?? c.anchor?.quote ?? '')}</textarea>
       <textarea class="a-sug-repl" rows="2" placeholder="Your replacement / insertion text…">${escapeHtml(c.edit?.replacement||'')}</textarea>
       <div class="rel-popacts"><button class="btn btn-primary a-sug-save">Attach edit</button><button class="btn a-x">Cancel</button></div></div>
+    <div class="rel-pop a-moreworkbox" style="display:none"><textarea rows="2" placeholder="What should Claude do? e.g. go deeper, wrong section, cite a source…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-morework-save">Send to Claude</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rform" style="display:none">
       <select class="r-state"><option value="addressed"${c.resolution?.state==='addressed'?' selected':''}>Addressed — changed as suggested</option><option value="declined"${c.resolution?.state==='declined'?' selected':''}>Kept as written</option><option value="noted"${c.resolution?.state==='noted'?' selected':''}>Noted</option></select>
       <textarea class="r-note" rows="2" placeholder="How it was handled — the reviewer sees this…">${escapeHtml(c.resolution?.note||'')}</textarea>
@@ -1122,27 +1131,44 @@ function buildAdvCard(c){
   card.querySelectorAll('.a-x').forEach(x => x.onclick = () => card.querySelectorAll('.rel-pop, .rform').forEach(p => p.style.display = 'none'));
   card.querySelector('.snip').onclick = () => jumpToAdvisor(c);
   card.querySelector('.aj').onclick = () => jumpToAdvisor(c);
-  card.querySelector('.a-jump2').onclick = () => jumpToAdvisor(c);
+  card.querySelector('.a-jump2')?.addEventListener('click', () => jumpToAdvisor(c));
   card.querySelector('.adv-readbox').onchange = async e => { const v = e.target.checked; try { await markAdvisorRead(c._advisor, current, c.id, v); c.read = v; swap(); } catch(err){ alert('Failed: ' + err.message); e.target.checked = !v; } };
-  card.querySelector('.a-reply').onclick = () => toggle('.a-replybox');
-  card.querySelector('.a-note').onclick = () => toggle('.a-notebox');
-  card.querySelector('.a-suggest').onclick = () => toggle('.a-suggestbox');
-  card.querySelector('.a-rec').onclick = () => toggle('.rform');
-  card.querySelector('.a-reply-save').onclick = async () => { const txt = card.querySelector('.a-replybox textarea').value.trim(); if (!txt) return;
-    try { await replyToAdvisorComment(c._advisor, current, c.id, txt); c.thread = [...(c.thread||[]), { author:'author', text:txt, ts:new Date().toISOString() }]; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } };
-  card.querySelector('.a-note-save').onclick = async () => { const txt = card.querySelector('.a-notebox textarea').value.trim(); if (!txt) return;
-    try { await savePrivateNote(advNotesState, c.id, txt); swap(); } catch(e){ alert('Failed: ' + e.message); } };
-  card.querySelector('.a-sug-save').onclick = async () => { const op = card.querySelector('.a-sug-op').value, find = card.querySelector('.a-sug-find').value.trim(), replacement = card.querySelector('.a-sug-repl').value.trim();
+  card.querySelector('.a-reply')?.addEventListener('click', () => toggle('.a-replybox'));
+  if (ai){
+    card.querySelector('.a-act')?.addEventListener('click', async e => {
+      const b = e.currentTarget; b.disabled = true; b.textContent = 'Sending…';
+      try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); }
+      catch(err){ b.disabled = false; b.textContent = 'Act on it'; alert('Failed: ' + err.message); }
+    });
+    card.querySelector('.a-dismiss')?.addEventListener('click', async () => {
+      try { await recordResolution(c._advisor, current, c.id, { state:'declined', note:'' }); c.resolution = { state:'declined', note:'' }; c.read = true; swap(); }
+      catch(err){ alert('Failed: ' + err.message); }
+    });
+    card.querySelector('.a-morework')?.addEventListener('click', () => toggle('.a-moreworkbox'));
+    card.querySelector('.a-morework-save')?.addEventListener('click', async () => {
+      const note = card.querySelector('.a-moreworkbox textarea').value.trim(); if (!note) return;
+      try { await sendAdvisorToClaude(c._advisor, current, c, note); c.sent = true; c.read = true; swap(); }
+      catch(err){ alert('Failed: ' + err.message); }
+    });
+  }
+  card.querySelector('.a-note')?.addEventListener('click', () => toggle('.a-notebox'));
+  card.querySelector('.a-suggest')?.addEventListener('click', () => toggle('.a-suggestbox'));
+  card.querySelector('.a-rec')?.addEventListener('click', () => toggle('.rform'));
+  card.querySelector('.a-reply-save')?.addEventListener('click', async () => { const txt = card.querySelector('.a-replybox textarea').value.trim(); if (!txt) return;
+    try { await replyToAdvisorComment(c._advisor, current, c.id, txt); c.thread = [...(c.thread||[]), { author:'author', text:txt, ts:new Date().toISOString() }]; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } });
+  card.querySelector('.a-note-save')?.addEventListener('click', async () => { const txt = card.querySelector('.a-notebox textarea').value.trim(); if (!txt) return;
+    try { await savePrivateNote(advNotesState, c.id, txt); swap(); } catch(e){ alert('Failed: ' + e.message); } });
+  card.querySelector('.a-sug-save')?.addEventListener('click', async () => { const op = card.querySelector('.a-sug-op').value, find = card.querySelector('.a-sug-find').value.trim(), replacement = card.querySelector('.a-sug-repl').value.trim();
     if (!find && op !== 'insert'){ alert('Enter the text to find.'); return; }
-    try { const edit = { op, find, replacement }; await suggestAdvisorEdit(c._advisor, current, c.id, edit); c.edit = edit; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } };
+    try { const edit = { op, find, replacement }; await suggestAdvisorEdit(c._advisor, current, c.id, edit); c.edit = edit; c.read = true; swap(); } catch(e){ alert('Failed: ' + e.message); } });
   const aSendBtn = card.querySelector('.a-send');   // present only when the assistant is on
   if (aSendBtn) aSendBtn.onclick = async () => { if (!confirm('Send this comment to Claude to address?')) return;
     aSendBtn.disabled = true; aSendBtn.textContent = 'Sending…';
     try { await sendAdvisorToClaude(c._advisor, current, c); c.sent = true; c.read = true; swap(); } catch(e){ aSendBtn.textContent = 'Failed: ' + e.message; } };
-  card.querySelector('.r-save').onclick = async () => { const stat = card.querySelector('.r-stat'); stat.textContent = 'Saving…';
+  card.querySelector('.r-save')?.addEventListener('click', async () => { const stat = card.querySelector('.r-stat'); stat.textContent = 'Saving…';
     const resolution = { state:card.querySelector('.r-state').value, note:card.querySelector('.r-note').value.trim(), ts:new Date().toISOString() };
     try { await recordResolution(c._advisor, current, c.id, resolution); c.resolution = resolution; c.read = true; stat.textContent = 'Saved — visible to the reviewer.'; setTimeout(swap, 600); }
-    catch(e){ stat.textContent = 'Failed: ' + e.message; } };
+    catch(e){ stat.textContent = 'Failed: ' + e.message; } });
   return card;
 }
 // ---------- robust anchor location (a stored quote rarely byte-matches rendered HTML:
@@ -4279,7 +4305,7 @@ async function savePrivateNote(state, cid, text){
   state.sha = await putJson(tok(), 'reviews/advisor_notes.json', state.notes, state.sha, 'notes: private advisor note');
 }
 // copy an advisor comment into the owner review + queue an apply-edits job (the existing pipeline)
-async function sendAdvisorToClaude(advisorId, ch, c){
+async function sendAdvisorToClaude(advisorId, ch, c, note){
   const t = tok();
   const { json, sha } = await getJson(t, `reviews/${ch}.json`).catch(() => ({ json:null, sha:null }));
   let review = json || newReview(ch, '');
@@ -4289,6 +4315,7 @@ async function sendAdvisorToClaude(advisorId, ch, c){
     review = addComment(review, { anchor:c.anchor, kind:c.kind, tag:c.edit?'edit':(c.tag||'wording'), body:c.body, edit:c.edit||null });
     nc = review.comments[review.comments.length-1];
     nc.from_advisor = { id:advisorId, cid:c.id, name: ADVISOR_NAME[advisorId] || c.author || advisorId }; nc.status = 'queued';
+    if (note && note.trim()) nc.thread = [...(nc.thread||[]), { author:'you', text:note.trim(), ts:new Date().toISOString() }];
     await putJson(t, `reviews/${ch}.json`, review, sha, `review: incorporate ${advisorId} comment ${c.id}`);
   }
   const jr = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
@@ -4296,7 +4323,7 @@ async function sendAdvisorToClaude(advisorId, ch, c){
   // idempotent: don't double-queue a still-open job for the same advisor comment
   const dup = jobs.find(j => j.from_advisor && j.from_advisor.id === advisorId && j.from_advisor.cid === c.id && j.status !== 'done' && j.status !== 'merged');
   if (!dup){
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:ch, comment_ids:[nc.id], from_advisor:{ id:advisorId, cid:c.id }, status:'queued', requested_ts:new Date().toISOString() });
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:ch, comment_ids:[nc.id], from_advisor:{ id:advisorId, cid:c.id }, ...(note && note.trim() ? { revise_note: note.trim() } : {}), status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, jr.sha, `review: queue advisor comment ${c.id}`);
   }
   await _mutateAdvisorComment(advisorId, ch, c.id, x => { x.sent = true; x.read = true; }, `sent: ${advisorId} ${ch} ${c.id}`);
