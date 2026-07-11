@@ -14,7 +14,7 @@ import { parseLatexTitle } from './docparse.js?v=534763c';   // authoritative do
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
-import { recentsKey, recentsAdd, recentsList, linkFor, newCount } from './reviewerhome.js?v=fd862a8';   // remembered documents for the reviewer Home
+import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=fd862a8';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
 import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
@@ -1667,6 +1667,24 @@ function _homeTopbar(name){
     `<span style="display:inline-flex;align-items:center;gap:9px">${brandMark('#2c64c4')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}</span>`
     + (name ? `<span style="margin-left:auto;font-size:13px;color:var(--text-2)">Reviewing as <b style="font-weight:600">${escapeHtml(name)}</b></span>` : '');
 }
+// The author's display name for "shared by": their GitHub profile name (public /users/<login>), cached
+// per browser, defaulting to the login. Reviewers can't read the author's AUTHOR_NAME (an Actions var).
+function _authorNameCache(){ try { const v = JSON.parse(_store.get('footnote:authornames') || '{}'); return (v && typeof v === 'object') ? v : {}; } catch { return {}; } }
+function _authorName(login){ const c = _authorNameCache(); return (login && c[login]) || login || 'shared with you'; }
+async function _resolveAuthorNames(list){
+  const cache = _authorNameCache();
+  const owners = [...new Set(list.map(e => e.owner).filter(Boolean))].filter(o => !(o in cache));
+  if (!owners.length) return;
+  await Promise.all(owners.map(async login => {
+    try {
+      const r = await _gfetch(`${_API}/users/${encodeURIComponent(login)}`, { cache:'no-store' });   // public, unauth (fine-grained PATs can't hit /users)
+      if (!r.ok) return;
+      const u = await r.json(); cache[login] = pickAuthorName(u && u.name, login);
+    } catch(e){}
+  }));
+  try { _store.set('footnote:authornames', JSON.stringify(cache)); } catch(e){}
+  list.forEach((e, i) => { if (e.owner && cache[e.owner]){ const el = read.querySelector(`.rvh-book[data-i="${i}"] .rvh-by`); if (el) el.textContent = cache[e.owner]; } });
+}
 async function _paintHomeBadges(list){
   await Promise.all(list.map(async (e, i) => {
     try {
@@ -1696,13 +1714,14 @@ function renderReviewerHome(){
   }
   const books = list.map((e, i) => `<a class="rvh-book" style="--sp:${RVH_SPINES[i % RVH_SPINES.length]}" data-i="${i}">
       <span class="rvh-spine"></span>
-      <span class="rvh-by">${escapeHtml(e.owner || e.n || 'shared with you')}</span>
+      <span class="rvh-by">${escapeHtml(_authorName(e.owner))}</span>
       <span class="rvh-title">${escapeHtml(e.title || e.p || 'Untitled document')}</span>
       <span class="rvh-badge" style="display:none"></span>
       <span class="rvh-meta">opened ${_relDays(e.ts)}</span></a>`).join('');
   read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-shelf">${books}</div><div class="rvh-board"></div></div>`;
   read.querySelectorAll('.rvh-book').forEach(el => { el.onclick = () => { location.href = linkFor(list[+el.dataset.i]); }; });
   _paintHomeBadges(list);
+  _resolveAuthorNames(list);
 }
 async function boot(){
   // Magic link: the invite email's URL carries the access key as ?k=<key>. Store it (it wins over any stale
