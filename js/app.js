@@ -20,7 +20,7 @@ import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
-import { showBuildTag } from './buildinfo.js?v=08cb1ac';
+import { showBuildTag } from './buildinfo.js?v=65fd388';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
