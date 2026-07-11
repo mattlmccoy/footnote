@@ -25,14 +25,10 @@
     var q = new URLSearchParams(location.search);
     var id = (q.get('a') || '').trim();
     var name = (q.get('n') || '').trim();
-    if (!id) {
-      document.getElementById('read').innerHTML =
-        '<div class="empty" style="max-width:460px;margin:12vh auto;text-align:center">' +
-        '<div style="font-size:17px;font-weight:600;margin-bottom:8px">This invite link looks incomplete</div>' +
-        '<div style="font-size:13px;line-height:1.6;color:var(--text-3)">It\'s missing the reviewer id. Please use the exact link from your invitation email, or ask the author to resend it.</div></div>';
-      return;
-    }
-    window.ADVISOR = { id: id, name: name || id };
+    // A document link carries the reviewer id (?a=). A BARE entry (no id, no data, no project) is the
+    // reviewer Home — always load the module so it can list the reviewer's remembered documents. The
+    // module routes: id/data/p present → open that document (unchanged); bare → Home.
+    window.ADVISOR = id ? { id: id, name: name || id } : null;
     var s = document.createElement('script');
     s.type = 'module'; s.src = './js/advisor.js?v=474e0de';
     document.body.appendChild(s);
