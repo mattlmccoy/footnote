@@ -110,3 +110,14 @@ test('detailLine composes module + file hash + time, dropping empties', () => {
   assert.equal(detailLine({ module: 'app', fileHash: 'e0d28cc' }), 'app e0d28cc');
   assert.equal(detailLine({}), '');
 });
+
+test('showBuildTag detail toggles on clicking the build label', () => {
+  const w = fakeWin();
+  showBuildTag('https://x/js/app.js?v=deadbee', w);   // no fetch on fakeWin → fallback mode
+  const tag = w.document.getElementById('fn-build');
+  const label = tag._kids.find(k => /^build /.test(k.textContent));
+  assert.ok(label && typeof label.onclick === 'function', 'build label is clickable');
+  const detail = tag._kids.find(k => k.attrs && k.attrs['data-role'] === 'detail');
+  assert.ok(detail, 'detail node exists');
+  assert.equal(detail.textContent, 'app deadbee');     // module + file hash, no time offline
+});
