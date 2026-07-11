@@ -8,6 +8,7 @@ import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectR
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
+import { brandMark as MARK } from './brandmark.js?v=0000000';   // shared Footnote logo (real mark, single source)
 import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -140,7 +141,6 @@ function attachRepoPicker(input, t) {
 
 // Line-number gutter for the shell's left margin (code-editor motif; purely decorative).
 const GUTTER = Array.from({ length: 18 }, (_, i) => `<span>${i + 1}</span>`).join('');
-const MARK = accent => `<svg class="fn-mark" viewBox="0 0 52 52" aria-hidden="true"><rect x="3" y="3" width="46" height="46" rx="13" fill="${accent}"/><line x1="19" y1="13" x2="19" y2="39" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="39" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="39" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.7" fill="#fff"/></svg>`;
 
 // Creator credit + contact — Footnote's own authorship (global product identity, not the adopter's data).
 const IC_MAIL = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>`;
