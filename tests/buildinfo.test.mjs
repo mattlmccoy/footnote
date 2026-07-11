@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSha, showBuildTag } from '../js/buildinfo.js';
+import { buildSha, showBuildTag, moduleName, formatBuildTime, collapsedLabel, detailLine } from '../js/buildinfo.js';
 
 // Minimal fake window/document so the DOM injection can be exercised without a browser.
 function fakeWin() {
@@ -74,4 +74,39 @@ test('buildSha returns dev for a non-URL / malformed string without throwing', (
 
 test('buildSha ignores other query params and reads only v', () => {
   assert.equal(buildSha('file:///x/js/advisor.js?a=REV1&v=abc1234'), 'abc1234');
+});
+
+test('moduleName extracts the bundle name from a module URL', () => {
+  assert.equal(moduleName('https://footnotedocs.com/js/app.js?v=e0d28cc'), 'app');
+  assert.equal(moduleName('https://footnotedocs.com/js/hub.js?v=34496dc'), 'hub');
+  assert.equal(moduleName('file:///x/js/advisor.js?a=REV1&v=abc'), 'advisor');
+});
+
+test('moduleName falls back to "app" for an unparseable value', () => {
+  assert.equal(moduleName(''), 'app');
+  assert.equal(moduleName(undefined), 'app');
+});
+
+test('formatBuildTime renders a local 12-hour stamp in the approved shape', () => {
+  assert.match(formatBuildTime('2026-07-09T18:14:00Z'),
+    /^[A-Z][a-z]{2} \d{1,2}, \d{4} \d{1,2}:\d{2} (AM|PM)$/);
+});
+
+test('formatBuildTime returns empty string for missing/invalid input', () => {
+  assert.equal(formatBuildTime(''), '');
+  assert.equal(formatBuildTime(undefined), '');
+  assert.equal(formatBuildTime('not a date'), '');
+});
+
+test('collapsedLabel prefers the global sha, falls back to the file hash then dev', () => {
+  assert.equal(collapsedLabel({ globalSha: '34496dc', fileHash: 'e0d28cc' }), 'build 34496dc');
+  assert.equal(collapsedLabel({ fileHash: 'e0d28cc' }), 'build e0d28cc');
+  assert.equal(collapsedLabel({}), 'build dev');
+});
+
+test('detailLine composes module + file hash + time, dropping empties', () => {
+  assert.equal(detailLine({ module: 'app', fileHash: 'e0d28cc', time: 'Jul 9, 2026 2:14 PM' }),
+    'app e0d28cc · Jul 9, 2026 2:14 PM');
+  assert.equal(detailLine({ module: 'app', fileHash: 'e0d28cc' }), 'app e0d28cc');
+  assert.equal(detailLine({}), '');
 });
