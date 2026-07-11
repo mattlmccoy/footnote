@@ -8,7 +8,7 @@ import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectR
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
-import { brandMark as MARK } from './brandmark.js?v=0000000';   // shared Footnote logo (real mark, single source)
+import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)
 import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
 startNetWatch();
 showBuildTag(import.meta.url);

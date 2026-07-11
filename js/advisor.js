@@ -13,8 +13,8 @@ import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, str
 import { parseLatexTitle } from './docparse.js?v=534763c';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { brandMark } from './brandmark.js?v=0000000';   // the real Footnote logo (shared with the launcher)
-import { recentsKey, recentsAdd, recentsList, linkFor, newCount } from './reviewerhome.js?v=0000000';   // remembered documents for the reviewer Home
+import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
+import { recentsKey, recentsAdd, recentsList, linkFor, newCount } from './reviewerhome.js?v=fd862a8';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
 import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
