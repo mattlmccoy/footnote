@@ -2,13 +2,13 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=9f87c88';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=7141042';
 import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=2df623a';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=d2532a6';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=0647af8';
-import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=83ca70b';
+import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
 startNetWatch();
 showBuildTag(import.meta.url);
 

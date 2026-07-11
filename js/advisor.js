@@ -4,7 +4,7 @@
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { wordDiff } from './textdiff.js?v=112b6a1';
-import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=9f87c88';   // instance config + chapter manifest; assistant-free by construction
+import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=7141042';   // instance config + chapter manifest; assistant-free by construction
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
