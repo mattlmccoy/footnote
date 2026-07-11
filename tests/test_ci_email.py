@@ -297,3 +297,17 @@ def test_build_eml_sets_list_unsubscribe_mailto_no_oneclick():
     assert h.get("List-Unsubscribe") == "<mailto:noreply@example.com?subject=unsubscribe>"
     # one-click needs a hosted POST endpoint the serverless model can't provide — must be absent
     assert "List-Unsubscribe-Post" not in h
+
+
+# --- REPLY_TO must be plumbed into every email-sending workflow env block ---
+
+def test_reply_to_plumbed_in_every_email_workflow_env_block():
+    import glob as _glob
+    wf_dir = pathlib.Path(__file__).resolve().parent.parent / "data-template" / "workflows"
+    email_wfs = [p for p in _glob.glob(str(wf_dir / "*.yml")) if "SMTP_FROM:" in open(p, encoding="utf-8").read()]
+    assert email_wfs, "expected at least one email-sending workflow"
+    for p in email_wfs:
+        c = open(p, encoding="utf-8").read()
+        n_from = c.count("SMTP_FROM:")          # one per email env block (SMTP_FROM_NAME: does not match)
+        n_reply = c.count("REPLY_TO:")
+        assert n_reply == n_from, f"{pathlib.Path(p).name}: REPLY_TO in {n_reply} env block(s), expected {n_from}"

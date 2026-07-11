@@ -23,6 +23,7 @@ jobs:
           SMTP_PORT: ${{ secrets.SMTP_PORT }}
           SMTP_FROM: ${{ secrets.SMTP_FROM }}
           SMTP_FROM_NAME: ${{ secrets.SMTP_FROM_NAME }}
+          REPLY_TO: ${{ vars.REPLY_TO }}
           AUTHOR_NAME: ${{ vars.AUTHOR_NAME }}
           DOC_NOUN: ${{ vars.DOC_NOUN }}
           BRAND_NAME: ${{ vars.BRAND_NAME }}

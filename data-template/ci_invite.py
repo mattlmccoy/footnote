@@ -3,7 +3,8 @@
 Deterministic; no assistant in the loop. Run by the invite workflow after a push to advisors.json.
 
 Env (from GitHub secrets/vars): SMTP_USER, SMTP_PASS, ADVISOR_KEY; optional SMTP_HOST, SMTP_PORT,
-SMTP_FROM_NAME, PORTAL_BASE (e.g. https://owner.github.io/repo/), AUTHOR_NAME.
+SMTP_FROM_NAME, PORTAL_BASE (e.g. https://owner.github.io/repo/), AUTHOR_NAME, REPLY_TO (var — the
+address replies go to; defaults to the From address when unset).
 Usage: python3 ci_invite.py [--dry-run]
 """
 import json, os, sys, subprocess, datetime, tempfile, email.utils
