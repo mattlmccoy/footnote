@@ -327,7 +327,7 @@ async function loadChapter(ch){
   } catch(e){
     if (/\b401\b/.test(e.message)){ read.innerHTML = `<div class="empty"><i class="ti ti-key-off" style="font-size:24px;color:var(--text-3)"></i>
       <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Your access token expired</div>
-      <div style="font-size:13px;line-height:1.6;margin-bottom:14px">Fine-grained tokens are time-limited. Generate a new one (Contents: read on the data repo) and re-enter it.</div>
+      <div style="font-size:13px;line-height:1.6;margin-bottom:14px">Fine-grained tokens are time-limited. Generate a new Owner key on your Review repo (exact permissions under Settings &rarr; Access &amp; tokens) and re-enter it.</div>
       <button class="btn btn-primary" id="connect">Enter a new token</button></div>`;
       document.getElementById('connect').onclick = () => { const v = prompt('New fine-grained PAT:'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
       return; }
@@ -339,9 +339,9 @@ async function loadChapter(ch){
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
     <div style="font-size:17px;font-weight:500;margin:10px 0 6px">Connect your ${DOC}</div>
-    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your <code>${DATA_REPO}</code> repo. Paste a fine-grained token (Contents: read), set <b>Expiration → No expiration</b> so it never needs replacing — stored only in this browser.</div>
+    <div style="font-size:13px;line-height:1.6;margin-bottom:16px">Chapters are pulled privately from your Review repo <code>${DATA_REPO}</code>. Paste your Owner key (exact permissions under Settings &rarr; Access &amp; tokens), set <b>Expiration → No expiration</b> so it never needs replacing — stored only in this browser.</div>
     <button class="btn" id="connect">Add access token</button></div>`;
-  document.getElementById('connect').onclick = () => { const v = prompt('Fine-grained PAT (Contents read on the data repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
+  document.getElementById('connect').onclick = () => { const v = prompt('Owner key (fine-grained PAT on your Review repo):'); if (v){ localStorage.setItem('ghpat', v.trim()); loadChapter(current); } };
 }
 
 // Seamless render: when a unit's reading HTML isn't there yet, build it AUTOMATICALLY — no button. If a
@@ -376,11 +376,11 @@ async function autoBuildReadingView(ch){
       if (c && c.ok){ renderDoc(await c.text()); return; }
       run = await renderRun(t).catch(() => null);
       if (run && run.status === 'completed' && run.conclusion !== 'success'){
-        say('The build didn’t succeed. Open the <b>Actions</b> tab on your data repo to see why, then reload.'); return;
+        say('The build didn’t succeed. Open the <b>Actions</b> tab on your Review repo to see why, then reload.'); return;
       }
       if (run && run.status) say(`Building… (${escapeHtml(run.status)})`);
     }
-    say('This is taking longer than expected. Check the <b>Actions</b> tab on your data repo, then reload.');
+    say('This is taking longer than expected. Check the <b>Actions</b> tab on your Review repo, then reload.');
   } catch (e){
     if (/workflow-scope/.test(e.message)){
       say(`Your token is missing the <b>workflow</b> permission, so Footnote can’t build on your repo. <a href="https://github.com/settings/tokens/new?scopes=repo,workflow&description=Footnote" target="_blank" rel="noopener">Generate a new token</a> (<code>repo</code> + <code>workflow</code>), update it in <b>⋯ → Settings</b>, then reload.`);
@@ -2636,7 +2636,7 @@ async function refreshEmptyState(){
   let state; try { state = await dataRepoReadable(t); } catch { return; }
   if (state !== 'no-access') return;                     // readable-but-empty is a genuine import case
   box.innerHTML = `<i class="ti ti-lock-off" style="font-size:30px;color:var(--danger)"></i>
-    <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Can't read your data repo</div>
+    <div style="font-size:17px;font-weight:600;margin:12px 0 6px">Can't read your Review repo</div>
     <div style="font-size:13px;line-height:1.6;color:var(--text-3);margin-bottom:18px">Footnote can't read <code>${escapeHtml(DATA_REPO)}</code> with your current access. Your ${escapeHtml(UNIT)}s are safe: this is a permissions gap, not lost data. Give the Footnote GitHub App access to that repo (github.com/settings/installations, then Footnote, Repository access), then reload.</div>
     <a class="btn btn-primary" href="https://github.com/settings/installations" target="_blank" rel="noopener" style="padding:8px 16px;text-decoration:none">Open GitHub App settings</a>`;
 }
@@ -2874,7 +2874,7 @@ function toggleAssistant(){
     localStorage.setItem(ASSIST_KEY, '0'); flash('AI assistant off. “Review actions” (stage → approve → merge) still works.');
   } else {
     localStorage.setItem(ASSIST_KEY, '1');
-    alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN data repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
+    alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN Review repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
   }
   if (document.getElementById('btn-send')) renderTopbar();   // refresh the top-bar button label
 }
@@ -3403,7 +3403,7 @@ function openClaudeDialog(t) {
       try { const names = await setAiSecrets(etok, sealToBase64, values);
         if (!names.length){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
         try { await ensureApplyEngine(DATA_REPO, etok); } catch {}
-        close(); flash('Saved ' + names.join(' + ') + ' to your data repo.'); openSettingsPage('ai');
+        close(); flash('Saved ' + names.join(' + ') + ' to your Review repo.'); openSettingsPage('ai');
       } catch(e){
         if (isScopeError(e)){ const ef = box.querySelector('#set-claude-etok'); if (ef){ ef.style.display='block'; ef.focus(); } stat.style.color='var(--warn)'; stat.textContent='Your saved access token can’t write secrets. Paste a token with Secrets + Actions access (fine-grained) or a classic repo+workflow token above, then Save again.'; }
         else { stat.style.color='var(--warn)'; stat.textContent='Failed: '+escapeHtml((e && e.message)||'error'); }
@@ -3538,7 +3538,7 @@ async function openReleasePanel(opts){
     const n = (inbox[a]||[]).length;
     const label = idLabel(a);
     const msg = n
-      ? `Delete all ${n} comment${n!==1?'s':''} from ${label}? This removes them from your inbox permanently (recoverable only from the data repo's git history). The reviewer stays on your list and can still comment again later.`
+      ? `Delete all ${n} comment${n!==1?'s':''} from ${label}? This removes them from your inbox permanently (recoverable only from the Review repo's git history). The reviewer stays on your list and can still comment again later.`
       : `Remove ${label} from your inbox? They have no submitted comments — this just clears the leftover entry. The reviewer stays on your list.`;
     if (!confirm(msg)) return;
     const box = document.querySelector(`.rel-inbox[data-adv="${a}"]`);
@@ -3611,13 +3611,13 @@ async function openReleasePanel(opts){
         </div>
         <div id="adv-email-guide" style="display:none;margin:11px 0 2px;padding-top:11px;border-top:.5px solid var(--warn);font-size:12px;line-height:1.6;color:var(--text-2)">
           <div style="font-weight:600;color:var(--text);margin-bottom:5px">One-time setup — you don't have to use Gmail</div>
-          Invites are sent by a GitHub Action in your data repo (<code>${dataRepo}</code>), using any SMTP mail server. Pick whichever you like:
+          Invites are sent by a GitHub Action in your Review repo (<code>${dataRepo}</code>), using any SMTP mail server. Pick whichever you like:
           <ul style="margin:7px 0 7px 16px;padding:0">
             <li><b>Institutional / work email</b> — ask IT for the SMTP host, port, and whether an app password is needed (e.g. Georgia Tech, Outlook/Office 365: <code>smtp.office365.com</code> port <code>587</code>).</li>
             <li><b>Gmail</b> — turn on 2-Step Verification, then create an <i>App Password</i> (Google Account → Security → App passwords). Host <code>smtp.gmail.com</code>, port <code>465</code>. Note: some Google Workspace accounts (incl. some GT accounts) disable app passwords — use a transactional service or institutional SMTP instead.</li>
             <li><b>Transactional service</b> (no personal inbox needed) — Resend, SendGrid, Mailgun, Postmark. They give you an SMTP host, port, username, and key.</li>
           </ul>
-          <div style="font-weight:600;color:var(--text);margin:8px 0 4px">Add these in the data repo</div>
+          <div style="font-weight:600;color:var(--text);margin:8px 0 4px">Add these in the Review repo</div>
           <div style="margin-bottom:3px">Settings → Secrets and variables → Actions, in <code>${dataRepo}</code>:</div>
           <div style="font-size:11.5px;margin-left:2px">
             <b>Secrets</b> — <code>SMTP_USER</code> (login / from-address), <code>SMTP_PASS</code> (password, app password, or API key), <code>ADVISOR_KEY</code> (the access key reviewers paste). Optional: <code>SMTP_HOST</code>, <code>SMTP_PORT</code> (default Gmail <code>smtp.gmail.com</code>:<code>465</code>), <code>SMTP_FROM_NAME</code>.<br>
@@ -3819,7 +3819,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
             stat.textContent = 'Connected — checking access…';
             const pk = await checkAccess(token).catch(() => null);
             if (pk){ S.needToken = false; S.savedPk = pk; S.step = 'test'; render(); }
-            else stat.innerHTML = 'Connected, but the app can\'t reach your data repo yet — make sure the GitHub App is <b>installed on your data repo</b>, then try again.';
+            else stat.innerHTML = 'Connected, but the app can\'t reach your Review repo yet — make sure the GitHub App is <b>installed on your Review repo</b>, then try again.';
           } catch(e){ stat.textContent = 'GitHub connect failed: ' + e.message + ' — you can paste a token instead.'; }
         };
         wireCommon();
