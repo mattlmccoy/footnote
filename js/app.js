@@ -28,7 +28,7 @@ import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from '
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
-import { isAiComment, buildAdvisorClaudeJob } from './aicomment.js?v=209d30f';
+import { isAiComment, buildAdvisorClaudeJob } from './aicomment.js?v=1a7f4b2';
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
