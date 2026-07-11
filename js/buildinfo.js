@@ -44,11 +44,12 @@ export function detailLine({ module, fileHash, time } = {}) {
   return [left, time].filter(Boolean).join(' · ');
 }
 
-// Injects a muted, fixed bottom-left pill: "build <sha> · Refresh". Clicking the build label expands a
-// detail line "<module> <fileHash> · <time>". Idempotent. build.json (fetched best-effort) upgrades the
-// collapsed label to the site-wide sha + fills the timestamp; absent it, the module's own hash is shown.
-// Refresh reloads the top-level HTML with a cache-busting ?r=<ts> so the CDN-cached shell is re-fetched
-// (which in turn pulls the newest module ?v=). DOM/UI — browser-verified; the pure helpers are unit-tested.
+// Injects a small light-blue orb, fixed bottom-left. Hovering it (or clicking, for touch) expands the
+// full build line: "build <sha> · <module> <fileHash> · <time> · Refresh". Collapsed it's just the orb, so
+// it stays out of the way. Idempotent. build.json (fetched best-effort) upgrades the label to the site-wide
+// sha + fills the timestamp; absent it, the module's own hash is shown. Refresh reloads the top-level HTML
+// with a cache-busting ?r=<ts> so the CDN-cached shell (and newest module ?v=) is re-fetched.
+// DOM/UI — browser-verified; the pure helpers are unit-tested. No assistant terms (advisor.js imports this).
 export function showBuildTag(metaUrl, win) {
   const w = win || (typeof window !== 'undefined' ? window : null);
   if (!w || !w.document) return;
@@ -61,44 +62,66 @@ export function showBuildTag(metaUrl, win) {
 
   const el = doc.createElement('div');
   el.id = 'fn-build';
-  el.setAttribute('style', 'position:fixed;left:8px;bottom:7px;z-index:900;font-size:10.5px;color:var(--text-3);opacity:.55;font-family:inherit;user-select:none;display:flex;align-items:center;flex-wrap:wrap;max-width:70vw');
+  el.setAttribute('style', 'position:fixed;left:9px;bottom:9px;z-index:900;font-size:10.5px;color:var(--text-3);font-family:inherit;user-select:none;display:flex;align-items:center;gap:7px;max-width:76vw;pointer-events:auto');
 
-  const label = doc.createElement('button');
-  label.setAttribute('style', 'background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:0;pointer-events:auto');
+  // The orb: a small glossy light-blue dot — the only thing visible when collapsed.
+  const orb = doc.createElement('button');
+  orb.setAttribute('data-role', 'orb');
+  orb.setAttribute('aria-label', 'Build info');
+  const orbStyle = (hot) =>
+    'width:11px;height:11px;flex:0 0 auto;padding:0;border:0;border-radius:50%;cursor:pointer;' +
+    'background:radial-gradient(circle at 35% 30%, #bcd8ff, #5b8def);' +
+    'box-shadow:0 0 ' + (hot ? '7px 1px rgba(110,168,254,.85)' : '4px rgba(110,168,254,.55)') + ';' +
+    'transition:box-shadow .15s ease, transform .15s ease;transform:scale(' + (hot ? '1.12' : '1') + ')';
+  orb.setAttribute('style', orbStyle(false));
+
+  // The expandable text group (hidden until open).
+  const label = doc.createElement('span');
   label.textContent = collapsedLabel({ globalSha: state.globalSha, fileHash });
 
   const detail = doc.createElement('span');
   detail.setAttribute('data-role', 'detail');
-  detail.setAttribute('style', 'display:none;margin-left:6px');
+  detail.setAttribute('style', 'margin-left:6px;color:var(--text-3);opacity:.75');
   detail.textContent = detailLine({ module: mod, fileHash, time: state.time });
-
-  const sep = doc.createElement('span');
-  sep.textContent = ' · ';
-  sep.setAttribute('style', 'margin:0 4px');
 
   const btn = doc.createElement('button');
   btn.textContent = 'Refresh';
-  btn.setAttribute('style', 'background:none;border:0;color:var(--accent);font:inherit;cursor:pointer;padding:0;pointer-events:auto');
+  btn.setAttribute('style', 'margin-left:8px;background:none;border:0;color:var(--accent);font:inherit;cursor:pointer;padding:0;pointer-events:auto');
   btn.onclick = () => { const loc = w.location; loc.replace(loc.pathname + '?r=' + Date.now()); };
 
-  let open = false;
-  const redraw = () => {
+  const expandable = [label, detail, btn];
+
+  let pinned = false, hovered = false;
+  const isOpen = () => pinned || hovered;
+  const apply = () => {
     label.textContent = collapsedLabel({ globalSha: state.globalSha, fileHash });
     detail.textContent = detailLine({ module: mod, fileHash, time: state.time });
-    detail.setAttribute('style', (open ? 'display:inline;' : 'display:none;') + 'margin-left:6px');
+    const open = isOpen();
+    for (const node of expandable) {
+      const base = node === btn
+        ? 'margin-left:8px;background:none;border:0;color:var(--accent);font:inherit;cursor:pointer;padding:0;pointer-events:auto;'
+        : (node === detail ? 'margin-left:6px;color:var(--text-3);opacity:.75;' : '');
+      node.setAttribute('style', base + 'transition:opacity .15s ease;' + (open ? 'opacity:1;' : 'display:none;'));
+    }
+    orb.setAttribute('style', orbStyle(open));
+    el.setAttribute('data-open', open ? '1' : '0');
   };
-  label.onclick = () => { open = !open; redraw(); };
 
+  orb.onclick = () => { pinned = !pinned; apply(); };          // touch / click-to-pin
+  el.onmouseenter = () => { hovered = true; apply(); };        // desktop hover-expand
+  el.onmouseleave = () => { hovered = false; apply(); };
+
+  el.appendChild(orb);
   el.appendChild(label);
   el.appendChild(detail);
-  el.appendChild(sep);
   el.appendChild(btn);
   (doc.body || doc.documentElement).appendChild(el);
+  apply();   // collapsed initial state (orb only, data-open="0")
 
   if (typeof w.fetch === 'function') {
     w.fetch('build.json?t=' + Date.now(), { cache: 'no-store' })
       .then(r => (r && r.ok ? r.json() : null))
-      .then(j => { if (j && (j.sha || j.time)) { state.globalSha = j.sha || ''; state.time = formatBuildTime(j.time); redraw(); } })
+      .then(j => { if (j && (j.sha || j.time)) { state.globalSha = j.sha || ''; state.time = formatBuildTime(j.time); apply(); } })
       .catch(() => {});
   }
 }

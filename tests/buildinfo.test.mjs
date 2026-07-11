@@ -111,13 +111,18 @@ test('detailLine composes module + file hash + time, dropping empties', () => {
   assert.equal(detailLine({}), '');
 });
 
-test('showBuildTag detail toggles on clicking the build label', () => {
+test('showBuildTag starts collapsed as an orb that toggles open on click', () => {
   const w = fakeWin();
   showBuildTag('https://x/js/app.js?v=deadbee', w);   // no fetch on fakeWin → fallback mode
   const tag = w.document.getElementById('fn-build');
-  const label = tag._kids.find(k => /^build /.test(k.textContent));
-  assert.ok(label && typeof label.onclick === 'function', 'build label is clickable');
+  assert.equal(tag.attrs['data-open'], '0');           // collapsed by default — orb only
+  const orb = tag._kids.find(k => k.attrs && k.attrs['data-role'] === 'orb');
+  assert.ok(orb && typeof orb.onclick === 'function', 'orb is present and clickable');
   const detail = tag._kids.find(k => k.attrs && k.attrs['data-role'] === 'detail');
   assert.ok(detail, 'detail node exists');
   assert.equal(detail.textContent, 'app deadbee');     // module + file hash, no time offline
+  const label = tag._kids.find(k => /^build /.test(k.textContent));
+  assert.ok(label, 'build label present');
+  orb.onclick();                                        // click pins it open (touch affordance)
+  assert.equal(tag.attrs['data-open'], '1');
 });
