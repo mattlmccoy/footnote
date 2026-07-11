@@ -4279,7 +4279,7 @@ async function savePrivateNote(state, cid, text){
   state.sha = await putJson(tok(), 'reviews/advisor_notes.json', state.notes, state.sha, 'notes: private advisor note');
 }
 // copy an advisor comment into the owner review + queue an apply-edits job (the existing pipeline)
-async function sendAdvisorToClaude(advisorId, ch, c){
+async function sendAdvisorToClaude(advisorId, ch, c, note){
   const t = tok();
   const { json, sha } = await getJson(t, `reviews/${ch}.json`).catch(() => ({ json:null, sha:null }));
   let review = json || newReview(ch, '');
@@ -4289,6 +4289,7 @@ async function sendAdvisorToClaude(advisorId, ch, c){
     review = addComment(review, { anchor:c.anchor, kind:c.kind, tag:c.edit?'edit':(c.tag||'wording'), body:c.body, edit:c.edit||null });
     nc = review.comments[review.comments.length-1];
     nc.from_advisor = { id:advisorId, cid:c.id, name: ADVISOR_NAME[advisorId] || c.author || advisorId }; nc.status = 'queued';
+    if (note && note.trim()) nc.thread = [...(nc.thread||[]), { author:'you', text:note.trim(), ts:new Date().toISOString() }];
     await putJson(t, `reviews/${ch}.json`, review, sha, `review: incorporate ${advisorId} comment ${c.id}`);
   }
   const jr = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
@@ -4296,7 +4297,7 @@ async function sendAdvisorToClaude(advisorId, ch, c){
   // idempotent: don't double-queue a still-open job for the same advisor comment
   const dup = jobs.find(j => j.from_advisor && j.from_advisor.id === advisorId && j.from_advisor.cid === c.id && j.status !== 'done' && j.status !== 'merged');
   if (!dup){
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:ch, comment_ids:[nc.id], from_advisor:{ id:advisorId, cid:c.id }, status:'queued', requested_ts:new Date().toISOString() });
+    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:ch, comment_ids:[nc.id], from_advisor:{ id:advisorId, cid:c.id }, ...(note && note.trim() ? { revise_note: note.trim() } : {}), status:'queued', requested_ts:new Date().toISOString() });
     await putJson(t, 'jobs.json', jobs, jr.sha, `review: queue advisor comment ${c.id}`);
   }
   await _mutateAdvisorComment(advisorId, ch, c.id, x => { x.sent = true; x.read = true; }, `sent: ${advisorId} ${ch} ${c.id}`);
