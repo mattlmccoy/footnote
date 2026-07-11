@@ -5,11 +5,11 @@
 
 export function recentsKey() { return 'footnote:reviews'; }
 
-// The author's display name for the "shared by" line: their GitHub profile name (GET /users/<login>
-// → .name), else the login. Reviewers can't read the author's Footnote AUTHOR_NAME (an Actions
-// variable), so the public profile name is the best readable source.
-export function pickAuthorName(profileName, login) {
-  return (profileName || '').trim() || login;
+// The author's display name for the "shared by" line, in priority order: their GitHub profile name
+// (GET /users/<login> → .name, inherited), then the name they typed into Footnote (persisted to the
+// data repo's release.json as author_name), then the login. Never the bare login when a real name exists.
+export function pickAuthorName(profileName, typedName, login) {
+  return (profileName || '').trim() || (typedName || '').trim() || login;
 }
 
 // Identity of a remembered document: the workspace repo + the project subfolder (or just the repo for a

@@ -3967,6 +3967,9 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
       }
       if (name) await putSecret(etok, pk, sealToBase64, 'SMTP_FROM_NAME', name);
       if (name) await setVariable(etok, 'AUTHOR_NAME', name);
+      // Also persist the typed name to release.json (reviewer-readable) so the reviewer Home can show it
+      // when the author's GitHub profile has no name. AUTHOR_NAME above is an Actions var reviewers can't read.
+      if (name) try { const _t = tok(); const _g = await getJson(_t, 'release.json').catch(() => ({ json:null, sha:null })); const _rel = (_g.json && typeof _g.json === 'object') ? _g.json : {}; if (_rel.author_name !== name){ _rel.author_name = name; await putJson(_t, 'release.json', _rel, _g.sha, 'author: display name for reviewer Home'); } } catch (e) {}
       await setVariable(etok, 'PORTAL_BASE', portalBase());
       await setVariable(etok, 'DOC_NOUN', DOC);   // keeps the invite/notify emails document-agnostic (e.g. "paper", "proposal")
       // Ensure the invite/notify workflow exists in the data repo before dispatching it. A workspace repo
