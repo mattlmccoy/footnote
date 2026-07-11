@@ -275,3 +275,6 @@ html.dark #syncbanner{color:#ffd98a;background:#3a2e12;border-color:#6b5320} htm
 body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}
 .cmt-new{ animation: cmtNew 2.2s ease-out; }
 @keyframes cmtNew{ 0%{ background: var(--accent-bg); } 100%{ background: transparent; } }
+
+/* shared Footnote brand mark (reviewer Home + topbars) */
+.fn-mark{width:22px;height:22px;flex:0 0 auto}

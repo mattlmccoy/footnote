@@ -13,6 +13,8 @@ import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, str
 import { parseLatexTitle } from './docparse.js?v=534763c';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
+import { brandMark } from './brandmark.js?v=0000000';   // the real Footnote logo (shared with the launcher)
+import { recentsKey, recentsAdd, recentsList, linkFor, newCount } from './reviewerhome.js?v=0000000';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
 import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
@@ -1160,6 +1162,7 @@ async function pushChapterReviewAdv(ch){
 // ---------- top bar / home / search ----------
 function renderTopbar(){ const m=chMeta(current);
   document.getElementById('topbar').innerHTML=`
+    ${allDocsLink()}${reviewerPill()}
     <button class="icbtn" id="btn-home" title="All ${UNIT}s"><i class="ti ti-layout-grid"></i></button>
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT}"></div>
@@ -1235,7 +1238,7 @@ function reviewHeaderHtml(releasedCount){
 function enterHome(){
   stopLiveSync();
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
-  document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:8px"><svg width="20" height="20" viewBox="0 0 52 52" style="flex:0 0 auto"><rect x="3" y="3" width="46" height="46" rx="12" fill="#2c64c4"/><line x1="19" y1="14" x2="19" y2="38" stroke="#fff" stroke-width="3" stroke-linecap="round"/><line x1="26" y1="18" x2="38" y2="18" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><line x1="26" y1="26" x2="38" y2="26" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".5"/><circle cx="19" cy="26" r="4.6" fill="#fff"/></svg><strong style="font-size:16px;font-weight:600">Footnote</strong><span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
+  document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:9px">${allDocsLink()}${brandMark('#2c64c4')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}<span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
      <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>
      <button class="icbtn" id="btn-notify" title="Email notifications"><i class="ti ti-bell"></i></button>
      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
@@ -1632,6 +1635,75 @@ function setupMobileSheet(){
   document.body.append(back, fab);
 }
 // ---------- boot ----------
+// ── Reviewer Home: the reviewer's remembered documents (client-side, cross-author). ──────────────
+// Every successful document open is recorded here; a bare advisor.html (or "← All documents") lists them.
+const RVH_SPINES = ['#2c64c4','#b5643c','#4a7c59','#7a4b73','#c08a2d','#2f7d80','#93313e'];
+function _rawRecents(){ try { const v = JSON.parse(_store.get(recentsKey()) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
+function recordRecent(entry){ try { _store.set(recentsKey(), JSON.stringify(recentsAdd(_rawRecents(), entry))); } catch(e){} }
+function reviewerPill(){ return `<span style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#2c64c4;background:rgba(44,100,196,.12);border:1px solid rgba(44,100,196,.32);border-radius:20px;padding:2px 8px;white-space:nowrap">Reviewer</span>`; }
+function allDocsLink(){ return `<a href="advisor.html" title="All documents shared with you" style="font-size:13px;color:var(--text-2);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;white-space:nowrap">← All documents</a>`; }
+function _relDays(ts){ if(!ts) return ''; const d=Math.floor((Date.now()-ts)/86400000); return d<=0?'today':d===1?'yesterday':d<7?`${d} days ago`:d<14?'last week':`${Math.floor(d/7)} weeks ago`; }
+const RVH_STYLE = `<style id="rvh-style">
+  .rvh{--a:#2c64c4;--str:#4a7c59;--ink:#211f1a;--faint:#a49e90;--ln:#e4dfd2;--serif:"Fraunces",Georgia,serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+    max-width:900px;margin:0 auto;padding:30px 24px 80px;color:var(--ink)}
+  .rvh-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--a)}
+  .rvh-h1{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.02em;margin:3px 0 26px}
+  .rvh-shelf{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 22px;padding:6px 4px 0}
+  .rvh-board{height:12px;margin:0 -4px 2px;border-radius:0 0 6px 6px;background:linear-gradient(#e7e0d0,#d8cfba);box-shadow:inset 0 2px 0 rgba(255,255,255,.5),0 10px 22px -12px rgba(40,34,20,.4)}
+  .rvh-book{position:relative;display:flex;flex-direction:column;width:176px;min-height:230px;padding:20px 20px 18px 26px;text-decoration:none;color:inherit;text-align:left;cursor:pointer;
+    background:linear-gradient(160deg,#fffefb 0%,#faf7ef 100%);border:1px solid var(--ln);border-left:none;border-radius:3px 12px 12px 3px;
+    box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 14px 26px -16px rgba(40,34,20,.5),0 3px 6px -4px rgba(40,34,20,.3);transition:transform .18s cubic-bezier(.2,.7,.2,1),box-shadow .2s}
+  .rvh-book:hover{transform:translateY(-8px) rotate(-.4deg);box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 26px 40px -18px rgba(40,34,20,.55)}
+  .rvh-spine{position:absolute;left:0;top:0;bottom:0;width:11px;border-radius:3px 0 0 3px;background:linear-gradient(90deg,color-mix(in srgb,var(--sp) 78%,#000) 0%,var(--sp) 55%,color-mix(in srgb,var(--sp) 70%,#fff) 100%);box-shadow:1px 0 0 rgba(0,0,0,.12),inset -2px 0 3px rgba(0,0,0,.18)}
+  .rvh-by{font-family:var(--mono);font-size:11px;color:var(--str);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rvh-title{font-family:var(--serif);font-weight:500;font-size:19px;line-height:1.15;color:var(--ink);margin-top:10px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+  .rvh-badge{align-self:flex-start;font-family:var(--mono);font-size:10.5px;font-weight:600;color:#fff;background:var(--a);border-radius:20px;padding:1px 8px;margin-top:8px}
+  .rvh-meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:auto;padding-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .rvh-empty{max-width:460px;margin:11vh auto;text-align:center;color:var(--faint)}
+  .rvh-empty svg{width:40px;height:40px}
+</style>`;
+function _homeTopbar(name){
+  document.getElementById('topbar').innerHTML =
+    `<span style="display:inline-flex;align-items:center;gap:9px">${brandMark('#2c64c4')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}</span>`
+    + (name ? `<span style="margin-left:auto;font-size:13px;color:var(--text-2)">Reviewing as <b style="font-weight:600">${escapeHtml(name)}</b></span>` : '');
+}
+async function _paintHomeBadges(list){
+  await Promise.all(list.map(async (e, i) => {
+    try {
+      const [owner, repo] = (e.data || '').split('/'); if (!owner || !repo || !e.k) return;
+      const prefix = e.p ? `${e.p}/` : '';
+      const r = await _gfetch(`${_API}/repos/${owner}/${repo}/contents/${prefix}release.json?t=${Date.now()}`, { headers:_hdr(e.k), cache:'no-store' });
+      if (!r.ok) return;
+      const d = await r.json(); if (typeof d.content !== 'string') return;
+      const j = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, '')))));
+      const rel = (j?.[e.a]?.released) || (j?.['general']?.released) || [];
+      const n = newCount(e, rel);
+      if (n > 0){ const b = read.querySelector(`.rvh-book[data-i="${i}"] .rvh-badge`); if (b){ b.textContent = `${n} new`; b.style.display=''; } }
+    } catch(err){}
+  }));
+}
+function renderReviewerHome(){
+  const list = recentsList(_rawRecents());
+  _homeTopbar(list[0]?.n || '');
+  const nav = document.getElementById('nav'), cm = document.getElementById('comments');
+  if (nav) nav.style.display = 'none'; if (cm) cm.style.display = 'none';
+  const head = `<span class="rvh-eyebrow">Shared with you</span><h1 class="rvh-h1">Documents to review</h1>`;
+  if (!list.length){
+    read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-empty">${brandMark('#2c64c4')}
+      <div style="font-size:16px;font-weight:500;margin:12px 0 6px;color:var(--ink)">No documents yet</div>
+      <div style="font-size:13px;line-height:1.6">Open the invite link from your email and the document appears here. After that, this is your home for every document shared with you.</div></div></div>`;
+    return;
+  }
+  const books = list.map((e, i) => `<a class="rvh-book" style="--sp:${RVH_SPINES[i % RVH_SPINES.length]}" data-i="${i}">
+      <span class="rvh-spine"></span>
+      <span class="rvh-by">${escapeHtml(e.owner || e.n || 'shared with you')}</span>
+      <span class="rvh-title">${escapeHtml(e.title || e.p || 'Untitled document')}</span>
+      <span class="rvh-badge" style="display:none"></span>
+      <span class="rvh-meta">opened ${_relDays(e.ts)}</span></a>`).join('');
+  read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-shelf">${books}</div><div class="rvh-board"></div></div>`;
+  read.querySelectorAll('.rvh-book').forEach(el => { el.onclick = () => { location.href = linkFor(list[+el.dataset.i]); }; });
+  _paintHomeBadges(list);
+}
 async function boot(){
   // Magic link: the invite email's URL carries the access key as ?k=<key>. Store it (it wins over any stale
   // key so a fresh invite always works), then scrub it from the address bar so the token isn't left in
@@ -1642,6 +1714,11 @@ async function boot(){
     try { history.replaceState(null, '', location.pathname + searchWithoutKey(location.search) + location.hash); } catch (e) {}
     keyBad = false;
   }
+  // Reviewer Home: a BARE entry (no document target in the URL) shows the reviewer's remembered documents
+  // instead of loading a doc. Existing invite links all carry &p= (workspace) or &data= (legacy) and skip
+  // this, so their behavior is unchanged; Home is reached only via a bookmark or the "← All documents" link.
+  const _q = new URLSearchParams(location.search);
+  if (!_q.get('p') && !_q.get('data')){ renderReviewerHome(); return; }
   // Load the instance config FIRST. Advisors are invited PER-PROJECT: their link carries the project's data
   // repo as ?data=owner/repo (they have no hub access). Resolve it, push it into the shared config cache so
   // loadChapters/loadRelease/getJson all read the right project's data repo.
@@ -1665,6 +1742,8 @@ async function boot(){
   HAS_OUTLINE = await _outlineExists();   // gate the home outline card — hidden when the doc ships no outline (journals)
   const _docTitle = await _docTitleFromRepo();   // real title from the data repo (config title is generic → "Untitled")
   if (_docTitle){ _CFG = { ..._CFG, doc:{ ..._CFG.doc, title:_docTitle } }; setConfig(_CFG); }
+  // Remember this document so it appears on the reviewer's Home (client-side, per browser, cross-author).
+  if (tok() && ADVISOR.id && ADVISOR.id !== '?') recordRecent({ a: ADVISOR.id, n: ADVISOR.name, data: DATA_REPO, p: _pid, k: tok(), owner: (DATA_REPO || '').split('/')[0], title: (_CFG.doc && _CFG.doc.title) || '', seenReleased: released, ts: Date.now() });
   if (SHARED && tok() && !reviewerName()){ showNameEntry(); return; }
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
