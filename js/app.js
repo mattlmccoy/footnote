@@ -28,7 +28,7 @@ import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from '
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
-import { isAiComment } from './aicomment.js?v=209d30f';
+import { isAiComment, buildAdvisorClaudeJob } from './aicomment.js?v=209d30f';
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -1123,7 +1123,7 @@ function buildAdvCard(c){
       ${ai ? `
       ${assistantOn() ? `<button class="btn btn-primary a-act" ${c.sent?'disabled title="Already sent to Claude"':''}><i class="ti ti-check"></i>${c.sent?'Sent to Claude':'Act on it'}</button>` : ''}
       <button class="btn a-dismiss"><i class="ti ti-x"></i>Dismiss</button>
-      ${assistantOn() ? `<button class="btn a-morework"><i class="ti ti-pencil"></i>Request further work</button>` : ''}
+      ${assistantOn() ? `<button class="btn a-morework" ${c.sent?'disabled title="Already sent — iterate from the staged edit’s Request changes"':''}><i class="ti ti-pencil"></i>Request further work</button>` : ''}
       ` : `
       <button class="btn a-reply"><i class="ti ti-message"></i>Reply</button>
       <button class="btn a-note"><i class="ti ti-note"></i>Private note</button>
@@ -4345,7 +4345,7 @@ async function sendAdvisorToClaude(advisorId, ch, c, note){
   // idempotent: don't double-queue a still-open job for the same advisor comment
   const dup = jobs.find(j => j.from_advisor && j.from_advisor.id === advisorId && j.from_advisor.cid === c.id && j.status !== 'done' && j.status !== 'merged');
   if (!dup){
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:ch, comment_ids:[nc.id], from_advisor:{ id:advisorId, cid:c.id }, ...(note && note.trim() ? { revise_note: note.trim() } : {}), status:'queued', requested_ts:new Date().toISOString() });
+    jobs.push(buildAdvisorClaudeJob({ id:'j_'+Date.now().toString(36), chapter:ch, commentId:nc.id, advisorId, cid:c.id, note, ts:new Date().toISOString() }));
     await putJson(t, 'jobs.json', jobs, jr.sha, `review: queue advisor comment ${c.id}`);
   }
   await _mutateAdvisorComment(advisorId, ch, c.id, x => { x.sent = true; x.read = true; }, `sent: ${advisorId} ${ch} ${c.id}`);

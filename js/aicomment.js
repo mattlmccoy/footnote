@@ -7,3 +7,19 @@ export const AI_REVIEWER_ID = 'ai-review-agents';
 export function isAiComment(c) {
   return !!c && c._advisor === AI_REVIEWER_ID;
 }
+
+// Build the apply-edits job that sends one advisor comment (a human reviewer comment, or an AI finding via
+// "Act on it" / "Request further work") to Claude. A GUIDANCE NOTE ("Request further work") sets
+// revision:true so the engine RE-RUNS the writer with the steer: without it, `needs_writer =
+// job.revision or not staged_edit_spec(comment)` takes the reuse path once a staged edit already exists and
+// the note is silently ignored (mirrors requestChanges, which also sets revision:true). Pure — the caller
+// does the getJson/putJson. `note` blank/whitespace ⇒ a plain send (no revision).
+export function buildAdvisorClaudeJob({ id, chapter, commentId, advisorId, cid, note, ts }) {
+  const job = {
+    id, type: 'apply-edits', chapter, comment_ids: [commentId],
+    from_advisor: { id: advisorId, cid }, status: 'queued', requested_ts: ts,
+  };
+  const n = (note || '').trim();
+  if (n) { job.revision = true; job.revise_note = n; }
+  return job;
+}
