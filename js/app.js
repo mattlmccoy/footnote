@@ -22,6 +22,7 @@ import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
 import { readProgress } from './cardstats.js?v=cfa6c99';
+import { clusterComments } from './cluster.js?v=0000000';   // group reviewer comments on the same passage
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
@@ -1075,7 +1076,8 @@ function renderAdvisorSection(pane){
   const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
   lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM REVIEWERS<span style="margin-left:auto">${active.length}</span>`;
   pane.appendChild(lbl);
-  active.forEach(c => pane.appendChild(buildAdvCard(c)));
+  // C2b: comments on the same passage collapse into one group card ("N reviewers on this passage").
+  clusterComments(active).forEach(g => pane.appendChild(g.length > 1 ? buildAdvCluster(g) : buildAdvCard(g[0])));
   if (resolved.length){   // advisor-resolved comments fold into a collapsible group instead of vanishing
     const grp = document.createElement('div'); grp.className = 'resolved-grp';
     const head = document.createElement('button'); head.className = 'resolved-head';
@@ -1085,6 +1087,23 @@ function renderAdvisorSection(pane){
     head.onclick = () => { advResolvedOpen = !advResolvedOpen; body.style.display = advResolvedOpen?'block':'none'; head.querySelector('i').className = `ti ti-chevron-${advResolvedOpen?'down':'right'}`; };
     grp.appendChild(head); grp.appendChild(body); pane.appendChild(grp);
   }
+}
+// C2b: two reviewers on the same passage → one group card wrapping the individual comment cards, so
+// the author sees they concern the same text. Expandable; the member cards keep their full action set.
+function buildAdvCluster(group){
+  const reviewers = [...new Set(group.map(c => whoLabel(c)))];
+  const quote = (group[0] && group[0].anchor && group[0].anchor.quote || '').replace(/\s+/g, ' ').trim().slice(0, 64);
+  const wrap = document.createElement('div'); wrap.className = 'ccluster';
+  wrap.style.cssText = 'border:1px solid var(--accent);border-radius:var(--r-lg,10px);margin:0 0 10px;overflow:hidden;background:var(--accent-bg,rgba(44,100,196,.06))';
+  const head = document.createElement('button');
+  head.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;text-align:left;border:none;background:none;cursor:pointer;padding:9px 11px;font:inherit;color:var(--text)';
+  head.innerHTML = `<i class="ti ti-users" style="color:var(--accent);flex:0 0 auto"></i><span style="font-size:12.5px;font-weight:600;flex:0 0 auto">${reviewers.length > 1 ? `${reviewers.length} reviewers` : `${group.length} comments`} on this passage</span><span style="font-size:11px;color:var(--text-3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">"${escapeHtml(quote)}"</span><i class="ti ti-chevron-down cc-car" style="color:var(--text-3);flex:0 0 auto"></i>`;
+  const body = document.createElement('div'); body.style.cssText = 'padding:0 8px 6px';
+  group.forEach(c => body.appendChild(buildAdvCard(c)));
+  let open = true;
+  head.onclick = () => { open = !open; body.style.display = open ? '' : 'none'; head.querySelector('.cc-car').className = `ti ti-chevron-${open ? 'down' : 'right'} cc-car`; };
+  wrap.appendChild(head); wrap.appendChild(body);
+  return wrap;
 }
 // build one in-context advisor card with the full action set (rail is the primary action surface)
 function buildAdvCard(c){
