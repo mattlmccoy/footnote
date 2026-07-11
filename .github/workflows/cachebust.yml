@@ -42,6 +42,13 @@ jobs:
                   open(p, "w", encoding="utf-8").write(c); print("stamped", p)
           PY
 
+      - name: Write build.json (site-wide build number + deploy time)
+        run: |
+          sha="$(git rev-parse --short HEAD)"
+          ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf '{"sha":"%s","time":"%s"}\n' "$sha" "$ts" > build.json
+          echo "wrote build.json: $sha $ts"
+
       - name: Commit stamped versions
         run: |
           git config user.name  "github-actions[bot]"
