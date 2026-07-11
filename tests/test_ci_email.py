@@ -260,3 +260,40 @@ def test_portal_url_embeds_key_as_magic_link():
     assert "&p=metro" in url
     # no key passed → no k param leaks
     assert "&k=" not in ci_invite.portal_url("https://x/", {"id": "CJS"}, "")
+
+
+# --- Feature B: deliverability hygiene headers on build_eml ---
+
+def _headers(eml):
+    """Header block (before the first blank line) as a name->value dict."""
+    head = eml.split("\r\n\r\n", 1)[0]
+    out = {}
+    for ln in head.split("\r\n"):
+        if ": " in ln:
+            k, v = ln.split(": ", 1)
+            out[k] = v
+    return out
+
+
+def test_build_eml_reply_to_defaults_to_from_address():
+    os.environ.pop("REPLY_TO", None)
+    eml = C.build_eml("noreply@example.com", "Footnote", "adv@gt.edu", "Hi", "text", "<p>html</p>")
+    assert _headers(eml).get("Reply-To") == "noreply@example.com"
+
+
+def test_build_eml_reply_to_env_overrides():
+    os.environ["REPLY_TO"] = "matt@example.com"
+    try:
+        eml = C.build_eml("noreply@example.com", "Footnote", "adv@gt.edu", "Hi", "t", "<p>h</p>")
+        assert _headers(eml).get("Reply-To") == "matt@example.com"
+    finally:
+        os.environ.pop("REPLY_TO", None)
+
+
+def test_build_eml_sets_list_unsubscribe_mailto_no_oneclick():
+    os.environ.pop("REPLY_TO", None)
+    eml = C.build_eml("noreply@example.com", "Footnote", "adv@gt.edu", "Hi", "t", "<p>h</p>")
+    h = _headers(eml)
+    assert h.get("List-Unsubscribe") == "<mailto:noreply@example.com?subject=unsubscribe>"
+    # one-click needs a hosted POST endpoint the serverless model can't provide — must be absent
+    assert "List-Unsubscribe-Post" not in h

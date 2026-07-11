@@ -155,14 +155,25 @@ def email_button(url, label, width=210):
             f'font-size:14px;font-weight:600;text-decoration:none;padding:12px 26px;border-radius:9px;">{label}</a><!--<![endif]--></td></tr>')
 
 def build_eml(frm, frm_name, to, subject, text_body, html_body):
-    """multipart/alternative message (text + HTML) as a raw .eml string."""
+    """multipart/alternative message (text + HTML) as a raw .eml string.
+
+    Deliverability hygiene (helps every adopter's own free SMTP land in the inbox, no infra):
+    - Reply-To routes replies to a real mailbox even when From is a noreply/ESP sender (REPLY_TO env,
+      else the From address).
+    - List-Unsubscribe (mailto form) is a strong legitimacy signal to Microsoft/Google. One-click
+      (List-Unsubscribe-Post) is intentionally omitted — it needs a hosted POST endpoint the serverless
+      model can't provide for free.
+    """
     boundary = email.utils.make_msgid().strip("<>").replace("@", "-")
+    reply_to = (os.environ.get("REPLY_TO", "").strip() or frm)
     lines = [
         f"From: {email.utils.formataddr((frm_name or default_sender_name(), frm))}",
         f"To: {to}",
+        f"Reply-To: {reply_to}",
         f"Subject: {subject}",
         f"Date: {email.utils.formatdate(localtime=True)}",
         f"Message-ID: {email.utils.make_msgid()}",
+        f"List-Unsubscribe: <mailto:{reply_to}?subject=unsubscribe>",
         "MIME-Version: 1.0",
         f'Content-Type: multipart/alternative; boundary="{boundary}"',
         "",
