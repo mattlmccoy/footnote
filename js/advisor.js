@@ -1669,23 +1669,27 @@ function _homeTopbar(name){
 }
 // The author's display name for "shared by": their GitHub profile name (public /users/<login>), cached
 // per browser, defaulting to the login. Reviewers can't read the author's AUTHOR_NAME (an Actions var).
-function _authorNameCache(){ try { const v = JSON.parse(_store.get('footnote:authornames') || '{}'); return (v && typeof v === 'object') ? v : {}; } catch { return {}; } }
-function _authorName(login){ const c = _authorNameCache(); return (login && c[login]) || login || 'shared with you'; }
+// Author display name = GitHub profile name (inherited) → the author's typed name (release.json
+// author_name) → the login. Two per-browser caches hold the raw profile name and the typed name.
+function _cacheObj(key){ try { const v = JSON.parse(_store.get(key) || '{}'); return (v && typeof v === 'object') ? v : {}; } catch { return {}; } }
+function _authorDisplay(owner){ return pickAuthorName(_cacheObj('footnote:authorprofile')[owner], _cacheObj('footnote:authortyped')[owner], owner); }
+function _refreshBy(list){ list.forEach((e, i) => { if (!e.owner) return; const el = read.querySelector(`.rvh-book[data-i="${i}"] .rvh-by`); if (el) el.textContent = _authorDisplay(e.owner); }); }
 async function _resolveAuthorNames(list){
-  const cache = _authorNameCache();
+  const cache = _cacheObj('footnote:authorprofile');
   const owners = [...new Set(list.map(e => e.owner).filter(Boolean))].filter(o => !(o in cache));
-  if (!owners.length) return;
-  await Promise.all(owners.map(async login => {
-    try {
-      const r = await _gfetch(`${_API}/users/${encodeURIComponent(login)}`, { cache:'no-store' });   // public, unauth (fine-grained PATs can't hit /users)
-      if (!r.ok) return;
-      const u = await r.json(); cache[login] = pickAuthorName(u && u.name, login);
-    } catch(e){}
-  }));
-  try { _store.set('footnote:authornames', JSON.stringify(cache)); } catch(e){}
-  list.forEach((e, i) => { if (e.owner && cache[e.owner]){ const el = read.querySelector(`.rvh-book[data-i="${i}"] .rvh-by`); if (el) el.textContent = cache[e.owner]; } });
+  if (owners.length){
+    await Promise.all(owners.map(async login => {
+      try {
+        const r = await _gfetch(`${_API}/users/${encodeURIComponent(login)}`, { cache:'no-store' });   // public, unauth (a fine-grained reviewer PAT can't hit /users)
+        cache[login] = r.ok ? ((await r.json()).name || '').trim() : '';                                // store the RAW profile name ('' if none) so 'typed' can fill in
+      } catch(e){}
+    }));
+    try { _store.set('footnote:authorprofile', JSON.stringify(cache)); } catch(e){}
+  }
+  _refreshBy(list);
 }
 async function _paintHomeBadges(list){
+  const typed = _cacheObj('footnote:authortyped'); let typedChanged = false;
   await Promise.all(list.map(async (e, i) => {
     try {
       const [owner, repo] = (e.data || '').split('/'); if (!owner || !repo || !e.k) return;
@@ -1694,11 +1698,14 @@ async function _paintHomeBadges(list){
       if (!r.ok) return;
       const d = await r.json(); if (typeof d.content !== 'string') return;
       const j = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, '')))));
+      const an = (j && typeof j.author_name === 'string') ? j.author_name.trim() : '';   // the author's typed name, if they saved one
+      if (an && typed[owner] !== an){ typed[owner] = an; typedChanged = true; }
       const rel = (j?.[e.a]?.released) || (j?.['general']?.released) || [];
       const n = newCount(e, rel);
       if (n > 0){ const b = read.querySelector(`.rvh-book[data-i="${i}"] .rvh-badge`); if (b){ b.textContent = `${n} new`; b.style.display=''; } }
     } catch(err){}
   }));
+  if (typedChanged){ try { _store.set('footnote:authortyped', JSON.stringify(typed)); } catch(e){} _refreshBy(list); }
 }
 function renderReviewerHome(){
   const list = recentsList(_rawRecents());
@@ -1714,7 +1721,7 @@ function renderReviewerHome(){
   }
   const books = list.map((e, i) => `<a class="rvh-book" style="--sp:${RVH_SPINES[i % RVH_SPINES.length]}" data-i="${i}">
       <span class="rvh-spine"></span>
-      <span class="rvh-by">${escapeHtml(_authorName(e.owner))}</span>
+      <span class="rvh-by">${escapeHtml(_authorDisplay(e.owner))}</span>
       <span class="rvh-title">${escapeHtml(e.title || e.p || 'Untitled document')}</span>
       <span class="rvh-badge" style="display:none"></span>
       <span class="rvh-meta">opened ${_relDays(e.ts)}</span></a>`).join('');

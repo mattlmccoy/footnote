@@ -2,18 +2,24 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { recentsAdd, recentsList, linkFor, newCount, recentsKey, pickAuthorName } from '../js/reviewerhome.js';
 
-test('pickAuthorName prefers the profile display name', () => {
-  assert.equal(pickAuthorName('Matt McCoy', 'mattlmccoy'), 'Matt McCoy');
+test('pickAuthorName prefers the GitHub profile name (inherited)', () => {
+  assert.equal(pickAuthorName('Matt McCoy', 'typed name', 'mattlmccoy'), 'Matt McCoy');
 });
 
-test('pickAuthorName falls back to the login when no name was set', () => {
-  assert.equal(pickAuthorName(null, 'mattlmccoy'), 'mattlmccoy');
-  assert.equal(pickAuthorName('', 'mattlmccoy'), 'mattlmccoy');
-  assert.equal(pickAuthorName('   ', 'mattlmccoy'), 'mattlmccoy');
+test('pickAuthorName falls back to the typed name when the profile has none', () => {
+  assert.equal(pickAuthorName(null, 'Dr. M. McCoy', 'mattlmccoy'), 'Dr. M. McCoy');
+  assert.equal(pickAuthorName('  ', 'Dr. M. McCoy', 'mattlmccoy'), 'Dr. M. McCoy');
 });
 
-test('pickAuthorName trims the profile name', () => {
-  assert.equal(pickAuthorName('  Matt McCoy  ', 'x'), 'Matt McCoy');
+test('pickAuthorName falls back to the login when neither name is set', () => {
+  assert.equal(pickAuthorName(null, null, 'mattlmccoy'), 'mattlmccoy');
+  assert.equal(pickAuthorName('', '', 'mattlmccoy'), 'mattlmccoy');
+  assert.equal(pickAuthorName('   ', '  ', 'mattlmccoy'), 'mattlmccoy');
+});
+
+test('pickAuthorName trims the chosen name', () => {
+  assert.equal(pickAuthorName('  Matt McCoy  ', null, 'x'), 'Matt McCoy');
+  assert.equal(pickAuthorName(null, '  Typed  ', 'x'), 'Typed');
 });
 
 const E = (o) => ({ a: 'rev1', n: 'Dr. Patel', data: 'owner/proj-data', p: 'proj', k: 'KEY', ...o });
