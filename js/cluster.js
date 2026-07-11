@@ -42,3 +42,20 @@ export function clusterComments(comments) {
   }
   return groups;
 }
+
+// The comments in a group that propose a source EDIT (apply-direct ``edit`` or Claude ``source_edit``
+// with a ``find``). Same shape the merge path reads (ci_review_common.comment_source_edit).
+export function editComments(group) {
+  return (Array.isArray(group) ? group : []).filter(c => {
+    if (c && c.resolution && c.resolution.state) return false;   // already resolved (kept/dismissed) — not an active edit
+    const spec = c && (c.edit || c.source_edit);
+    return !!(spec && spec.find != null && String(spec.find) !== '');
+  });
+}
+
+// A cluster is CONFLICTING when 2+ of its comments carry a source edit — two reviewers editing the same
+// passage. The reading view escalates these ("both edited this — resolve"); the backend (C2c) also
+// blocks the bad merge as the safety net.
+export function clusterHasConflict(group) {
+  return editComments(group).length >= 2;
+}

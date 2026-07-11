@@ -22,7 +22,7 @@ import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=08cb1ac';
 import { readProgress } from './cardstats.js?v=cfa6c99';
-import { clusterComments } from './cluster.js?v=17deabc';   // group reviewer comments on the same passage
+import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=17deabc';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
@@ -1102,7 +1102,30 @@ function buildAdvCluster(group){
   group.forEach(c => body.appendChild(buildAdvCard(c)));
   let open = true;
   head.onclick = () => { open = !open; body.style.display = open ? '' : 'none'; head.querySelector('.cc-car').className = `ti ti-chevron-${open ? 'down' : 'right'} cc-car`; };
-  wrap.appendChild(head); wrap.appendChild(body);
+  wrap.appendChild(head);
+  // C2: conflict escalation — 2+ reviewers proposed edits to this same passage. Surface it and let the
+  // author keep one (the others are recorded declined). The merge backend (C2c) is the safety net.
+  if (clusterHasConflict(group)){
+    const edits = editComments(group);
+    const banner = document.createElement('div');
+    banner.style.cssText = 'margin:0 8px 8px;padding:8px 10px;border:1px solid var(--warn);background:var(--warn-bg,rgba(190,120,20,.08));border-radius:8px';
+    banner.innerHTML = `<div style="font-size:12px;font-weight:600;color:var(--warn);display:flex;align-items:center;gap:6px"><i class="ti ti-alert-triangle"></i>Both edited this — keep one</div>
+      <div style="font-size:11.5px;color:var(--text-2);margin:3px 0 7px">${edits.length} reviewers proposed edits to this passage. Keep one; the others are dismissed for the reviewer.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">${edits.map(e => `<button class="btn cc-keep" data-keep="${e.id}" style="padding:3px 9px;font-size:11.5px"><i class="ti ti-check"></i>Keep ${escapeHtml(whoLabel(e))}’s edit</button>`).join('')}</div>`;
+    banner.querySelectorAll('.cc-keep').forEach(btn => btn.onclick = async () => {
+      const keepId = btn.dataset.keep; banner.querySelectorAll('.cc-keep').forEach(b => b.disabled = true);
+      try {
+        for (const e of edits){
+          if (e.id === keepId) continue;
+          await recordResolution(e._advisor, current, e.id, { state:'declined', note:'Superseded by another reviewer’s edit on this passage.' });
+          e.resolution = { state:'declined', note:'' }; e.read = true;
+        }
+        renderComments(); paintHighlights();
+      } catch(err){ banner.querySelectorAll('.cc-keep').forEach(b => b.disabled = false); alert('Failed: ' + err.message); }
+    });
+    wrap.appendChild(banner);
+  }
+  wrap.appendChild(body);
   return wrap;
 }
 // build one in-context advisor card with the full action set (rail is the primary action surface)
