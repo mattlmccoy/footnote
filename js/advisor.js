@@ -16,7 +16,7 @@ import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
-import { showBuildTag } from './buildinfo.js?v=65fd388';
+import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a764ebc';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
