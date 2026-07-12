@@ -64,15 +64,17 @@ export function showBuildTag(metaUrl, win) {
   el.id = 'fn-build';
   el.setAttribute('style', 'position:fixed;left:9px;bottom:9px;z-index:900;font-size:10.5px;color:var(--text-3);font-family:inherit;user-select:none;display:flex;align-items:center;gap:7px;max-width:76vw;pointer-events:auto');
 
-  // The orb: a small glossy light-blue dot — the only thing visible when collapsed.
+  // The orb: a small flat dot in the tool's accent — the only thing visible when collapsed. On open it
+  // gets the same flat accent-bg halo the reader uses for hover states (no gradient/glow — matches the
+  // flat editorial styling and adapts to light/dark via the CSS vars).
   const orb = doc.createElement('button');
   orb.setAttribute('data-role', 'orb');
   orb.setAttribute('aria-label', 'Build info');
   const orbStyle = (hot) =>
-    'width:11px;height:11px;flex:0 0 auto;padding:0;border:0;border-radius:50%;cursor:pointer;' +
-    'background:radial-gradient(circle at 35% 30%, #bcd8ff, #5b8def);' +
-    'box-shadow:0 0 ' + (hot ? '7px 1px rgba(110,168,254,.85)' : '4px rgba(110,168,254,.55)') + ';' +
-    'transition:box-shadow .15s ease, transform .15s ease;transform:scale(' + (hot ? '1.12' : '1') + ')';
+    'width:9px;height:9px;flex:0 0 auto;padding:0;border:0;border-radius:50%;cursor:pointer;' +
+    'background:var(--accent);opacity:' + (hot ? '1' : '.55') + ';' +
+    'box-shadow:' + (hot ? '0 0 0 3px var(--accent-bg)' : 'none') + ';' +
+    'transition:opacity .15s ease, box-shadow .15s ease';
   orb.setAttribute('style', orbStyle(false));
 
   // The expandable text group (hidden until open).
