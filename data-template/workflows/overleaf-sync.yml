@@ -1,0 +1,43 @@
+name: overleaf-sync
+# Tier-2: reconcile each marked project's <id>/source/ with its Overleaf git-bridge project.
+# Overleaf has no outbound webhook, so inbound is dispatch/cron. On a source change this commits to
+# <id>/source/**, which triggers render.yml to rebuild the reading view — no render change needed.
+on:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: 'Project id to sync (blank = all marked projects)'
+        required: false
+        default: ''
+      push_back:
+        description: 'Also push approved GitHub edits back to Overleaf (1 = yes)'
+        required: false
+        default: ''
+  # Opt-in poll: uncomment to enable (Overleaf has no webhook). Off by default.
+  # schedule:
+  #   - cron: '*/15 * * * *'
+permissions:
+  contents: write
+concurrency:
+  group: overleaf-sync
+  cancel-in-progress: false
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Sync Overleaf projects
+        env:
+          PROJECT: ${{ github.event.inputs.project }}
+          OVERLEAF_PUSH_BACK: ${{ github.event.inputs.push_back }}
+          OVERLEAF_TOKEN: ${{ secrets.OVERLEAF_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python3 ci_overleaf.py
