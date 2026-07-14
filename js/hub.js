@@ -3,10 +3,10 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=7141042';
-import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=2df623a';
-import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=d718ab0';
+import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
+import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=97d184f';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
-import { overleafMarker, secretName, bridgeUrlHint, conflictSummary } from './overleaf.js?v=0000000';
+import { overleafMarker, secretName, bridgeUrlHint, conflictSummary } from './overleaf.js?v=e3d7a40';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=d2532a6';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
