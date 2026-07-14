@@ -181,6 +181,38 @@ export function dataPath(cfg, path) {
   return `${(cfg && cfg.dataPrefix) || ''}${path}`;
 }
 
+// Display twin of resolveProject: reports WHERE a project's source and comments actually live, so no
+// UI binds to the raw project.sourceRepo string (which is '' for workspace uploads). mode 'uploaded' =
+// Footnote committed the LaTeX (under <id>/source/ for workspace, or a dedicated source repo root for an
+// independent upload); 'external' = a read-only repo the user points at. `independent` === data.dedicated
+// (the project owns its own comments repo, e.g. the dissertation shape). Takes a RAW project (as stored in
+// projects.json) + the app cfg — derivation mirrors resolveProject so display can't disagree with runtime.
+export function projectStorage(appCfg, project) {
+  const p = project || {};
+  const wsRepo = appCfg.workspaceRepo || appCfg.hubRepo;
+  const workspace = !!p.workspace && !!wsRepo;
+  const sourceInWs = workspace && (!p.sourceRepo || p.sourceRepo === wsRepo);
+  const dataRepo = workspace ? wsRepo : p.dataRepo;
+  const sourceRepo = sourceInWs ? wsRepo : (p.sourceRepo || appCfg.sourceRepo || '');
+  // uploaded when it lives in the workspace (<id>/source/), OR the project was flagged as an upload into
+  // its own dedicated source repo (independent upload). Otherwise it's an external repo the user points at.
+  const uploaded = sourceInWs || (!!p.uploaded && !!sourceRepo);
+  return {
+    source: {
+      repo: sourceRepo,
+      prefix: sourceInWs ? `${p.id}/source/` : '',
+      mode: uploaded ? 'uploaded' : 'external',
+      inWorkspace: sourceInWs,
+    },
+    data: {
+      repo: dataRepo,
+      prefix: workspace ? `${p.id}/` : '',
+      dedicated: !workspace,
+    },
+    independent: !workspace,
+  };
+}
+
 // Detail shown after "Source connected ·" in the setup checklist. An uploaded workspace project
 // has sourceRepo = the workspace repo (source lives at <id>/source/), which reads like a repo the
 // user connected — it's an upload. srcPrefix (set only for in-workspace uploads) disambiguates.

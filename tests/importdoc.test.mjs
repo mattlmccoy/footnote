@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex, outlineFromFiles, mergeOutlinePrev } from '../js/importdoc.js';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, pickEntryTex, stripTopFolder, isTextPath, commitSourceBinary, planMigration, listRepoTree, getRepoBlob, migrateProjectToWorkspace, folderTexIndex, outlineFromFiles, mergeOutlinePrev } from '../js/importdoc.js';
 
 // ---- importFormat: dispatch an uploaded filename to a supported converter (or null) ----
 test('importFormat detects .tex and .docx case-insensitively', () => {
@@ -132,6 +132,51 @@ test('planNewProjectRepos lets Advanced overrides win over the auto names', () =
 test('planNewProjectRepos leaves sourceRepo empty in github mode when nothing is picked (caller validates)', () => {
   const r = planNewProjectRepos({ mode: 'github', name: 'My Thesis', owner: 'alice' });
   assert.equal(r.sourceRepo, '');
+});
+
+// ---- newProjectPlan: storage-style (workspace|independent) x source (local|github|overleaf) matrix ----
+const NPCFG = { owner: 'me', hubRepo: 'me/footnote-projects', workspaceRepo: 'me/footnote-projects' };
+
+test('newProjectPlan workspace+local: data=ws, empty source, uploaded, creates only ws', () => {
+  const p = newProjectPlan('workspace', 'local', 'Metro Paper', NPCFG);
+  assert.equal(p.workspace, true);
+  assert.equal(p.dataRepo, 'me/footnote-projects');
+  assert.equal(p.sourceRepo, '');
+  assert.equal(p.uploaded, true);
+  assert.deepEqual(p.creates, ['me/footnote-projects']);
+});
+
+test('newProjectPlan workspace+github: external source, data=ws, not uploaded', () => {
+  const p = newProjectPlan('workspace', 'github', 'Metro', NPCFG, { sourceRepo: 'me/paper-src' });
+  assert.equal(p.workspace, true);
+  assert.equal(p.dataRepo, 'me/footnote-projects');
+  assert.equal(p.sourceRepo, 'me/paper-src');
+  assert.equal(p.uploaded, false);
+  assert.deepEqual(p.creates, ['me/footnote-projects']);
+});
+
+test('newProjectPlan independent+local: dedicated source + data repos, both created', () => {
+  const p = newProjectPlan('independent', 'local', 'My Thesis', NPCFG);
+  assert.equal(p.workspace, false);
+  assert.equal(p.dataRepo, 'me/my-thesis-footnote-data');
+  assert.equal(p.sourceRepo, 'me/my-thesis-source');
+  assert.equal(p.uploaded, true);
+  assert.deepEqual(p.creates.slice().sort(), ['me/my-thesis-footnote-data', 'me/my-thesis-source']);
+});
+
+test('newProjectPlan independent+github: external source, dedicated data (external not created)', () => {
+  const p = newProjectPlan('independent', 'github', 'Diss', NPCFG, { sourceRepo: 'me/phd-dissertation' });
+  assert.equal(p.workspace, false);
+  assert.equal(p.dataRepo, 'me/diss-footnote-data');
+  assert.equal(p.sourceRepo, 'me/phd-dissertation');
+  assert.equal(p.uploaded, false);
+  assert.deepEqual(p.creates, ['me/diss-footnote-data']);
+});
+
+test('newProjectPlan Advanced overrides win', () => {
+  const p = newProjectPlan('independent', 'local', 'Diss', NPCFG, { sourceOverride: 'me/custom-src', dataOverride: 'me/custom-data' });
+  assert.equal(p.sourceRepo, 'me/custom-src');
+  assert.equal(p.dataRepo, 'me/custom-data');
 });
 
 // ---- folder upload: pick the entry .tex, strip the chosen-folder prefix, classify text vs binary ----
