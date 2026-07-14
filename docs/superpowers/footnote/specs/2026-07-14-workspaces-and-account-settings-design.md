@@ -84,8 +84,8 @@ GitHub account
   reveals plain-language copy:
   - *Shared repo* — "Lives as a folder inside one repo alongside your other documents. Fewer repos to manage;
     best when you have several papers."
-  - *Individual repo* — "Gets its own dedicated GitHub repos — fully self-contained. Pick this to keep a
-    document separate, or when it's already its own Overleaf/GitHub project."
+  - *Individual repo* — "Gets its own dedicated GitHub repos, fully self-contained. Pick this to keep a
+    document separate, or when it's already its own Overleaf/GitHub project." (no em-dash in the product copy)
 
 ## Components (small, testable units)
 
