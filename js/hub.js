@@ -6,7 +6,7 @@ import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectS
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=8850a5c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
-import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=5e6d116';
+import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=5e5b959';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
