@@ -14,6 +14,7 @@ Data layout mirrors the front-end (js/gh.js, js/config.js): per project there is
 import glob
 import json
 import os
+import re
 
 
 def apply_prefixes():
@@ -109,10 +110,12 @@ def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
       - it is empty / whitespace-only, or
       - a last-good version exists and the new output lost more than ``max_shrink`` of it
         (the incident: KB/MB chapter -> 253 bytes), or
-      - there is no last-good and the output is below ``min_bytes`` (a real rendered unit
-        fragment is a heading + prose; a sub-200-byte first build is almost certainly broken).
-    A similar-size or larger rebuild is never degenerate. Thresholds are parameters so callers
-    (and tests) can tune strictness. Pure — the caller does build-to-temp then swap-or-keep.
+      - there is no last-good and the output has NO rendered content — no heading and no
+        non-empty text/figure block. (A byte floor is the WRONG proxy: a legitimately short
+        unit — a heading + one sentence ≈ 143 bytes — is valid and must not vanish. F1, 2026-07-14.)
+    A similar-size or larger rebuild is never degenerate. ``min_bytes`` is retained for API
+    compatibility (callers/tests may pass it) but is no longer a hard floor. Pure — the caller
+    does build-to-temp then swap-or-keep.
     """
     new = new_text or ""
     if not new.strip():
@@ -123,9 +126,22 @@ def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
         if len(new) < floor:
             pct = int((1.0 - len(new) / len(prev)) * 100)
             return True, f"shrank {pct}% (from {len(prev)} to {len(new)} bytes) vs last-good"
-    elif len(new) < min_bytes:
-        return True, f"suspiciously small first build ({len(new)} bytes < {min_bytes})"
+    elif not _has_rendered_content(new):
+        return True, f"no rendered content (heading or text) in {len(new)}-byte first build"
     return False, ""
+
+
+def _has_rendered_content(html):
+    """A first-build fragment is real if it carries a heading OR a non-empty text/figure block —
+    the content a genuine rendered unit has, independent of byte count."""
+    if re.search(r"<h[1-6][\s>]", html, re.I):
+        return True
+    # a block element that contains at least one non-tag, non-space character
+    if re.search(r"<(p|li|td|th|figcaption|blockquote|pre)[\s>][^<]*\S", html, re.I):
+        return True
+    if re.search(r"<(figure|img|table|math)[\s>]", html, re.I):
+        return True
+    return False
 
 
 # ------------------------------------------------------- local/cloud processing hard gate

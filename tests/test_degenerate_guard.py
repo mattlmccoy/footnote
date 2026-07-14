@@ -59,3 +59,18 @@ def test_thresholds_are_tunable():
     new = "y" * 600
     assert not R.is_degenerate_content(new, prev)[0]
     assert R.is_degenerate_content(new, prev, max_shrink=0.3)[0]
+
+
+def test_short_but_real_first_build_is_not_degenerate():
+    """F1 regression: a legitimately short unit (heading + one sentence, ~143B) must NOT be rejected
+    on first build — else short sections/intros/appendices silently vanish from the reader."""
+    new = ('<section id="methods" class="level1"><h1>Methods</h1>'
+           '<p>We evaluated widgets across three conditions and measured throughput.</p></section>')
+    assert len(new) < 200                                   # genuinely under the old floor
+    assert not R.is_degenerate_content(new, "")[0]          # but has real content -> valid
+
+
+def test_headingless_textless_first_build_is_still_degenerate():
+    """The guard must still reject true garbage on first build (the '5' stub case)."""
+    assert R.is_degenerate_content("5", "")[0]
+    assert R.is_degenerate_content("<div></div>", "")[0]    # structure but no heading/text
