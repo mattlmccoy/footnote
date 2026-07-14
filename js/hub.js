@@ -6,7 +6,7 @@ import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectS
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=96cbbf9';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
-import { overleafMarker, secretName, bridgeUrlHint, conflictSummary } from './overleaf.js?v=e3d7a40';
+import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=e3d7a40';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
@@ -620,7 +620,10 @@ export async function launch() {
         const chaptersPath = plan.workspace ? `${id}/chapters.json` : 'chapters.json';
         const localLevel = pendingFiles ? detectedLevel : (pendingTex ? detectUnitLevel(pendingTex.text, () => null) : null);
         const unitNoun = resolveUnitNoun('chapter', localLevel);
-        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun } });
+        // "In Overleaf" (tokenless B1): the picked repo is the Overleaf bridge repo (Overleaf's own GitHub
+        // sync target). Record the marker so the owner portal offers "Refresh from Overleaf"; source stays external.
+        const olPatch = mode === 'overleaf' ? overleafNewProjectPatch(externalSrc) : null;
+        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun }, ...(olPatch ? { overleaf: olPatch.overleaf } : {}) });
         q('#np-save').disabled = true;
         // Create every repo the plan needs (workspace repo, or the dedicated data (+ source) repos). createRepo
         // tolerates an already-existing repo (422). Never creates an external source repo the user points at.

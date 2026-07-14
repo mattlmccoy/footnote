@@ -171,6 +171,7 @@ export function resolveProject(appCfg, projects, projectId) {
     advisors: p.advisors || [],
     reviewAgents: p.reviewAgents || appCfg.reviewAgents,
     processingMode: String(p.processingMode || '').toLowerCase() === 'cloud' ? 'cloud' : 'local',
+    overleaf: p.overleaf || null,   // B1: carry the Overleaf bridge-repo marker so the owner portal can offer "Refresh from Overleaf"
     projectId: p.id,
     projectName: p.name,
   });
