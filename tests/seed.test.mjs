@@ -264,3 +264,15 @@ test('ensureInvitePipeline throws workflow-scope when GitHub blocks the workflow
   };
   await assert.rejects(() => ensureInvitePipeline('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
 });
+
+import { OVERLEAF_FILES as _OVF, SEED_FILES as _SF, ensureOverleafPipeline as _eop } from '../js/seed.js';
+
+test('OVERLEAF_FILES is the overleaf subset of SEED_FILES', () => {
+  const dests = _OVF.map(f => f.dest);
+  assert.ok(dests.includes('ci_overleaf.py'));
+  assert.ok(dests.includes('overleaf_sync.py'));
+  assert.ok(dests.includes('.github/workflows/overleaf-sync.yml'));
+  assert.equal(dests.length, 3);
+  for (const d of dests) assert.ok(_SF.some(s => s.dest === d), `${d} in SEED_FILES`);
+  assert.equal(typeof _eop, 'function');
+});

@@ -3,7 +3,10 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch } from './config.js?v=7141042';
-import { seedDataRepo, ensureRenderPipeline } from './seed.js?v=2df623a';
+import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=2df623a';
+import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=d718ab0';
+import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
+import { overleafMarker, secretName, bridgeUrlHint, conflictSummary } from './overleaf.js?v=0000000';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=d2532a6';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
@@ -374,11 +377,27 @@ export async function launch() {
       <label class="fn-field">Your document's source repo <span class="fn-sub">the LaTeX you're reviewing (a GitHub repo, Overleaf-synced or not). Read-only; never edited here.</span><input id="np-src" placeholder="${esc(cfg.owner)}/your-latex-repo" spellcheck="false" value="${esc(v.sourceRepo || '')}"></label>
       <label class="fn-field">Comments repo <span class="fn-sub">where this project’s comments live — fixed once created</span><input id="np-data" value="${esc(v.dataRepo || '')}" disabled></label>
       <label class="fn-field">What is it? <span class="fn-sub">the word for the whole document</span><input id="np-noun" value="${esc((v.doc && v.doc.noun) || 'thesis')}" spellcheck="false"></label>
+      ${v.workspace ? `<div class="fn-ovl" style="border-top:1px solid var(--line,#e2e7f0);margin-top:14px;padding-top:13px">
+        <div class="fn-field-lbl" style="display:flex;align-items:center;gap:7px">🔗 Overleaf sync <span class="fn-sub" style="font-weight:400">edit in Overleaf, review here — bidirectional</span></div>
+        <div id="ovl-conflict"></div>
+        <div style="display:flex;gap:9px">
+          <label class="fn-field" style="flex:1">Overleaf project ID <span class="fn-sub">from your project's Git/URL</span><input id="ovl-id" placeholder="62a1f9c4b8e2…" spellcheck="false"></label>
+          <label class="fn-field" style="width:96px">Branch<input id="ovl-branch" value="master" spellcheck="false"></label>
+        </div>
+        <div class="fn-hint" id="ovl-hint"></div>
+        <div class="fn-actions" style="justify-content:flex-start;gap:9px;flex-wrap:wrap;margin-top:4px">
+          <button type="button" class="fn-btn" id="ovl-save">Save Overleaf link</button>
+          <button type="button" class="fn-btn" id="ovl-token">Seal token</button>
+          <button type="button" class="fn-btn fn-btn-primary" id="ovl-pull">Pull from Overleaf</button>
+        </div>
+        <div class="fn-hint" id="ovl-status"></div>
+      </div>` : ''}
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Save changes</button></div></div>`;
     root.appendChild(scrim);
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
     attachRepoPicker(q('#np-src'), tok());
+    if (v.workspace) wireOverleafSection(q, v);
     scrim.onclick = e => { if (e.target === scrim) close(); };
     q('#np-x').onclick = close;
     q('#np-save').onclick = async () => {
@@ -391,6 +410,56 @@ export async function launch() {
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };
     setTimeout(() => q('#np-name').focus(), 30);
+  }
+
+  // Overleaf Tier-2 controls inside the Edit sheet (workspace projects only): link the project to its
+  // Overleaf git-bridge id, seal the shared OVERLEAF_TOKEN, pull, and surface a conflict. All owner-token
+  // ops on the workspace repo under <id>/. The sync engine is document-agnostic; this is just its console.
+  function wireOverleafSection(q, v) {
+    const wsRepo = v.dataRepo || hub();
+    const ost = (msg, err) => { const s = q('#ovl-status'); if (!s) return; s.textContent = msg; s.style.color = err ? 'var(--danger,#c0392b)' : 'var(--muted,#5c6675)'; };
+    const ovlHint = () => { const id = q('#ovl-id').value.trim(); q('#ovl-hint').innerHTML = id
+      ? `Bridge <span class="fn-mono">${esc(bridgeUrlHint(id))}</span> · token sealed as <span class="fn-mono">OVERLEAF_TOKEN</span>`
+      : 'Paste your Overleaf project id, seal your token, then Pull.'; };
+    const readWs = async (path) => {
+      try {
+        const r = await fetch(`https://api.github.com/repos/${wsRepo}/contents/${v.id}/${path}`,
+          { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+        return r.ok ? JSON.parse(await r.text()) : null;
+      } catch (e) { return null; }
+    };
+    q('#ovl-id').addEventListener('input', ovlHint); ovlHint();
+    readWs('overleaf.json').then(m => { if (m) { q('#ovl-id').value = m.projectId || ''; q('#ovl-branch').value = m.branch || 'master'; ovlHint(); } });
+    readWs('overleaf_conflict.json').then(c => { const sum = conflictSummary(c); if (sum) q('#ovl-conflict').innerHTML =
+      `<div class="fn-hint" style="color:var(--warn,#b7791f)">⚠ ${esc(sum)} — Overleaf's version is on <span class="fn-mono">overleaf-sync/${esc(v.id)}</span>; your source is untouched.</div>`; });
+
+    q('#ovl-save').onclick = async () => {
+      const id = q('#ovl-id').value.trim(); if (!id) return ost('Enter your Overleaf project id first.', true);
+      try { q('#ovl-save').disabled = true; ost('Saving Overleaf link…');
+        await commitSourceFile(wsRepo, `${v.id}/overleaf.json`, JSON.stringify(overleafMarker(id, q('#ovl-branch').value), null, 2), tok(), `overleaf: link ${v.id}`);
+        ost('Linked. Seal your token, then Pull.');
+      } catch (e) { ost(e.message, true); } finally { q('#ovl-save').disabled = false; }
+    };
+    q('#ovl-token').onclick = async () => {
+      const val = (prompt('Paste your Overleaf git-bridge token (Overleaf → Account → Git integration). It is sealed into your repo secrets and never shown again.') || '').trim();
+      if (!val) return;
+      try { ost('Sealing token…'); const pk = await getPublicKey(tok()); await putSecret(tok(), pk, sealToBase64, 'OVERLEAF_TOKEN', val); ost('Token sealed as OVERLEAF_TOKEN.'); }
+      catch (e) { ost(e.code === 'NOSCOPE' ? 'Your key needs Secrets: write to seal this (Settings → Access).' : e.message, true); }
+    };
+    q('#ovl-pull').onclick = async () => {
+      try { q('#ovl-pull').disabled = true; ost('Preparing the sync workflow…');
+        await ensureOverleafPipeline(wsRepo, tok());
+        ost('Pulling from Overleaf…'); await dispatchOverleaf(tok(), v.id, false);
+        for (let i = 0; i < 8; i++) {
+          await new Promise(r => setTimeout(r, 2500));
+          const run = await overleafRun(tok()).catch(() => null);
+          if (run && run.status === 'completed') return ost(run.conclusion === 'success' ? 'Synced — the reading view will rebuild.' : 'Sync finished: ' + run.conclusion, run.conclusion !== 'success');
+          if (run) ost('Sync running…');
+        }
+        ost('Sync dispatched — see Actions for progress.');
+      } catch (e) { ost(e.message === 'workflow-scope' ? 'Your key needs Workflows: write to run this (regenerate with repo+workflow).' : e.message, true); }
+      finally { q('#ovl-pull').disabled = false; }
+    };
   }
 
   // New project onboarding, organized around "Where's your writing?" so a beginner with a local file never

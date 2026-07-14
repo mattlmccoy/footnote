@@ -196,6 +196,22 @@ export async function renderRun(tok){
   const d = await r.json(); const run = (d.workflow_runs||[])[0];
   return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
 }
+// Overleaf Tier-2 sync — dispatch the overleaf-sync workflow for one project (blank = all marked) and
+// read its latest run, mirroring dispatchRender/renderRun. pushBack=true also pushes approved edits back.
+export async function dispatchOverleaf(tok, projectId, pushBack){
+  const inputs = {}; if (projectId) inputs.project = projectId; if (pushBack) inputs.push_back = '1';
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/overleaf-sync.yml/dispatches`, {
+    method:'POST', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
+    body: JSON.stringify({ ref:'main', inputs }) });
+  if (r.status === 403) throw new Error('workflow-scope');
+  if (!r.ok) throw new Error('overleaf dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
+}
+export async function overleafRun(tok){
+  const r = await fetch(`${API}/repos/${slug()}/actions/workflows/overleaf-sync.yml/runs?per_page=1`, { headers:hdr(tok), cache:'no-store' });
+  if (!r.ok) throw new Error('overleaf runs ' + r.status);
+  const d = await r.json(); const run = (d.workflow_runs||[])[0];
+  return run ? { id:run.id, status:run.status, conclusion:run.conclusion } : null;
+}
 
 // Newest apply.yml run (the queue consumer that stages/merges/cleans up review edits).
 export async function applyRun(tok){

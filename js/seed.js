@@ -42,6 +42,12 @@ export const SEED_FILES = [
   // B4 — user-authored agents: the engine turns an owner's plain-language brief into a draft agent
   // in agents.json (reviewed before it runs). Used by both ci_apply (CI) and ci_local (local).
   { src: 'ci_authoring.py',        dest: 'ci_authoring.py' },
+  // Overleaf Tier-2 live sync — reconcile each consolidated project's <id>/source/ with its Overleaf
+  // git-bridge project (bidirectional, GitHub canonical on conflict). overleaf_sync.py is the pure
+  // three-way core; ci_overleaf.py the git/IO shell; overleaf-sync.yml the dispatch/cron driver.
+  { src: 'overleaf_sync.py',              dest: 'overleaf_sync.py' },
+  { src: 'ci_overleaf.py',                dest: 'ci_overleaf.py' },
+  { src: 'workflows/overleaf-sync.yml',   dest: '.github/workflows/overleaf-sync.yml' },
 ];
 
 // Initial config files created fresh (honest empty state — email_configured stays false until a real send).
@@ -118,9 +124,22 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
   return out;
 }
 
+// The Overleaf-sync subset of SEED_FILES — the pipeline that must exist for Tier-2 live sync. Seeded
+// on New Project, but ALSO ensured on demand (self-heal) so an EXISTING consolidated data repo picks up
+// the sync workflow without a full reseed. Repo-level, so one install covers every marked project.
+export const OVERLEAF_FILES = SEED_FILES.filter(({ dest }) =>
+  dest === 'overleaf_sync.py' || dest === 'ci_overleaf.py' ||
+  dest === '.github/workflows/overleaf-sync.yml');
+
 // Self-heal the render pipeline (see RENDER_FILES). Safe to call on every "Build reading view".
 export function ensureRenderPipeline(dataRepo, token, fetchImpl, base) {
   return ensureFiles(RENDER_FILES, dataRepo, token, fetchImpl, base, 'render pipeline');
+}
+
+// Self-heal the Overleaf sync pipeline (see OVERLEAF_FILES). Idempotent; call before dispatching a
+// "Pull from Overleaf" so a pre-Tier-2 consolidated repo gains the workflow without re-importing.
+export function ensureOverleafPipeline(dataRepo, token, fetchImpl, base) {
+  return ensureFiles(OVERLEAF_FILES, dataRepo, token, fetchImpl, base, 'overleaf pipeline');
 }
 
 // Self-heal the email/invite pipeline (see INVITE_FILES). Safe to call whenever the email wizard runs —
