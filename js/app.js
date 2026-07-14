@@ -3,6 +3,7 @@ import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=b232636';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=96cbbf9';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=c823c55';
+import { isOverleafLinked } from './overleaf.js?v=e3d7a40';   // tokenless B1: recognize an Overleaf-bridge-linked project
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
@@ -352,6 +353,19 @@ function renderConnect(){
 // until this section's content appears and load it. A missing `workflow` scope is the one unrecoverable
 // case: tell the user exactly how to fix their token instead of spinning forever.
 const _buildKicked = new Set();   // project ids we've already started a build for this session (no double-dispatch)
+// Tokenless B1: an Overleaf-linked project's source lives in the Overleaf-synced bridge repo (external
+// source). Overleaf → bridge repo is automatic (Overleaf's own GitHub sync); but render.yml auto-fires only
+// on the DATA repo's own source, not on an external repo changing — so the owner pulls Overleaf's latest with
+// this explicit refresh, which just re-dispatches the render (resolve_source re-clones the bridge repo).
+async function refreshFromOverleaf(){
+  const t = tok(); if (!t) return openSettingsPage('access');
+  try {
+    flash('Refreshing from Overleaf…');
+    await dispatchRender(t, _projectId);
+    flash('Pulling Overleaf’s latest — the reading view will rebuild shortly.');
+  } catch (e){ flash('Refresh failed: ' + (e && e.message || e)); }
+}
+
 async function autoBuildReadingView(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
   const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -2912,8 +2926,10 @@ function openMoreMenu(){
   menu.style.cssText = 'position:absolute;top:50px;right:14px;z-index:45;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:220px';
   const hasTok = !!tok();
   const autoOff = tourSeen('tour-owner-v1');   // true = tour won't auto-show for returning users
+  const olLinked = isOverleafLinked(_CFG);
   menu.innerHTML = `
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
+    ${olLinked ? `<div class="mmi" data-act="overleaf"><i class="ti ti-refresh"></i>Refresh from Overleaf</div>` : ''}
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Owner key${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
@@ -2926,7 +2942,7 @@ function openMoreMenu(){
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
     // Both the access token and the AI master switch now live on the dedicated Settings page.
-    assistant: () => openSettingsPage('ai') };
+    assistant: () => openSettingsPage('ai'), overleaf: refreshFromOverleaf };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);

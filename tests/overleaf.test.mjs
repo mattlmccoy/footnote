@@ -26,3 +26,24 @@ test('syncStatusLabel + conflictSummary render human states', () => {
   assert.equal(conflictSummary({ files: ['only.tex'] }), '1 file needs resolution: only.tex');
   assert.equal(conflictSummary(null), '');
 });
+
+// ---- B1 tokenless bridge-repo helpers ----
+import { overleafLink, isOverleafLinked, overleafNewProjectPatch } from '../js/overleaf.js';
+
+test('overleafLink reads the bridge-repo marker (null when absent)', () => {
+  assert.deepEqual(overleafLink({ overleaf: { bridgeRepo: 'me/paper-overleaf' } }), { bridgeRepo: 'me/paper-overleaf' });
+  assert.equal(overleafLink({ sourceRepo: 'me/paper' }), null);
+  assert.equal(overleafLink({}), null);
+  assert.equal(overleafLink(null), null);
+  assert.equal(overleafLink({ overleaf: { bridgeRepo: '' } }), null);   // empty = not linked
+});
+
+test('isOverleafLinked is the boolean predicate', () => {
+  assert.equal(isOverleafLinked({ overleaf: { bridgeRepo: 'a/b' } }), true);
+  assert.equal(isOverleafLinked({ sourceRepo: 'a/b' }), false);
+});
+
+test('overleafNewProjectPatch sets external source + the marker', () => {
+  assert.deepEqual(overleafNewProjectPatch('  me/paper-overleaf '), { sourceRepo: 'me/paper-overleaf', overleaf: { bridgeRepo: 'me/paper-overleaf' } });
+  assert.equal(overleafNewProjectPatch(''), null);   // nothing to link
+});

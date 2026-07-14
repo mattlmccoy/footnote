@@ -28,3 +28,23 @@ export function conflictSummary(marker) {
   if (!files.length) return '';
   return `${files.length} file${files.length === 1 ? '' : 's'} need${files.length === 1 ? 's' : ''} resolution: ${files.join(', ')}`;
 }
+
+// ---- B1: tokenless bridge-repo linkage ----
+// Overleaf's own native GitHub sync pushes a project to a dedicated "bridge repo"; Footnote points at that
+// repo as the project's EXTERNAL source (no Overleaf credential). The `project.overleaf.bridgeRepo` marker
+// records the linkage so the UI can offer "Refresh from Overleaf" and label the project. Render (clone) +
+// write-back (publish_merge external) already work for any external-source project — B1 is UI + marker only.
+
+export function overleafLink(project) {
+  const repo = ((project && project.overleaf) || {}).bridgeRepo;
+  return repo ? { bridgeRepo: repo } : null;
+}
+
+export function isOverleafLinked(project) {
+  return !!overleafLink(project);
+}
+
+export function overleafNewProjectPatch(bridgeRepo) {
+  const repo = String(bridgeRepo || '').trim();
+  return repo ? { sourceRepo: repo, overleaf: { bridgeRepo: repo } } : null;
+}

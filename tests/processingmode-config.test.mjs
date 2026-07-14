@@ -19,3 +19,10 @@ test('cloud when explicitly set (case-insensitive)', () => {
 test('malformed defaults local', () => {
   assert.equal(resolveProject(APP, [{ id: 'd', dataRepo: 'me/d', processingMode: 'banana' }], 'd').processingMode, 'local');
 });
+
+test('resolveProject preserves the Overleaf bridge-repo marker onto _CFG (B1)', () => {
+  const cfg = { owner: 'me', hubRepo: 'me/hub', workspaceRepo: 'me/hub', dataRepo: '', sourceRepo: '', advisors: [], reviewAgents: [], doc: { noun: 'paper' }, brand: {} };
+  const projects = [{ id: 'olp', name: 'OL', workspace: true, dataRepo: 'me/hub', sourceRepo: 'me/olp-overleaf', overleaf: { bridgeRepo: 'me/olp-overleaf' }, doc: { noun: 'paper' } }];
+  const resolved = resolveProject(cfg, projects, 'olp');
+  assert.deepEqual(resolved.overleaf, { bridgeRepo: 'me/olp-overleaf' });
+});
