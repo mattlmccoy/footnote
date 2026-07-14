@@ -400,7 +400,7 @@ export async function launch() {
         <div id="ovl-conflict"></div>
         <div style="display:flex;gap:9px">
           <label class="fn-field" style="flex:1">Overleaf project ID <span class="fn-sub">from your project's Git/URL</span><input id="ovl-id" placeholder="62a1f9c4b8e2…" spellcheck="false"></label>
-          <label class="fn-field" style="width:96px">Branch<input id="ovl-branch" value="master" spellcheck="false"></label>
+          <label class="fn-field" style="width:96px">Branch<input id="ovl-branch" value="main" spellcheck="false"></label>
         </div>
         <div class="fn-hint" id="ovl-hint"></div>
         <div class="fn-actions" style="justify-content:flex-start;gap:9px;flex-wrap:wrap;margin-top:4px">
@@ -461,7 +461,7 @@ export async function launch() {
       } catch (e) { return null; }
     };
     q('#ovl-id').addEventListener('input', ovlHint); ovlHint();
-    readWs('overleaf.json').then(m => { if (m) { q('#ovl-id').value = m.projectId || ''; q('#ovl-branch').value = m.branch || 'master'; ovlHint(); } });
+    readWs('overleaf.json').then(m => { if (m) { q('#ovl-id').value = m.projectId || ''; q('#ovl-branch').value = m.branch || 'main'; ovlHint(); } });
     readWs('overleaf_conflict.json').then(c => { const sum = conflictSummary(c); if (sum) q('#ovl-conflict').innerHTML =
       `<div class="fn-hint" style="color:var(--warn,#b7791f)">⚠ ${esc(sum)} — Overleaf's version is on <span class="fn-mono">overleaf-sync/${esc(v.id)}</span>; your source is untouched.</div>`; });
 

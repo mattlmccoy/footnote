@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { overleafMarker, secretName, bridgeUrlHint, syncStatusLabel, conflictSummary } from '../js/overleaf.js';
 
 test('overleafMarker builds the committed marker', () => {
-  assert.deepEqual(overleafMarker('  proj-1 ', ''), { projectId: 'proj-1', branch: 'master' });
+  assert.deepEqual(overleafMarker('  proj-1 ', ''), { projectId: 'proj-1', branch: '' });  // empty -> CI auto-detects
   assert.deepEqual(overleafMarker('p', 'main'), { projectId: 'p', branch: 'main' });
 });
 
