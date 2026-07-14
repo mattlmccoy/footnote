@@ -2,7 +2,10 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage } from './config.js?v=eadc2bc';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=eadc2bc';
+import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=0000000';
+import { storageBadge } from './storagecopy.js?v=0000000';
+import { addWorkspace } from './account.js?v=0000000';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=8850a5c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
@@ -279,32 +282,62 @@ export async function launch() {
     };
   }
 
-  async function projects() {
-    frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
-    let list = [];
-    try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
-    // Each project is a face-out book standing on the shelf; its spine color comes from its position.
-    const books = list.map((p, i) => {
-      // Show WHERE the LaTeX lives (source), not the comments repo — that's what identifies a document
-      // on the shelf. projectStorage reports it honestly for every shape (uploaded / external / workspace).
-      const st = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, p);
-      const srcLine = st.source.mode === 'uploaded'
-        ? (st.source.inWorkspace ? 'uploaded · in workspace' : `uploaded · ${st.source.repo}`)
-        : (st.source.repo ? st.source.repo : 'no source yet');
-      return `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
+  // One face-out book on the shelf. `i` is the project's position in the FULL list so the spine color stays
+  // stable regardless of which workspace group it renders under. Markup is unchanged from the flat shelf;
+  // the storage/Overleaf badges are additive.
+  function bookCard(p, i) {
+    // Show WHERE the LaTeX lives (source), not the comments repo — that's what identifies a document
+    // on the shelf. projectStorage reports it honestly for every shape (uploaded / external / workspace).
+    const st = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, p);
+    const srcLine = st.source.mode === 'uploaded'
+      ? (st.source.inWorkspace ? 'uploaded · in workspace' : `uploaded · ${st.source.repo}`)
+      : (st.source.repo ? st.source.repo : 'no source yet');
+    const sb = storageBadge(st.source.inWorkspace ? 'shared' : 'individual');
+    const ol = p.overleaf ? `<span class="fn-badge fn-badge-ol" title="Overleaf-linked">🔗 Overleaf</span>` : '';
+    const badges = `<span class="fn-book-badges"><span class="fn-badge fn-badge-${sb.kind}" title="${esc(sb.label)}">${sb.glyph} ${esc(sb.label)}</span>${ol}</span>`;
+    return `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
         <span class="fn-book-spine"></span>
         <button class="fn-book-manage" data-mid="${esc(p.id)}" title="Manage project" aria-label="Manage ${esc(p.name)}">⋯</button>
         <span class="fn-book-type">${esc(texFileName(p.doc.noun).replace(/\.tex$/, ''))}<span class="fn-ext">.tex</span></span>
         <span class="fn-book-title">${esc(p.name)}</span>
         <span class="fn-book-repo" title="source">${esc(srcLine)}</span>
+        ${badges}
         <span class="fn-book-go">open</span></a>`;
-    }).join('');
-    // "Add a book" tile stands at the end of the shelf, same footprint as the books.
-    const addTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
+  }
+
+  async function projects() {
+    frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
+    let list = [];
+    try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
+    // Account-level config (workspaces list). Absent (404 → null) for existing users, which groups the whole
+    // list into ONE default workspace → isOnlyGroup=true → the flat shelf renders exactly as before.
+    const account = await loadAccount({ ...cfg, hubRepo: hub() }, tok()).catch(() => null);
+    // IMPORTANT: the grouping label lives in a DEDICATED string field `workspaceLabel`, NOT `project.workspace`
+    // — that field is already a STORAGE boolean (consolidated-repo flag read by projectStorage; set true/false
+    // by importdoc + confirmMigrate). Overloading it would (a) crash groupByWorkspace on a real boolean
+    // (`true.trim()`), and (b) flip an individual-repo doc to consolidated storage. We group over a minimal
+    // {id, workspace:<label>} view and map back to the originals by id for rendering. See M1 follow-up note.
+    const gview = list.map(p => ({ id: p.id, workspace: typeof p.workspaceLabel === 'string' ? p.workspaceLabel : '' }));
+    const byId = new Map(list.map((p, i) => [p.id, { p, i }]));
+    const card = d => { const o = byId.get(d.id); return bookCard(o.p, o.i); };
+    const groups = groupByWorkspace(gview, account);
+    // "Add a book" tile — the flat (single-group) shelf keeps today's exact tile (id=fn-new); grouped shelves
+    // get one per group, carrying data-ws so New Project can default to that workspace (M4).
+    const flatAddTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
         <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
+    const groupAddTile = ws => `<button class="fn-book fn-book-new fn-reveal fn-book-new-ws" style="--i:${list.length}" data-ws="${esc(ws)}">
+        <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
+    // Single group (existing user / one workspace): the flat shelf, byte-compatible with today (no headers).
+    const shelfHtml = groups.length === 1
+      ? `<div class="fn-shelf">${groups[0].docs.map(card).join('')}${flatAddTile}</div><div class="fn-shelf-board"></div>`
+      : groups.map(g => {
+          const cards = g.docs.map(card).join('');
+          const header = `<div class="fn-wshead"><span class="fn-wsname">${esc(g.name)}</span><span class="fn-wscount">${g.docs.length} doc${g.docs.length === 1 ? '' : 's'}</span></div>`;
+          return `${header}<div class="fn-shelf">${cards}${groupAddTile(g.name)}</div><div class="fn-shelf-board"></div>`;
+        }).join('');
     frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
       ${list.length
-        ? `<div class="fn-shelf">${books}${addTile}</div><div class="fn-shelf-board"></div>`
+        ? shelfHtml
         : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
              <h2 class="fn-empty-h">Your shelf is empty</h2>
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
@@ -312,23 +345,27 @@ export async function launch() {
       <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true });
     const open = () => projectSheet(list, null);
     ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });
+    // Per-group new-document tiles (grouped shelves) also open New Project.
+    root.querySelectorAll('.fn-book-new-ws').forEach(b => { b.onclick = open; });
     document.getElementById('fn-chg').onclick = () => { localStorage.removeItem(HUB_KEY); render(); };
-    // per-book manage menu (Edit / Remove). The ⋯ button must not open the project.
+    // per-book manage menu (Edit / Remove / Move). The ⋯ button must not open the project.
     list.forEach(p => {
       const mb = root.querySelector(`.fn-book-manage[data-mid="${cssId(p.id)}"]`);
-      if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list); };
+      if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list, account); };
     });
   }
 
   function cssId(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'); }
 
   function closeManageMenu() { const m = document.getElementById('fn-menu'); if (m) m.remove(); }
-  function openManageMenu(anchor, project, list) {
+  function openManageMenu(anchor, project, list, account) {
     closeManageMenu();
     const menu = document.createElement('div'); menu.className = 'fn-menu'; menu.id = 'fn-menu';
     // Legacy projects (own repos) can be folded into the one workspace repo; workspace projects can't re-migrate.
+    // NB: `project.workspace` here is the STORAGE boolean (consolidated-repo flag), NOT the grouping label.
     const canMigrate = !project.workspace && hub() && project.dataRepo && project.dataRepo !== hub();
     menu.innerHTML = `<button class="fn-menu-item" data-act="edit">Edit details</button>
+      <button class="fn-menu-item" data-act="move">Move to workspace ▸</button>
       ${canMigrate ? `<button class="fn-menu-item" data-act="migrate">Move into workspace repo</button>` : ''}
       <button class="fn-menu-item fn-menu-danger" data-act="remove">Remove from library</button>`;
     document.body.appendChild(menu);
@@ -336,8 +373,45 @@ export async function launch() {
     menu.style.top = (r.bottom + 6) + 'px';
     menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
     menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
+    // stopPropagation: showMoveTargets rebuilds this menu's innerHTML in place, which detaches the clicked
+    // button; without this the document-level outside-click handler would then see a detached target and
+    // close the menu before the targets pane is visible.
+    menu.querySelector('[data-act="move"]').onclick = e => { e.stopPropagation(); showMoveTargets(menu, project, list, account); };
     menu.querySelector('[data-act="remove"]').onclick = () => { closeManageMenu(); confirmRemove(list, project); };
     if (canMigrate) menu.querySelector('[data-act="migrate"]').onclick = () => { closeManageMenu(); confirmMigrate(list, project); };
+  }
+
+  // Second pane of the manage menu: pick a workspace to move this document into. The grouping label is
+  // persisted to the DEDICATED `workspaceLabel` field (never `project.workspace`, the storage boolean), so a
+  // move only re-groups the card — it never changes where the document's repos/comments live.
+  function showMoveTargets(menu, project, list, account) {
+    const gview = list.map(p => ({ id: p.id, workspace: typeof p.workspaceLabel === 'string' ? p.workspaceLabel : '' }));
+    const names = workspaceNames(gview, account);
+    const def = defaultWorkspaceName(account, hub());
+    const current = typeof project.workspaceLabel === 'string' ? project.workspaceLabel.trim() : '';
+    const row = (label, value, isCurrent) =>
+      `<button class="fn-menu-item${isCurrent ? ' fn-menu-cur' : ''}" data-mv="${esc(value)}"${isCurrent ? ' disabled' : ''}>${isCurrent ? '✓ ' : ''}${esc(label)}</button>`;
+    const items = [row(def, '', current === '')]
+      .concat(names.map(n => row(n, n, current === n)))
+      .concat([`<button class="fn-menu-item fn-menu-new" data-mv-new="1">＋ New workspace…</button>`]);
+    menu.innerHTML = `<div class="fn-menu-head">Move to workspace</div>${items.join('')}`;
+    const doMove = async (name, isNew) => {
+      closeManageMenu();
+      try {
+        if (isNew) {
+          const raw = (prompt('New workspace name:') || '').trim();
+          if (!raw) return render();
+          name = raw;
+          const next = addWorkspace(account, name);
+          await writeAccount({ ...cfg, hubRepo: hub() }, next, tok());
+        }
+        // Reuse moveDocPatch for label normalization, but persist under `workspaceLabel` (see grouping note).
+        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, project.id, { workspaceLabel: moveDocPatch(name).workspace }, tok());
+        render();
+      } catch (e) { console.warn('move:', e.message); render(); }
+    };
+    menu.querySelectorAll('[data-mv]').forEach(b => { if (!b.disabled) b.onclick = () => doMove(b.getAttribute('data-mv'), false); });
+    const nb = menu.querySelector('[data-mv-new]'); if (nb) nb.onclick = () => doMove('', true);
   }
 
   // Copy a legacy project's own source + data repos INTO the one workspace repo under <id>/, then flip it

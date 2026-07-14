@@ -156,6 +156,18 @@
   .fn-term{position:relative;display:block;margin-top:6px}
   .fn-term .fn-termsig{position:absolute;left:12px;top:50%;transform:translateY(-50%);font-family:var(--mono);font-size:13px;color:var(--accent);pointer-events:none}
   .fn-term input{margin-top:0;padding-left:30px}
+  /* storage / Overleaf badges on a book card (additive; sit just above the "open" affordance) */
+  .fn-book-badges{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+  .fn-badge{display:inline-flex;align-items:center;gap:3px;font-family:var(--mono);font-size:9.5px;line-height:1;
+    padding:3px 6px;border-radius:999px;border:1px solid var(--line);color:var(--str);background:rgba(40,34,20,.03);white-space:nowrap}
+  .fn-badge-shared{color:#6a5a2e;border-color:#e3d6b0;background:rgba(200,168,80,.10)}
+  .fn-badge-individual{color:#3a5a86;border-color:#c9d6ea;background:rgba(44,100,196,.08)}
+  .fn-badge-ol{color:#1f7a5a;border-color:#bfe3d3;background:rgba(31,122,90,.09)}
+  /* workspace group header above each grouped shelf (only rendered when >1 workspace) */
+  .fn-wshead{display:flex;align-items:baseline;gap:10px;margin:26px 4px 2px;padding-bottom:2px}
+  .fn-wshead:first-child{margin-top:6px}
+  .fn-wsname{font-family:var(--serif);font-weight:500;font-size:16px;letter-spacing:-.01em;color:var(--ink)}
+  .fn-wscount{font-family:var(--mono);font-size:11px;color:var(--faint)}
   @media(max-width:640px){.fn-book{width:calc(50% - 11px)}}
   /* per-book manage (⋯) button + dropdown menu */
   .fn-book-manage{position:absolute;top:9px;right:9px;width:26px;height:22px;padding:0;border:none;border-radius:7px;
