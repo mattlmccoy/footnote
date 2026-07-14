@@ -462,7 +462,7 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     preview, and returns the updated review (approved→merged). This is the one place edits become
     permanent — and it only runs on an author-queued merge job."""
     new_review, new_files, merged, drop_branch = R.process_merge_job(job, review, files, _now_iso())
-    branch = R.branch_for(ch)
+    branch = R.branch_for(ch, prefix)
     if not merged and not drop_branch:
         print(f"[apply] merge {prefix}{ch}: nothing approved to publish", file=sys.stderr)
         return new_review
@@ -706,8 +706,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         # A revision (owner reply / request-changes) sets job.revision and DOES re-run the writer.
         reuse = None if job.get("revision") else R.staged_edit_spec(comment)
         if reuse:
-            _tr, _tf, _br, _applied = R.process_apply_edits_job(
-                {**job, "comment_ids": [cid]}, kept_review, work, {cid: reuse}, _now_iso())
+            _tr, _tf, _br, _applied = R.process_apply_edits_job({**job, "comment_ids": [cid]}, kept_review, work, {cid: reuse}, _now_iso(), prefix)
             if _applied:
                 work, kept_review = _tf, _tr
                 staged += 1
@@ -731,8 +730,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
                 wjob = {**wjob, "revision": True, "revise_note": revise_note}
             wtask = R.build_apply_task(wjob, kept_review, R.author_source(R.unit_source_files(work, unit_sf)))
             spec = (writer_call(comment, wtask) or {}).get(cid) or {}
-            trial_review, trial_files, branch, applied = R.process_apply_edits_job(
-                {**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso())
+            trial_review, trial_files, branch, applied = R.process_apply_edits_job({**job, "comment_ids": [cid]}, kept_review, work, {cid: spec}, _now_iso(), prefix)
             diff = {"before": spec.get("prose_before", ""), "after": spec.get("prose_after", "")}
             ev("agent", (spec.get("response") or "proposed a change."),
                comment=cid, agent="writer", status="running", edit=diff)
@@ -794,7 +792,7 @@ def _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remo
         changed = {os.path.normpath(os.path.join(src_rel, rel)): txt
                    for rel, txt in work.items() if files.get(rel) != txt}
         ev("build", "Building a preview of the staged changes…")
-        pushed = commit_branch(repo_dir, R.branch_for(ch), changed, base_branch,
+        pushed = commit_branch(repo_dir, R.branch_for(ch, prefix), changed, base_branch,
                                f"apply-edits: stage {staged} agent-reviewed edit(s) on {ch}",
                                token=token, remote_repo=remote_repo, push=True,
                                after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
@@ -1046,7 +1044,7 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             continue
 
         new_review, new_files, branch, applied = R.process_apply_direct_job(
-            job, review, files, _now_iso())
+            job, review, files, _now_iso(), prefix)
         msg = f"apply-direct: stage edits on {ch}"
 
         if applied:

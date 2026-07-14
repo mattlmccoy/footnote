@@ -650,3 +650,26 @@ def test_resolve_agent_model_inherit_sentinel_and_bad_json_are_safe():
     assert R.resolve_agent_model("x", {"AGENT_MODELS": '{"x": "default"}', "CLAUDE_MODEL": "sonnet"}) == "sonnet"
     assert R.resolve_agent_model("x", {"AGENT_MODELS": "not json", "CLAUDE_MODEL": "opus"}) == "opus"
     assert R.resolve_agent_model("x", {"AGENT_MODELS": "[]"}) == "opus"   # wrong shape → default
+
+
+def test_branch_for_prefixes_with_project_id_f2():
+    """F2: two docs in one consolidated repo sharing a unit id must NOT collide on review-edits/<unit>.
+    The branch carries the project prefix so review-edits/<id>/<unit> is unique per document."""
+    assert R.branch_for("introduction") == "review-edits/introduction"            # legacy root: unchanged
+    assert R.branch_for("introduction", "") == "review-edits/introduction"        # explicit empty: unchanged
+    assert R.branch_for("introduction", "paperA/") == "review-edits/paperA/introduction"
+    assert R.branch_for("introduction", "paperB/") == "review-edits/paperB/introduction"
+    # the two docs' branches differ -> no collision
+    assert R.branch_for("introduction", "paperA/") != R.branch_for("introduction", "paperB/")
+
+
+def test_apply_direct_records_prefixed_branch_f2():
+    """The staged comment's claude.branch must carry the project-prefixed branch."""
+    job = {"id": "j1", "type": "apply-direct", "chapter": "overview", "comment_ids": ["c1"]}
+    review = {"comments": [{"id": "c1", "kind": "direct", "status": "queued",
+              "edit": {"op": "replace", "find": "x", "replacement": "y"},
+              "claude": {"branch": None}}]}
+    files = {"main.tex": "x\n"}
+    nr, nf, branch, applied = R.process_apply_direct_job(job, review, files, "ts", "paperA/")
+    assert branch == "review-edits/paperA/overview"
+    assert nr["comments"][0]["claude"]["branch"] == "review-edits/paperA/overview"
