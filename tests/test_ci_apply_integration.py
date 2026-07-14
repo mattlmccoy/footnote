@@ -74,7 +74,7 @@ def test_apply_direct_end_to_end(workspace_repo, monkeypatch):
 
     # the review branch on origin carries the applied edit at the right path
     branched = subprocess.run(
-        ["git", "--git-dir", str(bare), "show", "review-edits/02-methods:proj/source/methods.tex"],
+        ["git", "--git-dir", str(bare), "show", "review-edits/proj/02-methods:proj/source/methods.tex"],
         capture_output=True, text=True, check=True).stdout
     assert branched == "x = \\beta + 1\n"
 
@@ -84,7 +84,7 @@ def test_apply_direct_end_to_end(workspace_repo, monkeypatch):
     review = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())
     c = review["comments"][0]
     assert c["status"] == "staged"
-    assert c["claude"]["branch"] == "review-edits/02-methods"
+    assert c["claude"]["branch"] == "review-edits/proj/02-methods"
     assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}
 
     # the data repo working tree is left on main (writeback happens there), source main unchanged
@@ -169,7 +169,7 @@ def test_apply_edits_end_to_end_with_mocked_claude(workspace_repo, monkeypatch, 
 
     # the branch on origin carries Claude's edit (applied deterministically)
     branched = subprocess.run(
-        ["git", "--git-dir", str(bare), "show", "review-edits/02-methods:proj/source/methods.tex"],
+        ["git", "--git-dir", str(bare), "show", "review-edits/proj/02-methods:proj/source/methods.tex"],
         capture_output=True, text=True, check=True).stdout
     assert branched == "x = \\beta + 1\n"
     # the comment is staged with Claude's response + reader diff; queue drained
@@ -177,7 +177,7 @@ def test_apply_edits_end_to_end_with_mocked_claude(workspace_repo, monkeypatch, 
     c = review["comments"][0]
     assert c["status"] == "staged"
     assert c["claude"]["response"] == "Renamed alpha to beta as requested."
-    assert c["claude"]["branch"] == "review-edits/02-methods"
+    assert c["claude"]["branch"] == "review-edits/proj/02-methods"
     assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}
     assert json.loads((data / "proj" / "jobs.json").read_text()) == []
     # source main is untouched — nothing merged (author-oversight invariant)
@@ -210,7 +210,7 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
         {"id": "c1", "status": "approved",
          "edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
-         "staged_edit": {"before": "a", "after": "b"}, "claude": {"branch": "review-edits/02-methods"}},
+         "staged_edit": {"before": "a", "after": "b"}, "claude": {"branch": "review-edits/proj/02-methods"}},
         {"id": "c2", "status": "declined",
          "edit": {"op": "replace", "find": "\\keepme", "replacement": "\\DROPPED"}}]}))
     (data / "proj" / "preview").mkdir(parents=True, exist_ok=True)
@@ -221,8 +221,8 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     _git(["commit", "-m", "approve + queue merge"], data)
     _git(["push", "origin", "main"], data)
     # a review branch exists on origin; merge should delete it
-    _git(["branch", "review-edits/02-methods"], data)
-    _git(["push", "origin", "review-edits/02-methods"], data)
+    _git(["branch", "review-edits/proj/02-methods"], data)
+    _git(["push", "origin", "review-edits/proj/02-methods"], data)
 
     fake = tmp_path / "fake.sh"
     fake.write_text('#!/usr/bin/env bash\nset -e\ncat "$SOURCE_DIR/methods.tex" > "$2"\n'
@@ -244,7 +244,7 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     content = (data / "proj" / "content" / "02-methods.html").read_text()
     assert "\\beta" in content and "\\DROPPED" not in content
     # review branch deleted from origin
-    remotes = subprocess.run(["git", "ls-remote", "--heads", str(bare), "review-edits/02-methods"],
+    remotes = subprocess.run(["git", "ls-remote", "--heads", str(bare), "review-edits/proj/02-methods"],
                              capture_output=True, text=True, check=True).stdout
     assert remotes.strip() == ""
     # preview dropped, queue drained, statuses updated
@@ -319,9 +319,9 @@ def test_apply_edits_agent_gate_rejects_and_emits_progress(workspace_repo, monke
 
     c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
     assert c["status"] == "conflict"
-    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/02-methods"],
+    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/proj/02-methods"],
                        capture_output=True, text=True)
-    assert "review-edits/02-methods" not in r.stdout
+    assert "review-edits/proj/02-methods" not in r.stdout
     prog = (data / "proj" / "progress" / "j9.jsonl").read_text()
     events = [json.loads(l) for l in prog.splitlines() if l.strip()]
     phases = [e["phase"] for e in events]
@@ -369,7 +369,7 @@ def test_apply_edits_revise_loop_recovers(workspace_repo, monkeypatch, tmp_path)
     c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
     assert c["status"] == "staged"
     branched = subprocess.run(["git", "--git-dir", str(bare), "show",
-                               "review-edits/02-methods:proj/source/methods.tex"],
+                               "review-edits/proj/02-methods:proj/source/methods.tex"],
                               capture_output=True, text=True, check=True).stdout
     assert "\\beta" in branched and "\\gamma" not in branched
     prog = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
@@ -396,14 +396,14 @@ def test_commit_branch_external_push_failure_is_survivable(tmp_path, monkeypatch
 
     ran = {"after": False}
     result = ci_apply.commit_branch(
-        repo, "review-edits/02-methods", {"methods.tex": "x = 2\n"}, "main",
+        repo, "review-edits/proj/02-methods", {"methods.tex": "x = 2\n"}, "main",
         "stage edit", token="ro-token", remote_repo="owner/source", push=True,
         after_commit=lambda: ran.__setitem__("after", True))
 
     assert ran["after"] is True                       # preview still built from the local branch commit
     assert result is False                             # signals the source-branch push did not land
     # the local branch commit exists even though the remote push failed
-    log = subprocess.run(["git", "log", "--oneline", "review-edits/02-methods"],
+    log = subprocess.run(["git", "log", "--oneline", "review-edits/proj/02-methods"],
                          cwd=str(repo), capture_output=True, text=True).stdout
     assert "stage edit" in log
     # left back on base for the review/jobs writeback
@@ -539,9 +539,9 @@ def test_apply_edits_blocks_an_edit_that_introduces_an_em_dash(workspace_repo, m
 
     c = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"][0]
     assert c["status"] == "conflict"                # the em-dash edit did not stage
-    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/02-methods"],
+    r = subprocess.run(["git", "--git-dir", str(bare), "branch", "--list", "review-edits/proj/02-methods"],
                        capture_output=True, text=True)
-    assert "review-edits/02-methods" not in r.stdout
+    assert "review-edits/proj/02-methods" not in r.stdout
     events = [json.loads(l) for l in (data / "proj" / "progress" / "j9.jsonl").read_text().splitlines() if l.strip()]
     assert any("em-dash" in (e.get("say") or "").lower() for e in events)
 
@@ -592,7 +592,7 @@ def test_apply_edits_preserves_staged_wording_on_non_revision_redrain(workspace_
          "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "reword",
          "source_edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
          "staged_edit": {"before": "the alpha term", "after": "the beta term"},
-         "claude": {"branch": "review-edits/02-methods", "response": "Reworded to beta."}}]}))
+         "claude": {"branch": "review-edits/proj/02-methods", "response": "Reworded to beta."}}]}))
     (data / "proj" / "jobs.json").write_text(json.dumps([
         {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"], "status": "queued"}]))
     fake = tmp_path / "fake.sh"
@@ -620,7 +620,7 @@ def test_apply_edits_preserves_staged_wording_on_non_revision_redrain(workspace_
     assert c["status"] == "staged"
     assert c["staged_edit"] == {"before": "the alpha term", "after": "the beta term"}   # SAME wording
     # the branch carries the original \beta, not the writer's \gamma
-    branched = subprocess.run(["git", "--git-dir", str(bare), "show", "review-edits/02-methods:proj/source/methods.tex"],
+    branched = subprocess.run(["git", "--git-dir", str(bare), "show", "review-edits/proj/02-methods:proj/source/methods.tex"],
                               capture_output=True, text=True).stdout
     assert "\\beta" in branched and "\\gamma" not in branched
 
@@ -633,7 +633,7 @@ def test_apply_edits_revision_DOES_re_run_the_writer(workspace_repo, monkeypatch
          "anchor": {"quote": "the alpha term", "section": "Methods"}, "body": "reword",
          "source_edit": {"op": "replace", "find": "\\alpha", "replacement": "\\beta"},
          "staged_edit": {"before": "the alpha term", "after": "the beta term"},
-         "claude": {"branch": "review-edits/02-methods", "response": "old"}}]}))
+         "claude": {"branch": "review-edits/proj/02-methods", "response": "old"}}]}))
     (data / "proj" / "jobs.json").write_text(json.dumps([
         {"id": "j9", "type": "apply-edits", "chapter": "02-methods", "comment_ids": ["c1"],
          "revision": True, "revise_note": "make it gamma", "status": "queued"}]))

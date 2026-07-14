@@ -303,10 +303,13 @@ def conflict_comment(comment, reason, ts):
     return out
 
 
-def branch_for(unit_id):
-    """The review branch for a unit: ``review-edits/<unit>`` (author-oversight invariant — every
-    edit lands here, never on the source main)."""
-    return f"review-edits/{unit_id}"
+def branch_for(unit_id, prefix=""):
+    """The review branch for a unit: ``review-edits/<prefix><unit>`` (author-oversight invariant — every
+    edit lands here, never on the source main). ``prefix`` is the project folder ("<id>/") in a
+    consolidated repo, so two documents that share a unit id (e.g. both "introduction") get distinct
+    branches ``review-edits/<idA>/introduction`` vs ``review-edits/<idB>/introduction`` instead of
+    colliding. Legacy single-project repos pass ``prefix=""`` and keep ``review-edits/<unit>`` unchanged."""
+    return f"review-edits/{prefix}{unit_id}"
 
 
 def apply_direct_to_files(files, comment):
@@ -327,7 +330,7 @@ def apply_direct_to_files(files, comment):
     return new_files, path
 
 
-def process_apply_direct_job(job, review, files, ts):
+def process_apply_direct_job(job, review, files, ts, prefix=""):
     """Process one deterministic apply-direct job against a chapter's review + source files.
 
     For each referenced comment, apply its verbatim edit to the working source map and mark the
@@ -336,7 +339,7 @@ def process_apply_direct_job(job, review, files, ts):
     ``applied`` is True iff at least one edit landed (so the caller knows whether to commit).
     Pure: no git, no clock — ``ts`` is injected and inputs are not mutated.
     """
-    branch = branch_for(job.get("chapter"))
+    branch = branch_for(job.get("chapter"), prefix)
     work = dict(files)
     by_id = {c.get("id"): c for c in (review.get("comments") or [])}
     updated = dict(by_id)
@@ -897,7 +900,7 @@ def export_comment_list(review, advisor_reviews=None):
     return out
 
 
-def process_apply_edits_job(job, review, files, edits_by_id, ts):
+def process_apply_edits_job(job, review, files, edits_by_id, ts, prefix=""):
     """Apply Claude's edit specs for one apply-edits job. For each referenced comment:
       * a spec with a source change → apply source_before→source_after via literal_replace on the
         working files and stage it (response + prose diff); an absent/ambiguous target → conflict;
@@ -905,7 +908,7 @@ def process_apply_edits_job(job, review, files, edits_by_id, ts):
       * no spec at all → left as-is (a later revision can retry).
     Returns ``(new_review, new_files, branch, applied)``. Pure: ``ts`` injected, inputs untouched.
     """
-    branch = branch_for(job.get("chapter"))
+    branch = branch_for(job.get("chapter"), prefix)
     work = dict(files)
     by_id = {c.get("id"): c for c in (review.get("comments") or [])}
     updated = dict(by_id)
