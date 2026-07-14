@@ -4,7 +4,7 @@
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=eadc2bc';
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=0000000';
-import { storageBadge } from './storagecopy.js?v=0000000';
+import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=0000000';
 import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue } from './account.js?v=0000000';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=8850a5c';
@@ -187,6 +187,52 @@ const FG_URL = fineGrainedUrl('Footnote');
 const OWNER_FG_LIST = OWNER_KEY_PERMISSIONS
   .filter(p => p.level === 'Read and write')
   .map(p => `<b>${p.name}</b>`).join(', ');
+
+// ---- M4: New Project storage relabel + ⓘ, and the workspace picker (pure HTML builders + one wiring fn) ----
+
+// The storage segmented control for the New Project sheet. Wording comes ONLY from storagecopy.js (single
+// source of truth): "Shared repo" (data-style="workspace") vs "Individual repo" (data-style="independent") —
+// the internal style values are UNCHANGED, so storage selection behaves exactly as before. Each label carries
+// an ⓘ that toggles a below-control info panel with the approved storageInfo copy (see wireStorageInfo).
+export function storageControlHtml() {
+  const seg = (style, kind) =>
+    `<button type="button" class="fn-seg-b${style === 'workspace' ? ' on' : ''}" data-style="${style}">${esc(storageLabel(kind))}<span class="fn-i" data-info="${kind}" role="button" tabindex="0" aria-label="About ${esc(storageLabel(kind))}">ⓘ</span></button>`;
+  const pop = kind => `<div class="fn-info-pop" data-info-for="${kind}" hidden>${esc(storageInfo(kind))}</div>`;
+  return `<div class="fn-field-lbl">How should this be stored?</div>
+      <div class="fn-seg fn-seg-info" id="np-style">
+        ${seg('workspace', 'shared')}
+        ${seg('independent', 'individual')}
+      </div>
+      ${pop('shared')}${pop('individual')}`;
+}
+
+// The "Workspace ▾" picker at the top of the New Project sheet: the default group (empty value), every
+// offered workspace name, then "New workspace…". `preWs` (the ＋ tile's data-ws, or the most-recent group)
+// is preselected. The picked value is the GROUPING label — spread into the new project as `workspaceLabel`
+// (never `workspace`, the storage boolean) at save time.
+export function workspacePickerHtml({ names = [], def = 'My documents', preWs = '' } = {}) {
+  const sel = (preWs || '').trim();
+  const opt = (value, label) => `<option value="${esc(value)}"${value === sel ? ' selected' : ''}>${esc(label)}</option>`;
+  const groups = (names || []).map(n => opt(n, n)).join('');
+  return `<label class="fn-field">Workspace <span class="fn-sub">which group this document lives in</span>
+        <select id="np-ws">${opt('', def || 'My documents')}${groups}<option value="__new__">＋ New workspace…</option></select></label>`;
+}
+
+// Wire the storage ⓘ buttons within `scope` (the New Project scrim): clicking an ⓘ toggles the matching
+// info panel's visibility, hiding any other. Pure DOM plumbing over the markers storageControlHtml emits.
+export function wireStorageInfo(scope) {
+  const pops = kind => scope.querySelector(`[data-info-for="${kind}"]`);
+  scope.querySelectorAll('.fn-i').forEach(i => {
+    i.onclick = () => {
+      const kind = i.dataset.info;
+      const target = pops(kind);
+      if (!target) return;
+      const show = target.hidden;                 // toggle this one; hide the others
+      ['shared', 'individual'].forEach(k => { const p = pops(k); if (p) p.hidden = true; });
+      target.hidden = !show;
+    };
+  });
+}
 
 async function hubSha(hub, t) {
   try { const r = await fetch(`${API}/repos/${hub}/contents/projects.json?t=${Date.now()}`, { headers: hdr(t), cache: 'no-store' });
