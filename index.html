@@ -218,6 +218,30 @@
   .fn-avatar{width:26px;height:26px;border-radius:50%;object-fit:cover;border:1px solid var(--line);background:var(--paper-2)}
   .fn-hi{font-size:13px;color:var(--muted);font-weight:500;white-space:nowrap}
   @media(max-width:520px){.fn-hi{display:none}}
+  /* header ⚙ settings entry — sits between Help and Disconnect */
+  .fn-gear{font-size:16px;line-height:1;text-decoration:none;color:var(--faint);padding:2px 4px}
+  .fn-gear:hover{color:var(--accent)}
+  /* ---- Account Settings page (M3) ---- */
+  .fn-settings{display:flex;flex-direction:column;gap:22px;max-width:640px}
+  .fn-set-sec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}
+  .fn-set-h{font-family:var(--serif);font-weight:500;font-size:17px;letter-spacing:-.01em;margin:0 0 10px;color:var(--ink)}
+  .fn-set-sub{font-size:13px;color:var(--muted);line-height:1.55;margin:2px 0}
+  .fn-set-lbl{font-size:14px;font-weight:600;color:var(--ink)}
+  .fn-set-row{display:flex;align-items:flex-start;gap:10px;margin:6px 0 12px}
+  .fn-set-dot{flex:none;width:9px;height:9px;border-radius:50%;margin-top:5px;background:var(--faint)}
+  .fn-set-dot.on{background:#2f9e6a}.fn-set-dot.off{background:#c08a2d}
+  .fn-set-warn{margin:10px 0;padding:10px 12px;border-radius:9px;font-size:12.5px;line-height:1.5;
+    color:#8a5a12;background:rgba(200,138,45,.10);border:1px solid #e6d3a8}
+  .fn-set-inline{display:flex;gap:9px;align-items:center;margin-top:12px;flex-wrap:wrap}
+  .fn-set-inline input{flex:1;min-width:180px;padding:9px 11px;border:1px solid var(--line);border-radius:9px;
+    font-family:var(--sans);font-size:13.5px;background:var(--paper);color:var(--ink)}
+  .fn-set-inline input:disabled{opacity:.55;cursor:not-allowed;background:var(--paper-2)}
+  .fn-set-wslist{display:flex;flex-direction:column;gap:2px;margin:8px 0}
+  .fn-set-wsrow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 2px;border-bottom:1px solid var(--line)}
+  .fn-set-wsrow:last-child{border-bottom:none}
+  .fn-set-wsname{font-family:var(--serif);font-size:15px;color:var(--ink)}
+  .fn-set-wsact{display:flex;gap:12px}
+  .fn-set-wsdel{color:#b23b2e}.fn-set-wsdel:hover{color:#8f2c22}
 
   .fn-scrim{position:fixed;inset:0;background:rgba(33,28,16,.34);backdrop-filter:blur(3px);display:flex;align-items:center;justify-content:center;z-index:60;padding:20px}
   .fn-sheet{background:var(--card);border-radius:18px;padding:26px;width:min(460px,94vw);box-shadow:0 30px 80px -20px rgba(0,0,0,.4)}

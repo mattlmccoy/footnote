@@ -5,7 +5,7 @@
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=eadc2bc';
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=0000000';
 import { storageBadge } from './storagecopy.js?v=0000000';
-import { addWorkspace } from './account.js?v=0000000';
+import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue } from './account.js?v=0000000';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=8850a5c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
@@ -65,6 +65,110 @@ export function onboardingStep({ hasToken, hasHub, hasProjects } = {}) {
   if (hasProjects) return null;                       // onboarding complete
   const index = !hasToken ? 0 : !hasHub ? 1 : 2;
   return { index, total: ONBOARD_STEPS.length, label: ONBOARD_STEPS[index] };
+}
+
+// ---- M3: account Settings — pure builders + seal orchestration (unit-tested) ----
+
+// GitHub-access status for the Settings page. Takes the token but keeps only a boolean — the token value is
+// NEVER stored or rendered (the user's own credential). Copy is plain-English, no token echo.
+export function githubAccessStatus(token) {
+  const connected = !!(token && String(token).trim());
+  return connected
+    ? { connected: true, label: 'Connected', detail: 'Your GitHub token is set in this browser and sent only to GitHub.' }
+    : { connected: false, label: 'Not connected', detail: 'Connect a GitHub token to use Footnote.' };
+}
+
+// Overleaf-seal view for the Settings page, derived from account.json. `now` is injected so the 1-year
+// expiry test is deterministic. Never carries the token — only which repos it was sealed into and when.
+export function overleafSettingsView(account, now) {
+  const a = normalizeAccount(account);
+  const setAt = a.overleaf.setAt || '';
+  return {
+    sealedRepos: a.overleaf.sealedRepos,
+    setAt,
+    sealed: a.overleaf.sealedRepos.length > 0 || !!setAt,
+    expiryDue: overleafExpiryDue(setAt, now || new Date()),
+  };
+}
+
+// Seal the account-wide Overleaf token into EACH target repo (one public-key fetch + one sealed PUT per repo),
+// reusing ghsecrets/getPublicKey+putSecret (injected as deps so this is unit-testable without the network).
+// Returns ONLY the list of repos sealed — the raw token value is never returned, stored, or logged.
+export async function sealOverleafIntoRepos(token, repos, value, deps) {
+  const { getPublicKey, putSecret, sealFn } = deps;
+  const sealed = [];
+  for (const repo of repos) {
+    const pk = await getPublicKey(token, repo);
+    await putSecret(token, pk, sealFn, 'OVERLEAF_TOKEN', value, repo);
+    sealed.push(repo);
+  }
+  return sealed;
+}
+
+// Pretty date for the "sealed on" line (empty string when never sealed).
+function sealedOnLabel(setAt) {
+  if (!setAt) return '';
+  const d = new Date(setAt);
+  return isNaN(d) ? setAt : d.toISOString().slice(0, 10);
+}
+
+// The Settings page inner HTML (three sections). Pure string builder so the sections, empty states, and the
+// 1-year renewal reminder are unit-tested; the DOM wiring (buttons/handlers) lives in renderAccountSettings.
+// NOTE: this NEVER receives or renders the Overleaf/GitHub token value — only booleans, repo names, dates.
+export function settingsInnerHtml({ github, overleaf, names, sealTargets, workspaceRepo }) {
+  const esch = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const targets = sealTargets || [];
+  const wsNames = names || [];
+
+  const gh = `<section class="fn-set-sec">
+      <div class="fn-set-h">GitHub access</div>
+      <div class="fn-set-row"><span class="fn-set-dot ${github.connected ? 'on' : 'off'}"></span>
+        <div><div class="fn-set-lbl">${esch(github.label)}</div><div class="fn-set-sub">${esch(github.detail)}</div></div></div>
+      ${github.connected ? '' : `<button class="fn-btn fn-btn-primary" id="fn-set-connect">Connect GitHub</button>`}
+    </section>`;
+
+  const olTargets = targets.length
+    ? `Sealed into ${targets.length} repo${targets.length === 1 ? '' : 's'}: ${targets.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}.`
+    : `No Overleaf-linked documents yet — link a document to Overleaf first, then seal your token here.`;
+  const olState = overleaf.sealed
+    ? `<div class="fn-set-sub">Token sealed${overleaf.setAt ? ` on <span class="fn-mono">${esch(sealedOnLabel(overleaf.setAt))}</span>` : ''}${overleaf.sealedRepos.length ? ` into ${overleaf.sealedRepos.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}` : ''}.</div>`
+    : `<div class="fn-set-sub">Not set yet.</div>`;
+  const olExpiry = overleaf.expiryDue
+    ? `<div class="fn-set-warn">⚠ Your Overleaf token was sealed over a year ago. Overleaf git tokens expire after a year — generate a new one and re-seal it below to keep sync working.</div>`
+    : '';
+  const ol = `<section class="fn-set-sec">
+      <div class="fn-set-h">Overleaf token</div>
+      <div class="fn-set-sub">One Overleaf git-bridge token, sealed into every Overleaf-linked document's repo so cloud sync can run. ${olTargets}</div>
+      ${olState}
+      ${olExpiry}
+      <div class="fn-set-inline">
+        <input id="fn-set-oltok" type="password" placeholder="Overleaf git-bridge token" autocomplete="off" spellcheck="false" ${targets.length ? '' : 'disabled'}>
+        <button class="fn-btn fn-btn-primary" id="fn-set-olseal" ${targets.length ? '' : 'disabled'}>Seal for my workspaces</button>
+      </div>
+      <div class="fn-hint" id="fn-set-olstatus"></div>
+    </section>`;
+
+  const wsRows = wsNames.length
+    ? wsNames.map(n => `<div class="fn-set-wsrow" data-ws="${esch(n)}">
+          <span class="fn-set-wsname">${esch(n)}</span>
+          <span class="fn-set-wsact">
+            <button class="fn-link" data-ws-rename="${esch(n)}">Rename</button>
+            <button class="fn-link fn-set-wsdel" data-ws-del="${esch(n)}">Delete</button>
+          </span></div>`).join('')
+    : `<div class="fn-set-sub">No workspaces yet. Add one to group your documents on the shelf.</div>`;
+  const ws = `<section class="fn-set-sec">
+      <div class="fn-set-h">Workspaces</div>
+      <div class="fn-set-sub">Group your documents on the shelf. Deleting a workspace keeps its documents — they move back to your default group.</div>
+      <div class="fn-set-wslist">${wsRows}</div>
+      <div class="fn-set-inline">
+        <input id="fn-set-wsnew" placeholder="New workspace name" spellcheck="false">
+        <button class="fn-btn" id="fn-set-wsadd">＋ Add workspace</button>
+      </div>
+    </section>`;
+
+  return `<div class="fn-head fn-reveal"><span class="fn-eyebrow">Account</span><h1 class="fn-h1">Settings</h1>
+      <button class="fn-link" id="fn-set-back">← Back to library</button></div>
+    <div class="fn-settings fn-reveal">${gh}${ol}${ws}</div>`;
 }
 
 // ---- I/O + DOM (browser only) ----
@@ -188,9 +292,11 @@ export async function launch() {
 
   function frame(inner, opts = {}) {
     const avatar = _user.avatar ? `<img class="fn-avatar" src="${esc(_user.avatar)}" alt="" referrerpolicy="no-referrer">` : '';
+    const gear = opts.settings ? `<button class="fn-link fn-gear" id="fn-settings" title="Settings" aria-label="Account settings">⚙</button>` : '';
     const userbar = opts.signout ? `<div class="fn-userbar">
         ${avatar}<span class="fn-hi">Hi, ${esc(greetName(_user))}</span>
         <a class="fn-link" href="tutorials/index.html">Help</a>
+        ${gear}
         <button class="fn-link" id="fn-signout">Disconnect</button>
       </div>` : '';
     root.innerHTML = `<div class="fn-shell">
@@ -203,6 +309,8 @@ export async function launch() {
     </div>`;
     const so = document.getElementById('fn-signout');
     if (so) so.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
+    const gs = document.getElementById('fn-settings');
+    if (gs) gs.onclick = () => renderAccountSettings();
   }
 
   function connect() {
@@ -338,7 +446,7 @@ export async function launch() {
              <h2 class="fn-empty-h">Your shelf is empty</h2>
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
-      <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true });
+      <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true, settings: true });
     const open = () => projectSheet(list, null);
     ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });
     // Per-group new-document tiles (grouped shelves) also open New Project.
@@ -739,6 +847,94 @@ export async function launch() {
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };
     setTimeout(() => q('#np-name').focus(), 30);
+  }
+
+  // Account Settings page (launcher-level ⚙). Three sections: GitHub access (status of the ghpat token),
+  // the account-wide Overleaf token (sealed into every Overleaf-linked doc's repo + a 1-year renewal
+  // reminder), and the Workspaces manager (add / rename / delete→reassign to the default group). account.json
+  // is written LAZILY — only when the user actually saves a change here (existing users who never open this
+  // see no account.json and zero behavior change). The Overleaf token is the user's own credential: it is
+  // prompted, sealed, and discarded — never stored in projects.json/account.json, logged, or rendered back.
+  async function renderAccountSettings() {
+    const appCfg = { ...cfg, hubRepo: hub(), workspaceRepo: hub() };
+    let list = [];
+    try { list = await loadProjects(appCfg, tok()); } catch {}
+    let account = await loadAccount(appCfg, tok()).catch(() => null);   // null (404) for existing users → defaults
+    const draw = () => {
+      const acct = normalizeAccount(account);
+      const sealTargets = overleafSealTargets(list, appCfg);
+      frame(settingsInnerHtml({
+        github: githubAccessStatus(tok()),
+        overleaf: overleafSettingsView(account, new Date()),
+        names: acct.workspaces,
+        sealTargets,
+        workspaceRepo: hub(),
+      }), { signout: true, settings: true });
+
+      const back = document.getElementById('fn-set-back'); if (back) back.onclick = () => render();
+      const conn = document.getElementById('fn-set-connect'); if (conn) conn.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
+
+      // ---- Overleaf: seal the token into every target repo, then persist account.json.overleaf ----
+      const olStatus = m => { const s = document.getElementById('fn-set-olstatus'); if (s) s.textContent = m; };
+      const sealBtn = document.getElementById('fn-set-olseal');
+      if (sealBtn) sealBtn.onclick = async () => {
+        const input = document.getElementById('fn-set-oltok');
+        const val = (input && input.value || '').trim();
+        if (!val) return olStatus('Paste your Overleaf git-bridge token first.');
+        if (!sealTargets.length) return olStatus('Link a document to Overleaf first — nothing to seal into yet.');
+        try {
+          sealBtn.disabled = true; olStatus(`Sealing into ${sealTargets.length} repo${sealTargets.length === 1 ? '' : 's'}…`);
+          const sealed = await sealOverleafIntoRepos(tok(), sealTargets, val,
+            { getPublicKey, putSecret, sealFn: sealToBase64 });
+          if (input) input.value = '';   // never keep the token in the DOM
+          account = { ...normalizeAccount(account), overleaf: { sealedRepos: sealed, setAt: new Date().toISOString() } };
+          await writeAccount(appCfg, account, tok());
+          draw();   // re-render with the sealed state + fresh expiry check
+        } catch (e) {
+          olStatus(e.code === 'NOSCOPE' ? 'Your key needs Secrets: write to seal this (regenerate with repo scope).' : e.message);
+          sealBtn.disabled = false;
+        }
+      };
+
+      // ---- Workspaces: add / rename / delete(→reassign docs to default) — all persisted via writeAccount ----
+      const addBtn = document.getElementById('fn-set-wsadd');
+      if (addBtn) addBtn.onclick = async () => {
+        const input = document.getElementById('fn-set-wsnew');
+        const name = (input && input.value || '').trim();
+        if (!name) return;
+        try { addBtn.disabled = true; account = addWorkspace(account, name); await writeAccount(appCfg, account, tok()); draw(); }
+        catch (e) { console.warn('add workspace:', e.message); addBtn.disabled = false; }
+      };
+      root.querySelectorAll('[data-ws-rename]').forEach(b => b.onclick = async () => {
+        const oldName = b.getAttribute('data-ws-rename');
+        const raw = (prompt('Rename workspace:', oldName) || '').trim();
+        if (!raw || raw === oldName) return;
+        try {
+          // Rename = re-point every doc in the group + swap the name in account.workspaces (order preserved).
+          const docs = list.filter(p => (typeof p.workspaceLabel === 'string' ? p.workspaceLabel.trim() : '') === oldName);
+          for (const p of docs) await writeProjectPatch(appCfg, p.id, moveDocPatch(raw), tok());
+          const acct = normalizeAccount(account);
+          acct.workspaces = acct.workspaces.map(w => (w === oldName ? raw : w));
+          account = acct; await writeAccount(appCfg, account, tok());
+          list = await loadProjects(appCfg, tok()).catch(() => list);
+          draw();
+        } catch (e) { console.warn('rename workspace:', e.message); draw(); }
+      });
+      root.querySelectorAll('[data-ws-del]').forEach(b => b.onclick = async () => {
+        const name = b.getAttribute('data-ws-del');
+        const docs = list.filter(p => (typeof p.workspaceLabel === 'string' ? p.workspaceLabel.trim() : '') === name);
+        if (!confirm(docs.length
+          ? `Delete workspace “${name}”? Its ${docs.length} document${docs.length === 1 ? '' : 's'} move back to your default group (nothing is deleted).`
+          : `Delete workspace “${name}”?`)) return;
+        try {
+          for (const p of docs) await writeProjectPatch(appCfg, p.id, moveDocPatch(''), tok());   // reassign to default
+          account = removeWorkspace(account, name); await writeAccount(appCfg, account, tok());
+          list = await loadProjects(appCfg, tok()).catch(() => list);
+          draw();
+        } catch (e) { console.warn('delete workspace:', e.message); draw(); }
+      });
+    };
+    draw();
   }
 
   // Remove = unregister only. It never deletes the comments repo or the document on GitHub — the confirm

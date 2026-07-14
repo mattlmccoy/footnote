@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS, texFileName } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS, texFileName, githubAccessStatus, overleafSettingsView, sealOverleafIntoRepos, settingsInnerHtml } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
@@ -122,4 +122,72 @@ test('updateProject ignores an attempt to change the id via patch', () => {
   const out = updateProject(twoProjects(), 'a', { id: 'hacked', name: 'A2' });
   assert.ok(out.find(p => p.id === 'a'));
   assert.ok(!out.find(p => p.id === 'hacked'));
+});
+
+// ---- M3: account Settings page (pure builders + seal orchestration) ----
+
+test('githubAccessStatus reflects token presence and never embeds the token value', () => {
+  const c = githubAccessStatus('ghp_secretvalue');
+  assert.equal(c.connected, true);
+  assert.ok(!JSON.stringify(c).includes('ghp_secretvalue'));   // status carries a boolean, not the token
+  assert.equal(githubAccessStatus('').connected, false);
+  assert.equal(githubAccessStatus(null).connected, false);
+});
+
+test('overleafSettingsView: absent account = not sealed, not due (existing-user default)', () => {
+  const v = overleafSettingsView(null, new Date('2026-07-14'));
+  assert.equal(v.sealed, false);
+  assert.equal(v.expiryDue, false);
+  assert.deepStrictEqual(v.sealedRepos, []);
+});
+
+test('overleafSettingsView: >1yr setAt flags expiry due; fresh does not', () => {
+  const due = overleafSettingsView({ overleaf: { sealedRepos: ['me/r'], setAt: '2025-07-01' } }, new Date('2026-07-14'));
+  assert.equal(due.sealed, true);
+  assert.equal(due.expiryDue, true);
+  const fresh = overleafSettingsView({ overleaf: { sealedRepos: ['me/r'], setAt: '2026-06-01' } }, new Date('2026-07-14'));
+  assert.equal(fresh.expiryDue, false);
+});
+
+test('sealOverleafIntoRepos seals OVERLEAF_TOKEN into each target repo and returns only repo names', async () => {
+  const gp = [], ps = [];
+  const deps = {
+    getPublicKey: async (tok, repo) => { gp.push({ tok, repo }); return { key: 'pk-' + repo, key_id: 'kid' }; },
+    putSecret: async (tok, pk, sealFn, name, value, repo) => { ps.push({ tok, name, value, repo, sealed: sealFn(pk.key, value) }); },
+    sealFn: (key, value) => 'SEALED',
+  };
+  const out = await sealOverleafIntoRepos('T', ['me/hub', 'me/c-data'], 'super-secret', deps);
+  assert.deepStrictEqual(out, ['me/hub', 'me/c-data']);              // returns the sealed repos, not the token
+  assert.deepStrictEqual(gp.map(x => x.repo), ['me/hub', 'me/c-data']);
+  assert.deepStrictEqual(ps.map(x => x.name), ['OVERLEAF_TOKEN', 'OVERLEAF_TOKEN']);
+  assert.deepStrictEqual(ps.map(x => x.repo), ['me/hub', 'me/c-data']);
+  assert.ok(out.every(r => !r.includes('super-secret')));           // no token leakage in the result
+});
+
+test('settingsInnerHtml renders three sections + empty states, never echoing a token value', () => {
+  const html = settingsInnerHtml({
+    github: githubAccessStatus('ghp_secretvalue'),
+    overleaf: overleafSettingsView(null, new Date('2026-07-14')),
+    names: [], sealTargets: ['me/hub'], workspaceRepo: 'me/hub',
+  });
+  assert.match(html, /GitHub access/i);
+  assert.match(html, /Overleaf/i);
+  assert.match(html, /Workspaces/i);
+  assert.match(html, /Connected/i);
+  assert.ok(!html.includes('ghp_secretvalue'));   // the token is never rendered into the page
+});
+
+test('settingsInnerHtml shows the 1-year renewal reminder only when the seal is due', () => {
+  const due = settingsInnerHtml({
+    github: githubAccessStatus('ghp_x'),
+    overleaf: overleafSettingsView({ overleaf: { sealedRepos: ['me/r'], setAt: '2025-01-01' } }, new Date('2026-07-14')),
+    names: ['PhD'], sealTargets: ['me/hub'], workspaceRepo: 'me/hub',
+  });
+  assert.match(due, /expire|renew|a year|12 months/i);
+  const fresh = settingsInnerHtml({
+    github: githubAccessStatus('ghp_x'),
+    overleaf: overleafSettingsView({ overleaf: { sealedRepos: ['me/r'], setAt: '2026-06-01' } }, new Date('2026-07-14')),
+    names: [], sealTargets: ['me/hub'], workspaceRepo: 'me/hub',
+  });
+  assert.ok(!/expire soon|please renew|renew your Overleaf/i.test(fresh));
 });
