@@ -80,16 +80,22 @@ export async function checkActionsAccess(tok){
 }
 
 // GET the repo Actions public key. Throwing on 403 is the signal the token lacks Secrets:write.
-export async function getPublicKey(tok){
-  const r = await fetch(`${API}/repos/${slug()}/actions/secrets/public-key`, { headers:hdr(tok), cache:'no-store' });
+// `repo` is OPTIONAL and defaults to the owner's data repo (slug()) — pass an explicit owner/repo to target
+// another repo (M3 seals the account OVERLEAF_TOKEN into every Overleaf-linked doc's repo). Backward-compatible.
+export async function getPublicKey(tok, repo){
+  const target = repo || slug();
+  const r = await fetch(`${API}/repos/${target}/actions/secrets/public-key`, { headers:hdr(tok), cache:'no-store' });
   if (r.status === 403 || r.status === 404) { const e = new Error('no-secret-scope'); e.code = 'NOSCOPE'; throw e; }
   if (!r.ok) throw new Error('public-key ' + r.status);
   return r.json();   // { key_id, key }
 }
 
-// PUT one sealed secret. sealFn(pubKeyB64, value) -> base64 (from vendor/seal.mjs).
-export async function putSecret(tok, pk, sealFn, name, value){
-  const r = await fetch(`${API}/repos/${slug()}/actions/secrets/${name}`, {
+// PUT one sealed secret. sealFn(pubKeyB64, value) -> base64 (from vendor/seal.mjs). `repo` is OPTIONAL and
+// defaults to slug() (the data repo) — pass an explicit owner/repo to seal into another repo. The pk MUST be
+// the public key of that same repo (secrets are sealed to the target repo's key).
+export async function putSecret(tok, pk, sealFn, name, value, repo){
+  const target = repo || slug();
+  const r = await fetch(`${API}/repos/${target}/actions/secrets/${name}`, {
     method:'PUT', headers:{ ...hdr(tok), 'Content-Type':'application/json' },
     body: JSON.stringify({ encrypted_value: sealFn(pk.key, value), key_id: pk.key_id }) });
   if (!r.ok) throw new Error(`secret ${name}: ${r.status} ${(await r.text()).slice(0,120)}`);
