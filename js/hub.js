@@ -312,15 +312,11 @@ export async function launch() {
     // Account-level config (workspaces list). Absent (404 → null) for existing users, which groups the whole
     // list into ONE default workspace → isOnlyGroup=true → the flat shelf renders exactly as before.
     const account = await loadAccount({ ...cfg, hubRepo: hub() }, tok()).catch(() => null);
-    // IMPORTANT: the grouping label lives in a DEDICATED string field `workspaceLabel`, NOT `project.workspace`
-    // — that field is already a STORAGE boolean (consolidated-repo flag read by projectStorage; set true/false
-    // by importdoc + confirmMigrate). Overloading it would (a) crash groupByWorkspace on a real boolean
-    // (`true.trim()`), and (b) flip an individual-repo doc to consolidated storage. We group over a minimal
-    // {id, workspace:<label>} view and map back to the originals by id for rendering. See M1 follow-up note.
-    const gview = list.map(p => ({ id: p.id, workspace: typeof p.workspaceLabel === 'string' ? p.workspaceLabel : '' }));
-    const byId = new Map(list.map((p, i) => [p.id, { p, i }]));
-    const card = d => { const o = byId.get(d.id); return bookCard(o.p, o.i); };
-    const groups = groupByWorkspace(gview, account);
+    // The grouping label lives in the DEDICATED string field `workspaceLabel` (read by groupByWorkspace),
+    // distinct from `project.workspace` (the storage boolean read by projectStorage). No projection needed:
+    // pass the real list. `i` is the project's position in the full list so spine colors stay stable.
+    const card = p => bookCard(p, list.indexOf(p));
+    const groups = groupByWorkspace(list, account);
     // "Add a book" tile — the flat (single-group) shelf keeps today's exact tile (id=fn-new); grouped shelves
     // get one per group, carrying data-ws so New Project can default to that workspace (M4).
     const flatAddTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
@@ -385,8 +381,7 @@ export async function launch() {
   // persisted to the DEDICATED `workspaceLabel` field (never `project.workspace`, the storage boolean), so a
   // move only re-groups the card — it never changes where the document's repos/comments live.
   function showMoveTargets(menu, project, list, account) {
-    const gview = list.map(p => ({ id: p.id, workspace: typeof p.workspaceLabel === 'string' ? p.workspaceLabel : '' }));
-    const names = workspaceNames(gview, account);
+    const names = workspaceNames(list, account);
     const def = defaultWorkspaceName(account, hub());
     const current = typeof project.workspaceLabel === 'string' ? project.workspaceLabel.trim() : '';
     const row = (label, value, isCurrent) =>
@@ -405,8 +400,8 @@ export async function launch() {
           const next = addWorkspace(account, name);
           await writeAccount({ ...cfg, hubRepo: hub() }, next, tok());
         }
-        // Reuse moveDocPatch for label normalization, but persist under `workspaceLabel` (see grouping note).
-        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, project.id, { workspaceLabel: moveDocPatch(name).workspace }, tok());
+        // moveDocPatch returns { workspaceLabel } — the grouping label only; the storage boolean is untouched.
+        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, project.id, moveDocPatch(name), tok());
         render();
       } catch (e) { console.warn('move:', e.message); render(); }
     };

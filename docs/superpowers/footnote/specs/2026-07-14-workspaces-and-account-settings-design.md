@@ -39,9 +39,13 @@ GitHub account
 
 ## Data model
 
-- **Per-document label:** add `workspace: "<name>"` to each entry in the registry `projects.json` (the hub
-  repo's project list — already the account-wide index of every doc, shared or independent). Absent/empty =
-  the **default workspace**.
+- **Per-document label:** add **`workspaceLabel: "<name>"`** to each entry in the registry `projects.json`
+  (the hub repo's project list — already the account-wide index of every doc, shared or independent).
+  Absent/empty = the **default workspace**. **CRITICAL:** this is a NEW, distinct field — it must NOT reuse
+  the existing `project.workspace` **boolean** (the storage-mode flag read by `projectStorage`/`resolveProject`/
+  the migrator, `true`=shared repo / `false`=individual). Overloading `workspace` would crash grouping on
+  legacy `workspace:true` docs and silently repoint a doc's data repo/prefix (comment data corruption). The
+  grouping label and the storage boolean are orthogonal and live in separate fields.
 - **Account config file** `account.json` in the registry repo:
   ```json
   {

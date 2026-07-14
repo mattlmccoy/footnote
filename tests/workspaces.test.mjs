@@ -3,7 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from '../js/workspaces.js';
 
-const P = (id, workspace) => ({ id, name: id, workspace, doc: { noun: 'paper' } });
+// The grouping label lives in `workspaceLabel` (a STRING), distinct from `workspace` (the storage boolean).
+const P = (id, workspaceLabel) => ({ id, name: id, workspaceLabel, doc: { noun: 'paper' } });
 
 test('groupByWorkspace: one implicit group when no labels (flat, backward-compat)', () => {
   const groups = groupByWorkspace([P('a'), P('b')], { defaultWorkspace: 'My documents' });
@@ -27,15 +28,22 @@ test('workspaceNames: config order unioned with any labels present, default excl
 });
 
 test('a doc labeled with the literal default name folds into the default group (no dup)', () => {
-  const g = groupByWorkspace([{id:'a',workspace:'My documents'},{id:'b'}], { workspaces:[], defaultWorkspace:'My documents' });
+  const g = groupByWorkspace([{ id: 'a', workspaceLabel: 'My documents' }, { id: 'b' }], { workspaces: [], defaultWorkspace: 'My documents' });
   assert.equal(g.length, 1);
-  assert.deepEqual(g[0].docs.map(d=>d.id), ['a','b']);
-  assert.deepEqual(workspaceNames([{id:'a',workspace:'My documents'},{id:'c',workspace:'PhD'}], { workspaces:[], defaultWorkspace:'My documents' }), ['PhD']);
+  assert.deepEqual(g[0].docs.map(d => d.id), ['a', 'b']);
+  assert.deepEqual(workspaceNames([{ id: 'a', workspaceLabel: 'My documents' }, { id: 'c', workspaceLabel: 'PhD' }], { workspaces: [], defaultWorkspace: 'My documents' }), ['PhD']);
+});
+
+test('legacy storage boolean (workspace:true, no workspaceLabel) never throws; lands in default group', () => {
+  const g = groupByWorkspace([{ id: 'x', workspace: true }], null);   // consolidated-repo doc, no grouping label
+  assert.equal(g.length, 1);
+  assert.equal(g[0].isOnlyGroup, true);
+  assert.deepEqual(g[0].docs.map(d => d.id), ['x']);
 });
 
 test('moveDocPatch + defaultWorkspaceName', () => {
-  assert.deepEqual(moveDocPatch('Consulting'), { workspace: 'Consulting' });
-  assert.deepEqual(moveDocPatch(''), { workspace: '' });                 // back to default
+  assert.deepEqual(moveDocPatch('Consulting'), { workspaceLabel: 'Consulting' });
+  assert.deepEqual(moveDocPatch(''), { workspaceLabel: '' });                 // back to default
   assert.equal(defaultWorkspaceName({ defaultWorkspace: 'X' }, 'me/hub'), 'X');
   assert.equal(defaultWorkspaceName({}, 'me/footnote-projects'), 'My documents');
 });

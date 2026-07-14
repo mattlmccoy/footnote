@@ -1,6 +1,8 @@
 // js/workspaces.js
-// Pure grouping helpers for the launcher shelf. A "workspace" is a label on a document (project.workspace);
-// documents with no label fall into the default workspace. NO I/O — hub.js supplies projects + accountCfg.
+// Pure grouping helpers for the launcher shelf. A "workspace" is a grouping label on a document
+// (project.workspaceLabel — a STRING, DISTINCT from project.workspace, which is the storage boolean read by
+// projectStorage). Documents with no label fall into the default workspace. NO I/O — hub.js supplies
+// projects + accountCfg.
 
 export function defaultWorkspaceName(accountCfg, hubRepo) {
   const name = ((accountCfg || {}).defaultWorkspace || '').trim();
@@ -13,9 +15,9 @@ export function workspaceNames(projects, accountCfg) {
   const cfg = (accountCfg || {}).workspaces || [];
   const def = defaultWorkspaceName(accountCfg, '');
   const out = [];
-  const push = n => { const v = (n || '').trim(); if (v && v !== def && !out.includes(v)) out.push(v); };
+  const push = n => { const v = (typeof n === 'string' ? n : '').trim(); if (v && v !== def && !out.includes(v)) out.push(v); };
   cfg.forEach(push);
-  (projects || []).forEach(p => push(p.workspace));
+  (projects || []).forEach(p => push(p.workspaceLabel));
   return out;
 }
 
@@ -28,7 +30,7 @@ export function groupByWorkspace(projects, accountCfg) {
   const buckets = new Map(order.map(n => [n, []]));
   const defaultDocs = [];
   for (const p of projects || []) {
-    const w = (p.workspace || '').trim();
+    const w = (typeof p.workspaceLabel === 'string' ? p.workspaceLabel : '').trim();
     if (w && buckets.has(w)) buckets.get(w).push(p);
     else defaultDocs.push(p);
   }
@@ -40,5 +42,5 @@ export function groupByWorkspace(projects, accountCfg) {
 }
 
 export function moveDocPatch(workspaceName) {
-  return { workspace: (workspaceName || '').trim() };
+  return { workspaceLabel: (workspaceName || '').trim() };
 }

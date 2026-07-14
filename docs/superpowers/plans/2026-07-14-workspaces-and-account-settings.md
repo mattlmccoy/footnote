@@ -442,7 +442,7 @@ git commit -m "feat(hub): move a document between workspaces from the card menu"
 
 ### Task M4.2: Workspace picker on New Project (+ per-group ＋)
 
-- [ ] **Step 1:** Add a "Workspace ▾" select at the top of `newProjectSheet` populated from `workspaceNames(list, account)` + the default + "New workspace…"; default the selection to the group whose `＋ New document` was clicked (`data-ws`) or the most-recent. On create, include `workspace: <picked>` in the `addProject` fields (a new workspace also `writeAccount(addWorkspace)`).
+- [ ] **Step 1:** Add a "Workspace ▾" select at the top of `newProjectSheet` populated from `workspaceNames(list, account)` + the default + "New workspace…"; default the selection to the group whose `＋ New document` was clicked (`data-ws`) or the most-recent. On create, include **`workspaceLabel: <picked>`** in the `addProject` fields — NOT `workspace` (that is the storage boolean; the grouping label is the separate `workspaceLabel` string; picking the default writes `''`). A new workspace also `writeAccount(addWorkspace)`.
 - [ ] **Step 2: Browser gate:** create a doc with a workspace picked → its `projects.json` entry has `workspace:"<name>"` → renders under that group. `advisor.js` re-grep AI-clean.
 - [ ] **Step 3: Commit** `feat(hub): New Project workspace picker (assigns the grouping label)`
 
