@@ -219,3 +219,26 @@ def test_main_push_back(synced_repo, tmp_path, monkeypatch):
     check = tmp_path / "c2"
     _git(["clone", str(ov_bare), str(check)], tmp_path)
     assert (check / "main.tex").read_text() == "l1\nPB\n"
+
+
+def test_default_branch_autodetected_main_not_hardcoded_master(tmp_path):
+    """F3: Overleaf now defaults to `main`. A marker with no branch must auto-detect the remote's real
+    default (via ls-remote), not fall back to `master` (which fails on a modern Overleaf project)."""
+    bare = tmp_path / "ov.git"
+    _git(["init", "--bare", "-b", "main", str(bare)], tmp_path)          # remote default = main
+    seed = tmp_path / "s"; seed.mkdir(); _git(["init", "-b", "main"], seed)
+    _git(["config", "user.email", "a@a"], seed); _git(["config", "user.name", "a"], seed)
+    (seed / "main.tex").write_text("hi\n"); _git(["add", "-A"], seed); _git(["commit", "-m", "s"], seed)
+    _git(["remote", "add", "origin", str(bare)], seed); _git(["push", "-u", "origin", "main"], seed)
+    assert ci_overleaf._default_branch(str(bare)) == "main"
+
+    # a project marker WITHOUT a branch -> remote_for auto-detects main
+    data = tmp_path / "d"; (data / "proj").mkdir(parents=True)
+    (data / "proj" / "overleaf.json").write_text(json.dumps({"projectId": "proj"}))   # no branch key
+    import os as _os; cwd = _os.getcwd(); _os.chdir(data)
+    try:
+        _os.environ["OVERLEAF_REMOTE_PROJ"] = str(bare)
+        url, branch = ci_overleaf.remote_for("proj/")
+        assert branch == "main"
+    finally:
+        _os.chdir(cwd); _os.environ.pop("OVERLEAF_REMOTE_PROJ", None)

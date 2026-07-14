@@ -84,6 +84,21 @@ def discover():
     return O.marked_prefixes(paths)
 
 
+def _default_branch(remote_url):
+    """The remote's default branch. Overleaf now uses ``main`` (older projects use ``master``), so we
+    must NOT hardcode either — ask the remote via ls-remote's symref HEAD. Falls back to ``main`` when
+    detection fails (matches Overleaf's current default)."""
+    try:
+        out = subprocess.run(["git", "ls-remote", "--symref", remote_url, "HEAD"],
+                             capture_output=True, text=True, check=True).stdout
+        for line in out.splitlines():
+            if line.startswith("ref:"):
+                return line.split()[1].rsplit("/", 1)[-1]
+    except Exception:
+        pass
+    return "main"
+
+
 def _clone_overleaf(remote_url, branch):
     """Clone the Overleaf remote (bare local path in tests, git.overleaf.com in prod) to a temp
     dir and return its path. Shallow clone of the one branch."""
@@ -179,15 +194,16 @@ def remote_for(prefix):
     pid = prefix.rstrip("/")
     marker = C.load_json(os.path.join(prefix, "overleaf.json"), {})
     project_id = (marker.get("projectId") or "").strip()
-    branch = (marker.get("branch") or "master").strip() or "master"
+    marker_branch = (marker.get("branch") or "").strip()   # empty -> auto-detect the remote's default
     ov_id = O.secret_name(pid).replace("OVERLEAF_TOKEN_", "").replace("OVERLEAF_TOKEN", "")
     override = os.environ.get(f"OVERLEAF_REMOTE_{ov_id}") if ov_id else None
     if override:
-        return override, branch
+        return override, (marker_branch or _default_branch(override))
     token = os.environ.get(O.secret_name(pid)) or os.environ.get("OVERLEAF_TOKEN")
     if not project_id or not token:
         return None, None
-    return f"https://git:{token}@git.overleaf.com/{project_id}", branch
+    url = f"https://git:{token}@git.overleaf.com/{project_id}"
+    return url, (marker_branch or _default_branch(url))
 
 
 def _commit_push():

@@ -2,7 +2,9 @@
 // Mirrors the Python core (overleaf_sync.py) so display and CI agree on names.
 
 export function overleafMarker(projectId, branch) {
-  return { projectId: String(projectId || '').trim(), branch: (String(branch || '').trim() || 'master') };
+  // Leave branch EMPTY when unspecified so the CI auto-detects the remote's default (Overleaf now uses
+  // `main`, older projects `master`) — never hardcode `master`, which fails on a modern Overleaf project.
+  return { projectId: String(projectId || '').trim(), branch: String(branch || '').trim() };
 }
 
 export function secretName(projectId) {
