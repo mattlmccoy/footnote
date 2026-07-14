@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS, texFileName, githubAccessStatus, overleafSettingsView, sealOverleafIntoRepos, settingsInnerHtml } from '../js/hub.js';
+import { addProject, removeProject, updateProject, projectHref, defaultHubRepo, projectIdFromName, spineColor, SPINES, greetName, onboardingStep, ONBOARD_STEPS, texFileName, githubAccessStatus, overleafSettingsView, sealOverleafIntoRepos, settingsInnerHtml, storageControlHtml, workspacePickerHtml, wireStorageInfo } from '../js/hub.js';
 import { normalizeConfig } from '../js/config.js';
+import { moveDocPatch } from '../js/workspaces.js';
+import { storageInfo } from '../js/storagecopy.js';
 
 const CFG = normalizeConfig({ owner: 'alice', dataRepo: 'alice/x', ownerPortalFile: 'owner.html' });
 
@@ -190,4 +192,91 @@ test('settingsInnerHtml shows the 1-year renewal reminder only when the seal is 
     names: [], sealTargets: ['me/hub'], workspaceRepo: 'me/hub',
   });
   assert.ok(!/expire soon|please renew|renew your Overleaf/i.test(fresh));
+});
+
+// ---- M4.1: New Project storage relabel (Shared repo / Individual repo) + ⓘ copy ----
+
+test('storageControlHtml reads "Shared repo" / "Individual repo" from storagecopy (single source of truth)', () => {
+  const html = storageControlHtml();
+  assert.match(html, />\s*Shared repo/);
+  assert.match(html, />\s*Individual repo/);
+  // The internal storage-style selection is UNCHANGED (shared→workspace, individual→independent).
+  assert.match(html, /data-style="workspace"/);
+  assert.match(html, /data-style="independent"/);
+});
+
+test('storageControlHtml carries the approved ⓘ copy for both modes', () => {
+  const html = storageControlHtml();
+  assert.ok(html.includes(storageInfo('shared')), 'shared ⓘ copy present');
+  assert.ok(html.includes(storageInfo('individual')), 'individual ⓘ copy present');
+  // Each mode gets its own ⓘ toggle wired to a matching info panel.
+  assert.match(html, /data-info="shared"/);
+  assert.match(html, /data-info="individual"/);
+  assert.match(html, /data-info-for="shared"/);
+  assert.match(html, /data-info-for="individual"/);
+});
+
+// ---- M4.2: New Project workspace picker ----
+
+test('workspacePickerHtml lists the default + workspaceNames + "New workspace…"', () => {
+  const html = workspacePickerHtml({ names: ['PhD', 'Consulting'], def: 'My documents', preWs: '' });
+  assert.match(html, /<select id="np-ws"/);
+  assert.match(html, /value=""[^>]*>My documents/);        // the default group (empty label)
+  assert.match(html, /value="PhD"/);
+  assert.match(html, /value="Consulting"/);
+  assert.match(html, /value="__new__"[^>]*>[^<]*New workspace/);
+  // Default picked ⇒ the default option is the selected one.
+  assert.match(html, /value=""[^>]*selected/);
+});
+
+test('workspacePickerHtml preselects the group whose ＋ tile was clicked (data-ws)', () => {
+  const html = workspacePickerHtml({ names: ['PhD', 'Consulting'], def: 'My documents', preWs: 'Consulting' });
+  assert.match(html, /value="Consulting"[^>]*selected/);
+  assert.ok(!/value=""[^>]*selected/.test(html), 'default is NOT selected when a group is preselected');
+});
+
+test('New Project entry carries the grouping label in workspaceLabel, NEVER in the storage boolean', () => {
+  // On create the sheet spreads moveDocPatch(picked) into the addProject fields. moveDocPatch returns
+  // { workspaceLabel } — the grouping STRING — so the storage boolean `workspace` is never overwritten.
+  const entry = { id: 'p', name: 'P', dataRepo: 'me/hub', workspace: true, ...moveDocPatch('PhD') };
+  const p = addProject([], entry)[0];
+  assert.equal(p.workspaceLabel, 'PhD');           // grouping label is the string
+  assert.equal(p.workspace, true);                 // storage boolean untouched…
+  assert.equal(typeof p.workspace, 'boolean');     // …and STILL a boolean (not a string)
+});
+
+test('New Project with the default workspace writes workspaceLabel:"" and leaves the storage boolean', () => {
+  const entry = { id: 'p', name: 'P', dataRepo: 'me/b-data', workspace: false, ...moveDocPatch('') };
+  const p = addProject([], entry)[0];
+  assert.equal(p.workspaceLabel, '');
+  assert.equal(p.workspace, false);
+  assert.equal(typeof p.workspace, 'boolean');
+});
+
+test('wireStorageInfo toggles the matching info panel when its ⓘ is clicked', () => {
+  // A minimal DOM shim covering exactly the surface wireStorageInfo touches. Faithful to the real handler:
+  // production code (wireStorageInfo) runs against nodes built from the real storageControlHtml markers.
+  const mk = (attrs = {}) => ({
+    _cls: new Set(), dataset: attrs.dataset || {}, hidden: attrs.hidden || false, onclick: null,
+    classList: { add(c) { this._cls.add(c); }, remove(c) { this._cls.delete(c); }, toggle(c) { this._cls.has(c) ? this._cls.delete(c) : this._cls.add(c); }, contains(c) { return this._cls.has(c); } },
+  });
+  const iShared = mk({ dataset: { info: 'shared' } });
+  const iIndiv = mk({ dataset: { info: 'individual' } });
+  const popShared = mk({ dataset: { infoFor: 'shared' }, hidden: true });
+  const popIndiv = mk({ dataset: { infoFor: 'individual' }, hidden: true });
+  const scope = {
+    querySelectorAll(sel) { return sel === '.fn-i' ? [iShared, iIndiv] : []; },
+    querySelector(sel) {
+      const m = /\[data-info-for="(.+?)"\]/.exec(sel);
+      if (m) return m[1] === 'shared' ? popShared : popIndiv;
+      return null;
+    },
+  };
+  wireStorageInfo(scope);
+  assert.equal(popShared.hidden, true);
+  iShared.onclick();                          // click the shared ⓘ
+  assert.equal(popShared.hidden, false);      // its copy is revealed
+  assert.equal(popIndiv.hidden, true);        // the other stays hidden
+  iShared.onclick();                          // click again → hide
+  assert.equal(popShared.hidden, true);
 });

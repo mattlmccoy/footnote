@@ -493,10 +493,10 @@ export async function launch() {
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
       <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true, settings: true });
-    const open = () => projectSheet(list, null);
-    ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });
-    // Per-group new-document tiles (grouped shelves) also open New Project.
-    root.querySelectorAll('.fn-book-new-ws').forEach(b => { b.onclick = open; });
+    const open = (preWs = '') => projectSheet(list, null, account, preWs);
+    ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = () => open(''); });
+    // Per-group new-document tiles (grouped shelves) also open New Project, preselecting THAT group (data-ws).
+    root.querySelectorAll('.fn-book-new-ws').forEach(b => { b.onclick = () => open(b.getAttribute('data-ws') || ''); });
     document.getElementById('fn-chg').onclick = () => { localStorage.removeItem(HUB_KEY); render(); };
     // per-book manage menu (Edit / Remove / Move). The ⋯ button must not open the project.
     list.forEach(p => {
@@ -593,9 +593,9 @@ export async function launch() {
 
   // One sheet for both New (existing=null) and Edit. On edit the comments repo is read-only (it's the
   // project's identity + holds all existing comments) and no repo is created/seeded — only projects.json changes.
-  function projectSheet(list, existing) {
+  function projectSheet(list, existing, account, preWs) {
     if (existing) return editProjectSheet(list, existing);
-    return newProjectSheet(list);
+    return newProjectSheet(list, account, preWs);
   }
 
   // Edit: rename, repoint the source repo, change the noun. Never creates/seeds repos; the comments repo
@@ -721,18 +721,20 @@ export async function launch() {
   // has to know what a repo is. Both repos are auto-named from the project name; power users override under
   // Advanced. mode='local' uploads a .tex (Footnote creates the repo + commits it); 'github'/'overleaf'
   // point at an existing repo.
-  function newProjectSheet(list) {
+  function newProjectSheet(list, account, preWs) {
     let mode = 'local', style = 'workspace', pendingTex = null, pendingFiles = null, detectedLevel = null;
     const wsRepo = hub();   // ONE workspace repo holds every project as a subfolder — no per-paper repos
+    // Workspace picker: the offered names + the default group. `preWs` (the ＋ tile's data-ws) is preselected.
+    // The picked value is the GROUPING label written to `workspaceLabel` at save — NEVER the storage boolean.
+    const wsNames = workspaceNames(list, account);
+    const wsDefault = defaultWorkspaceName(account, hub());
+    let acct = account;   // may gain a workspace via "New workspace…" during save
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
       <div class="fn-sheet-h">New project</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false"></label>
-      <div class="fn-field-lbl">How should this be stored?</div>
-      <div class="fn-seg" id="np-style">
-        <button type="button" class="fn-seg-b on" data-style="workspace">Keep it in my workspace</button>
-        <button type="button" class="fn-seg-b" data-style="independent">Its own repos</button>
-      </div>
+      ${workspacePickerHtml({ names: wsNames, def: wsDefault, preWs })}
+      ${storageControlHtml()}
       <div class="fn-field-lbl" style="margin-top:14px">Where's your writing?</div>
       <div class="fn-seg" id="np-modes">
         <button type="button" class="fn-seg-b on" data-mode="local">On my computer</button>
@@ -745,6 +747,7 @@ export async function launch() {
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
     root.appendChild(scrim);
+    wireStorageInfo(scrim);   // the storage ⓘ toggles reveal the approved copy
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
     const slugPreview = () => projectIdFromName((q('#np-name') && q('#np-name').value.trim()) || 'project');
     const renderPanel = () => {
@@ -846,7 +849,22 @@ export async function launch() {
         // "In Overleaf" (tokenless B1): the picked repo is the Overleaf bridge repo (Overleaf's own GitHub
         // sync target). Record the marker so the owner portal offers "Refresh from Overleaf"; source stays external.
         const olPatch = mode === 'overleaf' ? overleafNewProjectPatch(externalSrc) : null;
-        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun }, ...(olPatch ? { overleaf: olPatch.overleaf } : {}) });
+        // Grouping label from the picker (M4.2). "New workspace…" prompts for a name and persists it to
+        // account.json. The picked NAME goes into `workspaceLabel` (the grouping STRING via moveDocPatch) —
+        // NEVER `workspace` (the storage boolean, set from plan.workspace). Picking the default writes ''.
+        let workspaceLabel = '';
+        const wsSel = q('#np-ws');
+        if (wsSel) {
+          workspaceLabel = wsSel.value;
+          if (workspaceLabel === '__new__') {
+            const raw = (prompt('New workspace name:') || '').trim();
+            if (!raw) return q('#np-err').textContent = 'Name your new workspace, or pick an existing one.';
+            workspaceLabel = raw;
+            acct = addWorkspace(acct, raw);
+            try { await writeAccount({ ...cfg, hubRepo: hub() }, acct, tok()); } catch (e) { console.warn('account:', e.message); }
+          }
+        }
+        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun }, ...moveDocPatch(workspaceLabel), ...(olPatch ? { overleaf: olPatch.overleaf } : {}) });
         q('#np-save').disabled = true;
         // Create every repo the plan needs (workspace repo, or the dedicated data (+ source) repos). createRepo
         // tolerates an already-existing repo (422). Never creates an external source repo the user points at.
