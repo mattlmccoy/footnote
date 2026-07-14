@@ -2,12 +2,12 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage } from './config.js?v=7141042';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage } from './config.js?v=a4e3d20';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
-import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=97d184f';
+import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=96cbbf9';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { overleafMarker, secretName, bridgeUrlHint, conflictSummary } from './overleaf.js?v=e3d7a40';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=d2532a6';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
 import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
