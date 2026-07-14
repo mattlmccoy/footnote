@@ -120,7 +120,19 @@ def land_conflict(prefix, plan, ov_tree, ov_bin, remote_url, branch):
 
 
 def _push_overleaf(clone, merged, binaries, branch):
-    raise NotImplementedError  # implemented in Task M2.1
+    """Write the merged tree into the Overleaf clone, commit, and push to the bridge. Best-effort:
+    a push rejection (someone edited Overleaf meanwhile) leaves GitHub canonical and returns False —
+    the caller then does NOT advance the base, so the next pull reconciles instead of losing the edit.
+    ``clone`` is a working (non-bare) checkout of ``branch``. Returns True iff the remote advanced
+    (or there was nothing to push)."""
+    write_tree(clone, merged, binaries)
+    subprocess.run(["git", "-C", clone, "add", "-A"], check=True)
+    if subprocess.run(["git", "-C", clone, "diff", "--cached", "--quiet"]).returncode == 0:
+        return True
+    subprocess.run(["git", "-C", clone, "-c", "user.email=bot@footnote", "-c", "user.name=footnote",
+                    "commit", "-m", "footnote: apply approved edits"], check=True,
+                   stdout=subprocess.DEVNULL)
+    return subprocess.run(["git", "-C", clone, "push", "origin", f"HEAD:{branch}"]).returncode == 0
 
 
 def sync_project(prefix, remote_url, branch, push_back=False):

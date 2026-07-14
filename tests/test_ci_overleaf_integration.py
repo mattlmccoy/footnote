@@ -176,3 +176,46 @@ def test_non_utf8_text_file_is_byte_preserved(tmp_path):
     out = tmp_path / "out"
     ci_overleaf.write_tree(out, tree, binaries)
     assert (out / "refs.bib").read_bytes() == raw
+
+
+def test_sync_push_back_advances_overleaf(synced_repo, tmp_path, monkeypatch):
+    data, ov_bare = synced_repo
+    (data / "proj" / "source" / "main.tex").write_text("l1\nGHNEW\n")
+    _git(["add", "-A"], data)
+    _git(["commit", "-m", "gh edit"], data)
+
+    monkeypatch.chdir(data)
+    result = ci_overleaf.sync_project("proj/", str(ov_bare), "master", push_back=True)
+    assert result["status"] == "merged" and result["push"] is True
+
+    check = tmp_path / "check"
+    _git(["clone", str(ov_bare), str(check)], tmp_path)
+    assert (check / "main.tex").read_text() == "l1\nGHNEW\n"
+    # both sides now hold the edit -> base advanced
+    assert (data / "proj" / ".overleaf-base" / "main.tex").read_text() == "l1\nGHNEW\n"
+
+
+def test_sync_is_idempotent(synced_repo, tmp_path, monkeypatch):
+    data, ov_bare = synced_repo
+    monkeypatch.chdir(data)
+    result = ci_overleaf.sync_project("proj/", str(ov_bare), "master", push_back=True)
+    assert result["status"] == "noop"
+    assert not (data / "proj" / "overleaf_conflict.json").exists()
+
+
+def test_main_push_back(synced_repo, tmp_path, monkeypatch):
+    data, ov_bare = synced_repo
+    origin = tmp_path / "do.git"
+    _git(["init", "--bare", "-b", "main", str(origin)], tmp_path)
+    _git(["remote", "add", "origin", str(origin)], data)
+    _git(["push", "-u", "origin", "main"], data)
+    (data / "proj" / "source" / "main.tex").write_text("l1\nPB\n")
+    _git(["add", "-A"], data)
+    _git(["commit", "-m", "gh"], data)
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("OVERLEAF_REMOTE_PROJ", str(ov_bare))
+    monkeypatch.setenv("OVERLEAF_PUSH_BACK", "1")
+    ci_overleaf.main()
+    check = tmp_path / "c2"
+    _git(["clone", str(ov_bare), str(check)], tmp_path)
+    assert (check / "main.tex").read_text() == "l1\nPB\n"
