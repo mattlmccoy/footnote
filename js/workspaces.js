@@ -11,8 +11,9 @@ export function defaultWorkspaceName(accountCfg, hubRepo) {
 // excluding the default (which is implicit).
 export function workspaceNames(projects, accountCfg) {
   const cfg = (accountCfg || {}).workspaces || [];
+  const def = defaultWorkspaceName(accountCfg, '');
   const out = [];
-  const push = n => { const v = (n || '').trim(); if (v && !out.includes(v)) out.push(v); };
+  const push = n => { const v = (n || '').trim(); if (v && v !== def && !out.includes(v)) out.push(v); };
   cfg.forEach(push);
   (projects || []).forEach(p => push(p.workspace));
   return out;

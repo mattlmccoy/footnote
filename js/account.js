@@ -18,9 +18,7 @@ export function overleafSealTargets(projects, appCfg) {
   const out = new Set();
   for (const p of projects || []) {
     if (!(p.overleaf && (p.overleaf.bridgeRepo || p.overleaf.projectId))) continue;
-    out.add(p.workspace !== undefined && (p.sourceRepo === '' || p.sourceRepo === ws || !p.sourceRepo) && (p.dataRepo === ws)
-      ? ws
-      : (p.dataRepo || ws));
+    out.add(p.dataRepo || ws);
   }
   return [...out].filter(Boolean);
 }

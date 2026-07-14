@@ -26,6 +26,13 @@ test('workspaceNames: config order unioned with any labels present, default excl
   assert.deepEqual(names, ['PhD', 'Consulting', 'Extra']);
 });
 
+test('a doc labeled with the literal default name folds into the default group (no dup)', () => {
+  const g = groupByWorkspace([{id:'a',workspace:'My documents'},{id:'b'}], { workspaces:[], defaultWorkspace:'My documents' });
+  assert.equal(g.length, 1);
+  assert.deepEqual(g[0].docs.map(d=>d.id), ['a','b']);
+  assert.deepEqual(workspaceNames([{id:'a',workspace:'My documents'},{id:'c',workspace:'PhD'}], { workspaces:[], defaultWorkspace:'My documents' }), ['PhD']);
+});
+
 test('moveDocPatch + defaultWorkspaceName', () => {
   assert.deepEqual(moveDocPatch('Consulting'), { workspace: 'Consulting' });
   assert.deepEqual(moveDocPatch(''), { workspace: '' });                 // back to default
