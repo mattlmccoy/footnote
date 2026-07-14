@@ -144,3 +144,35 @@ def test_main_syncs_only_marked_projects(synced_repo, tmp_path, monkeypatch):
     assert {r["prefix"]: r["status"] for r in results} == {"proj/": "merged"}
     assert (data / "proj" / "source" / "main.tex").read_text() == "PULLED\nl2\n"
     assert (data / "other" / "source" / "x.tex").read_text() == "untouched\n"
+
+
+def test_github_only_edit_is_not_reverted_on_next_sync(synced_repo, tmp_path, monkeypatch):
+    """REGRESSION: pull-only mode (push_back off). A GitHub-side edit to source/ (e.g. staged by the
+    apply-edits pipeline) must survive a second sync — the base snapshot must NOT advance past what
+    Overleaf actually holds, or the edit gets clobbered back to the old text."""
+    data, ov_bare = synced_repo
+    # GitHub edits source; Overleaf unchanged
+    (data / "proj" / "source" / "main.tex").write_text("l1\nGH-EDIT\n")
+    _git(["add", "-A"], data)
+    _git(["commit", "-m", "gh edit"], data)
+    monkeypatch.chdir(data)
+
+    ci_overleaf.sync_project("proj/", str(ov_bare), "master")          # run 1 (pull-only)
+    ci_overleaf.sync_project("proj/", str(ov_bare), "master")          # run 2 must not revert
+
+    assert (data / "proj" / "source" / "main.tex").read_text() == "l1\nGH-EDIT\n"
+    # base did NOT advance to the un-pushed GitHub content (still the last state Overleaf has)
+    assert (data / "proj" / ".overleaf-base" / "main.tex").read_text() == "l1\nl2\n"
+
+
+def test_non_utf8_text_file_is_byte_preserved(tmp_path):
+    """A .bib/.tex that isn't valid UTF-8 (latin-1 accented bytes) must round-trip losslessly, not be
+    corrupted by errors='replace'."""
+    root = tmp_path / "src"
+    root.mkdir()
+    raw = b"@book{k, author={Caf\xe9}}\n"          # 0xE9 = latin-1 'é', invalid UTF-8
+    (root / "refs.bib").write_bytes(raw)
+    tree, binaries = ci_overleaf.read_tree(root)
+    out = tmp_path / "out"
+    ci_overleaf.write_tree(out, tree, binaries)
+    assert (out / "refs.bib").read_bytes() == raw

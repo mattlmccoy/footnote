@@ -35,13 +35,16 @@ def read_tree(root):
         for fn in filenames:
             full = os.path.join(dirpath, fn)
             rel = os.path.relpath(full, root).replace(os.sep, "/")
+            with open(full, "rb") as f:
+                raw = f.read()
             if _is_text(rel):
-                with open(full, "r", encoding="utf-8", errors="replace") as f:
-                    tree[rel] = f.read()
-            else:
-                with open(full, "rb") as f:
-                    tree[rel] = f.read().decode("latin-1")
-                binaries.add(rel)
+                try:
+                    tree[rel] = raw.decode("utf-8")           # line-mergeable text
+                    continue
+                except UnicodeDecodeError:
+                    pass                                       # not valid UTF-8 -> byte-preserve below
+            tree[rel] = raw.decode("latin-1")                  # lossless byte<->str for binaries/non-utf8
+            binaries.add(rel)
     return tree, binaries
 
 
@@ -140,10 +143,15 @@ def sync_project(prefix, remote_url, branch, push_back=False):
         if not plan["pull_needed"] and not plan["push_needed"]:
             return {"status": "noop", "prefix": prefix}
         binaries = (base_bin | gh_bin | ov_bin) & set(plan["merged"])
-        write_tree(src, plan["merged"], binaries)
-        write_tree(base_dir, plan["merged"], binaries)
+        write_tree(src, plan["merged"], binaries)          # GitHub canonical gets the merge (pull side)
+        pushed = False
         if push_back and plan["push_needed"]:
-            _push_overleaf(clone, plan["merged"], binaries, branch)
+            pushed = _push_overleaf(clone, plan["merged"], binaries, branch)
+        # Advance the ancestor snapshot ONLY when the merged state has reached BOTH sides. Otherwise a
+        # GitHub-only edit that never got pushed would look like an Overleaf "revert" next run and
+        # clobber the edit (data loss). If push is still owed, base stays at the last common state.
+        if not plan["push_needed"] or pushed:
+            write_tree(base_dir, plan["merged"], binaries)
         return {"status": "merged", "prefix": prefix,
                 "pull": plan["pull_needed"], "push": plan["push_needed"]}
     finally:
