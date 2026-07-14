@@ -1,0 +1,34 @@
+// tests/workspaces.test.mjs
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from '../js/workspaces.js';
+
+const P = (id, workspace) => ({ id, name: id, workspace, doc: { noun: 'paper' } });
+
+test('groupByWorkspace: one implicit group when no labels (flat, backward-compat)', () => {
+  const groups = groupByWorkspace([P('a'), P('b')], { defaultWorkspace: 'My documents' });
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].name, 'My documents');
+  assert.deepEqual(groups[0].docs.map(d => d.id), ['a', 'b']);
+  assert.equal(groups[0].isOnlyGroup, true);   // caller renders flat (no header) when true
+});
+
+test('groupByWorkspace: multiple labels -> ordered groups; unlabeled -> default', () => {
+  const projects = [P('a', 'PhD'), P('b', 'Consulting'), P('c')];
+  const groups = groupByWorkspace(projects, { workspaces: ['PhD', 'Consulting'], defaultWorkspace: 'My documents' });
+  assert.deepEqual(groups.map(g => g.name), ['PhD', 'Consulting', 'My documents']);   // config order, default last
+  assert.deepEqual(groups.map(g => g.docs.map(d => d.id)), [['a'], ['b'], ['c']]);
+  assert.equal(groups[0].isOnlyGroup, false);
+});
+
+test('workspaceNames: config order unioned with any labels present, default excluded', () => {
+  const names = workspaceNames([P('a', 'PhD'), P('b', 'Extra')], { workspaces: ['PhD', 'Consulting'] });
+  assert.deepEqual(names, ['PhD', 'Consulting', 'Extra']);
+});
+
+test('moveDocPatch + defaultWorkspaceName', () => {
+  assert.deepEqual(moveDocPatch('Consulting'), { workspace: 'Consulting' });
+  assert.deepEqual(moveDocPatch(''), { workspace: '' });                 // back to default
+  assert.equal(defaultWorkspaceName({ defaultWorkspace: 'X' }, 'me/hub'), 'X');
+  assert.equal(defaultWorkspaceName({}, 'me/footnote-projects'), 'My documents');
+});
