@@ -316,17 +316,25 @@ export async function writeProjectPatch(appCfg, projectId, patch, token, fetchIm
 }
 
 // account.json in the hub repo = the account-level config (workspaces list + Overleaf-seal tracking).
+// Return value distinguishes THREE outcomes so callers never rewrite account.json from an unknown baseline:
+//   - a parsed object  → account.json exists and loaded;
+//   - null             → the request SUCCEEDED but there is genuinely no account.json yet (HTTP 404, or
+//                        ok-but-no-content) — a fresh account is the correct baseline to write;
+//   - undefined        → the load itself FAILED (missing token/repo, fetch threw, or a non-404 non-ok status
+//                        like 403/5xx) — "unknown, don't assume empty"; callers must NOT overwrite account.json.
+// Never throws.
 export async function loadAccount(appCfg, token, fetchImpl) {
-  if (!token || !appCfg.hubRepo) return null;
-  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null); if (!f) return null;
+  if (!token || !appCfg.hubRepo) return undefined;                 // can't even attempt → unknown
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null); if (!f) return undefined;
   try {
     const r = await f(`https://api.github.com/repos/${appCfg.hubRepo}/contents/account.json?t=${Date.now()}`,
       { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
-    if (!r || !r.ok) return null;
+    if (r && r.status === 404) return null;                        // genuinely no account.json yet
+    if (!r || !r.ok) return undefined;                            // transient/403/5xx → unknown, don't assume empty
     const d = await r.json();
-    if (typeof d.content !== 'string') return null;
+    if (typeof d.content !== 'string') return null;               // ok but no content → treat as no-account
     return JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, '')))));
-  } catch { return null; }
+  } catch { return undefined; }                                    // fetch/parse threw → unknown
 }
 
 export async function writeAccount(appCfg, account, token, fetchImpl) {

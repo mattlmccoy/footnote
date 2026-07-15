@@ -376,3 +376,36 @@ test('dataRepoReadable: transient error (500) → error', async () => {
   setConfig(normalizeConfig(MIN));
   assert.equal(await dataRepoReadable('tok', async () => ({ ok: false, status: 500 })), 'error');
 });
+
+// ---- loadAccount: distinguish "no account yet" (null) from "load failed" (undefined) so callers never
+//      rewrite account.json from an unknown baseline (data-safety: a transient blip must not wipe workspaces).
+import { loadAccount } from '../js/config.js';
+
+const acctBody = obj => ({ ok: true, status: 200, json: async () => ({ content: btoa(JSON.stringify(obj)) }) });
+
+test('loadAccount: parsed object when account.json exists (HTTP 200)', async () => {
+  const stub = async () => acctBody({ workspaces: ['PhD'], overleaf: { sealedRepos: ['me/hub'], setAt: '2026-07-10' } });
+  const a = await loadAccount({ hubRepo: 'me/hub' }, 'tok', stub);
+  assert.deepEqual(a.workspaces, ['PhD']);
+});
+
+test('loadAccount: null ONLY when the request succeeded but there is genuinely no account.json (404 / no content)', async () => {
+  const four04 = async () => ({ ok: false, status: 404, json: async () => ({}) });
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, 'tok', four04), null);
+  const okNoContent = async () => ({ ok: true, status: 200, json: async () => ({}) });   // 200 but no .content
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, 'tok', okNoContent), null);
+});
+
+test('loadAccount: undefined when the load itself FAILED (403 / 5xx / fetch threw) — unknown, do not assume empty', async () => {
+  const forbidden = async () => ({ ok: false, status: 403, json: async () => ({}) });
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, 'tok', forbidden), undefined);
+  const server = async () => ({ ok: false, status: 500, json: async () => ({}) });
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, 'tok', server), undefined);
+  const threw = async () => { throw new Error('network down'); };
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, 'tok', threw), undefined);
+});
+
+test('loadAccount: undefined (not null) when it cannot even attempt (missing token/repo)', async () => {
+  assert.equal(await loadAccount({ hubRepo: 'me/hub' }, '', async () => acctBody({})), undefined);
+  assert.equal(await loadAccount({}, 'tok', async () => acctBody({})), undefined);
+});

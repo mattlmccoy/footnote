@@ -345,11 +345,19 @@ export async function launch() {
     if (!val || !repo) return;
     try {
       const appCfg = { ...cfg, hubRepo: hub(), workspaceRepo: hub() };
-      const account = await loadAccount(appCfg, tok()).catch(() => null);
-      if (!needsOverleafSeal(repo, account)) return;                     // already sealed → nothing to do
+      // undefined = the account load FAILED (transient/403/5xx) → baseline unknown; null = genuinely no account
+      // yet (a fresh one is the correct baseline); object = loaded.
+      const account = await loadAccount(appCfg, tok());
+      const loadFailed = account === undefined;
+      // Sealing the secret is the primary goal — do it whenever the repo isn't known to be sealed. On a failed
+      // load we can't know what's sealed, so treat the baseline as empty (null) for the guard and just re-seal
+      // (idempotent PUT — harmless). We must NOT record it, though: rewriting account.json from an unknown
+      // baseline would wipe the user's workspaces + prior sealedRepos.
+      if (!needsOverleafSeal(repo, loadFailed ? null : account)) return;   // already sealed → nothing to do
       const pk = await getPublicKey(tok(), repo);
       await putSecret(tok(), pk, sealToBase64, 'OVERLEAF_TOKEN', val, repo);
-      const next = withSealedRepo(account, repo);
+      if (loadFailed) return;                                             // sealed, but never write from unknown baseline
+      const next = withSealedRepo(account, repo);                        // account is null (no-account) or a loaded object
       if (!next.overleaf.setAt) next.overleaf.setAt = new Date().toISOString();
       await writeAccount(appCfg, next, tok());
     } catch (e) { console.warn('overleaf auto-seal:', e.message); }
@@ -965,7 +973,9 @@ export async function launch() {
     const appCfg = { ...cfg, hubRepo: hub(), workspaceRepo: hub() };
     let list = [];
     try { list = await loadProjects(appCfg, tok()); } catch {}
-    let account = await loadAccount(appCfg, tok()).catch(() => null);   // null (404) for existing users → defaults
+    // undefined = load FAILED (transient/403/5xx → unknown baseline, must NOT overwrite account.json); null =
+    // genuinely no account.json yet (404 → a fresh one is correct); object = loaded. loadAccount never throws.
+    let account = await loadAccount(appCfg, tok());
     const draw = () => {
       const acct = normalizeAccount(account);
       // Save targets ALWAYS include the workspace/registry repo, so the token can be saved with zero linked docs
@@ -996,8 +1006,15 @@ export async function launch() {
           const sealed = await sealOverleafIntoRepos(tok(), sealTargets, val,
             { getPublicKey, putSecret, sealFn: sealToBase64 });
           if (input) input.value = '';   // never keep the token in the DOM
+          if (account === undefined) {
+            // The account load FAILED — token is saved + the secret is sealed (the primary goal), but we must NOT
+            // overwrite account.json from an unknown baseline (that would wipe the user's workspaces + sealedRepos).
+            olStatus('Token saved; couldn’t update your workspace list just now — try again.');
+            sealBtn.disabled = false;
+            return;
+          }
           account = { ...normalizeAccount(account), overleaf: { sealedRepos: sealed, setAt: new Date().toISOString() } };
-          await writeAccount(appCfg, account, tok());
+          await writeAccount(appCfg, account, tok());   // reliable baseline (loaded object or genuine no-account)
           draw();   // re-render with the saved/sealed state + fresh expiry check
         } catch (e) {
           olStatus(e.code === 'NOSCOPE' ? 'Your key needs Secrets: write to seal this (regenerate with repo scope).' : e.message);

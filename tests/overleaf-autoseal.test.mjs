@@ -10,6 +10,7 @@ import { createRequire } from 'node:module';
 import { overleafSaveTargets, needsOverleafSeal, withSealedRepo } from '../js/account.js';
 import { sealOverleafIntoRepos } from '../js/hub.js';
 import { getPublicKey, putSecret } from '../js/ghsecrets.js';
+import { loadAccount, writeAccount } from '../js/config.js';
 import { sealToBase64, sealWith } from '../js/vendor/seal.js';
 
 // libsodium globals so sealToBase64() works under Node (same wiring as seal.test.mjs).
@@ -125,6 +126,73 @@ test('(c) backward-compat: no saved token → auto-seal no-ops (no network); alr
 
     // And even with a token, an already-sealed repo is skipped by needsOverleafSeal.
     assert.equal(needsOverleafSeal('me/hub', { overleaf: { sealedRepos: ['me/hub'] } }), false);
+  } finally { globalThis.fetch = saved; globalThis.localStorage = savedLS; }
+});
+
+// The exact ensureOverleafTokenSealed branch logic, run over the REAL loadAccount/getPublicKey/putSecret/
+// writeAccount so the config.js undefined-vs-null contract genuinely drives behavior. Returns whether the
+// secret PUT ran and whether account.json was rewritten.
+async function ensureSealBranch(repo, val, appCfg, token) {
+  let sealed = false, wroteAccount = false;
+  if (!val || !repo) return { sealed, wroteAccount };
+  const account = await loadAccount(appCfg, token);        // undefined=load failed, null=no-account, object=loaded
+  const loadFailed = account === undefined;
+  if (!needsOverleafSeal(repo, loadFailed ? null : account)) return { sealed, wroteAccount };
+  const pk = await getPublicKey(token, repo);
+  await putSecret(token, pk, sealToBase64, 'OVERLEAF_TOKEN', val, repo); sealed = true;
+  if (loadFailed) return { sealed, wroteAccount };          // sealed, but NEVER write from an unknown baseline
+  const next = withSealedRepo(account, repo);
+  await writeAccount(appCfg, next, token); wroteAccount = true;
+  return { sealed, wroteAccount };
+}
+
+test('(d) DATA-SAFETY: a transient account-load failure seals the secret but does NOT rewrite account.json', async () => {
+  const saved = globalThis.fetch, savedLS = globalThis.localStorage;
+  const store = stubLocalStorage(); store.set(OVL_KEY, TOKEN);
+  const calls = [];
+  // account.json GET fails transiently (500) → loadAccount returns undefined. public-key GET + secret PUT ok.
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url), method = (opts.method || 'GET').toUpperCase();
+    calls.push({ url: u, method, body: opts.body || '' });
+    if (/contents\/account\.json/.test(u)) return { ok: false, status: 500, json: async () => ({}) };
+    if (/\/actions\/secrets\/public-key/.test(u)) return { ok: true, status: 200, json: async () => ({ key_id: 'k', key: pubB64 }) };
+    if (/\/actions\/secrets\//.test(u)) return { ok: true, status: 201, text: async () => '' };
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
+  };
+  try {
+    const appCfg = { hubRepo: 'me/hub', workspaceRepo: 'me/hub' };
+    const r = await ensureSealBranch('me/paper2-data', TOKEN, appCfg, 'ghtok');
+    assert.equal(r.sealed, true, 'the secret is still sealed (primary goal)');
+    assert.equal(r.wroteAccount, false, 'account.json is NOT rewritten from an unknown baseline');
+    // Concretely: a secret PUT happened, but NO PUT to account.json (which would wipe workspaces/sealedRepos).
+    assert.ok(calls.some(c => c.method === 'PUT' && /actions\/secrets\/OVERLEAF_TOKEN/.test(c.url)), 'secret PUT ran');
+    assert.ok(!calls.some(c => c.method === 'PUT' && /contents\/account\.json/.test(c.url)), 'NO account.json write');
+    assert.ok(!bodiesJoined(calls).includes(TOKEN), 'raw token absent from every request body');
+  } finally { globalThis.fetch = saved; globalThis.localStorage = savedLS; }
+});
+
+test('(e) genuine no-account (404) DOES write a fresh account.json with the sealed repo', async () => {
+  const saved = globalThis.fetch, savedLS = globalThis.localStorage;
+  const store = stubLocalStorage(); store.set(OVL_KEY, TOKEN);
+  const calls = [];
+  globalThis.fetch = async (url, opts = {}) => {
+    const u = String(url), method = (opts.method || 'GET').toUpperCase();
+    calls.push({ url: u, method, body: opts.body || '' });
+    if (/contents\/account\.json/.test(u) && method === 'GET') return { ok: false, status: 404, json: async () => ({}) };
+    if (/contents\/account\.json/.test(u) && method === 'PUT') return { ok: true, status: 201, json: async () => ({}) };
+    if (/\/actions\/secrets\/public-key/.test(u)) return { ok: true, status: 200, json: async () => ({ key_id: 'k', key: pubB64 }) };
+    if (/\/actions\/secrets\//.test(u)) return { ok: true, status: 201, text: async () => '' };
+    return { ok: true, status: 200, json: async () => ({}), text: async () => '' };
+  };
+  try {
+    const appCfg = { hubRepo: 'me/hub', workspaceRepo: 'me/hub' };
+    const r = await ensureSealBranch('me/paper2-data', TOKEN, appCfg, 'ghtok');
+    assert.equal(r.sealed, true);
+    assert.equal(r.wroteAccount, true, 'a genuine no-account gets a fresh account.json');
+    const put = calls.find(c => c.method === 'PUT' && /contents\/account\.json/.test(c.url));
+    const written = JSON.parse(JSON.parse(put.body).content ? atob(JSON.parse(put.body).content) : '{}');
+    assert.deepEqual(written.overleaf.sealedRepos, ['me/paper2-data']);
+    assert.ok(!bodiesJoined(calls).includes(TOKEN), 'raw token absent from every request body');
   } finally { globalThis.fetch = saved; globalThis.localStorage = savedLS; }
 });
 
