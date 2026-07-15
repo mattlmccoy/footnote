@@ -1075,10 +1075,15 @@ async function replyToComment(id, text){
   try {
     await syncUp();
     if (handled){
+      const jid = 'j_'+Date.now().toString(36);
       const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
-      jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current, comment_ids:[id], revision:true, status:'queued', requested_ts:new Date().toISOString() });
+      jobs.push({ id:jid, type:'apply-edits', chapter:current, comment_ids:[id], revision:true, status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: revision reply '+id);
       flash('Reply sent — Claude will revise this.');
+      // Cloud mode: actively surface the run (like sendJob) so the reply isn't a silent queue — otherwise
+      // the revision job only rides the passive jobs.json push-trigger with no confirmation, which reads as
+      // "the reply never reached Claude". Additive only: no change to what is written to the data repo.
+      if (processingMode(_CFG) === 'cloud') openCloudActivity(jid);
     } else flash('Note added.');
   } catch(e){ flash('Reply saved; sync failed: '+e.message); }
 }
