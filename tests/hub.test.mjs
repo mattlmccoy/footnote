@@ -205,15 +205,14 @@ test('storageControlHtml reads "Shared repo" / "Individual repo" from storagecop
   assert.match(html, /data-style="independent"/);
 });
 
-test('storageControlHtml carries the approved ⓘ copy for both modes', () => {
+test('storageControlHtml shows the default (shared) description + per-option ⓘ preview markers', () => {
   const html = storageControlHtml();
-  assert.ok(html.includes(storageInfo('shared')), 'shared ⓘ copy present');
-  assert.ok(html.includes(storageInfo('individual')), 'individual ⓘ copy present');
-  // Each mode gets its own ⓘ toggle wired to a matching info panel.
+  // One always-visible panel, initialized to the default-selected (shared) copy — no click needed to see it.
+  assert.match(html, /id="np-store-info"/);
+  assert.ok(html.includes(storageInfo('shared')), 'default (shared) copy shown in the panel');
+  // Each option keeps an ⓘ that previews its copy.
   assert.match(html, /data-info="shared"/);
   assert.match(html, /data-info="individual"/);
-  assert.match(html, /data-info-for="shared"/);
-  assert.match(html, /data-info-for="individual"/);
 });
 
 // ---- M4.2: New Project workspace picker ----
@@ -253,30 +252,28 @@ test('New Project with the default workspace writes workspaceLabel:"" and leaves
   assert.equal(typeof p.workspace, 'boolean');
 });
 
-test('wireStorageInfo toggles the matching info panel when its ⓘ is clicked', () => {
-  // A minimal DOM shim covering exactly the surface wireStorageInfo touches. Faithful to the real handler:
-  // production code (wireStorageInfo) runs against nodes built from the real storageControlHtml markers.
-  const mk = (attrs = {}) => ({
-    _cls: new Set(), dataset: attrs.dataset || {}, hidden: attrs.hidden || false, onclick: null,
-    classList: { add(c) { this._cls.add(c); }, remove(c) { this._cls.delete(c); }, toggle(c) { this._cls.has(c) ? this._cls.delete(c) : this._cls.add(c); }, contains(c) { return this._cls.has(c); } },
-  });
+test('wireStorageInfo: the description follows the SELECTED option (updates on select); ⓘ previews the other', () => {
+  // Minimal DOM shim over exactly the surface wireStorageInfo touches (addEventListener + textContent).
+  const mk = (attrs = {}) => {
+    const el = { dataset: attrs.dataset || {}, textContent: '', _l: {}, _on: !!attrs.on,
+      classList: { contains: c => c === 'on' && el._on },
+      addEventListener(ev, fn) { el._l[ev] = fn; },
+      click() { el._l.click && el._l.click({ stopPropagation() {} }); } };
+    return el;
+  };
+  const segShared = mk({ dataset: { style: 'workspace' }, on: true });
+  const segIndiv = mk({ dataset: { style: 'independent' } });
   const iShared = mk({ dataset: { info: 'shared' } });
   const iIndiv = mk({ dataset: { info: 'individual' } });
-  const popShared = mk({ dataset: { infoFor: 'shared' }, hidden: true });
-  const popIndiv = mk({ dataset: { infoFor: 'individual' }, hidden: true });
+  const panel = mk();
   const scope = {
-    querySelectorAll(sel) { return sel === '.fn-i' ? [iShared, iIndiv] : []; },
-    querySelector(sel) {
-      const m = /\[data-info-for="(.+?)"\]/.exec(sel);
-      if (m) return m[1] === 'shared' ? popShared : popIndiv;
-      return null;
-    },
+    querySelector(sel) { return sel === '#np-store-info' ? panel : (sel === '#np-style .fn-seg-b.on' ? segShared : null); },
+    querySelectorAll(sel) { return sel === '#np-style .fn-seg-b' ? [segShared, segIndiv] : (sel === '.fn-i' ? [iShared, iIndiv] : []); },
   };
   wireStorageInfo(scope);
-  assert.equal(popShared.hidden, true);
-  iShared.onclick();                          // click the shared ⓘ
-  assert.equal(popShared.hidden, false);      // its copy is revealed
-  assert.equal(popIndiv.hidden, true);        // the other stays hidden
-  iShared.onclick();                          // click again → hide
-  assert.equal(popShared.hidden, true);
+  assert.equal(panel.textContent, storageInfo('shared'));       // initialized to the selected (shared)
+  segIndiv.click();                                             // SELECT Individual
+  assert.equal(panel.textContent, storageInfo('individual'));   // description updates on selection (the bug fix)
+  iShared.click();                                             // ⓘ previews shared without selecting
+  assert.equal(panel.textContent, storageInfo('shared'));
 });
