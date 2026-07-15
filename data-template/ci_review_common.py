@@ -434,6 +434,27 @@ def finding_to_comment(finding, cid):
     }
 
 
+def agent_findings_as_review(job, outputs_by_agent, ts, idgen, cap_total=None):
+    """Agent outputs → Claude-review comments for reviews/<ch>.json (each via finding_to_comment), capped
+    to cap_total across all agents, PLUS a follow-up apply-edits job that drafts a proposed edit per finding
+    so findings arrive STAGED (flag + proposed-edit-upfront). Returns (comments, followup_job|None). The
+    follow-up reuses the existing apply-edits machinery — no new drafting code. idgen(key) supplies ids
+    (int index for comments, 'apply' for the job). Pure; inputs not mutated."""
+    flat = []
+    for agent in (job.get("agents") or []):
+        for spec in (outputs_by_agent.get(agent) or []):
+            flat.append(spec)
+    if cap_total is not None:
+        flat = flat[:max(0, cap_total)]
+    comments = [finding_to_comment(spec, idgen(i)) for i, spec in enumerate(flat)]
+    followup = None
+    if comments:
+        followup = {"id": idgen("apply"), "type": "apply-edits", "chapter": job.get("chapter"),
+                    "comment_ids": [c["id"] for c in comments], "source": "review",
+                    "status": "queued", "requested_ts": ts}
+    return comments, followup
+
+
 def comment_source_edit(comment):
     """The {find, replacement} source edit for a comment, from ``edit`` (apply-direct) or
     ``source_edit`` (Claude apply-edits), or None if it carries neither."""
