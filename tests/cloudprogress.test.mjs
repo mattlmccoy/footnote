@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseEvents, groupByComment, isTerminal, summaryLine } from '../js/cloudprogress.js';
+import { parseEvents, groupByComment, isTerminal, summaryLine, pendingBefore, queueWaitText } from '../js/cloudprogress.js';
 
 const JL = [
   { job: 'j1', seq: 0, phase: 'read', say: 'Starting apply for 2 comments.' },
@@ -95,4 +95,37 @@ test('usageGauge shows progress toward the call cap, with severity', () => {
   assert.equal(usageGauge({ calls: 65, cap_calls: 100 }).level, 'warn');
   assert.equal(usageGauge({ calls: 95, cap_calls: 100 }).level, 'high');
   assert.equal(usageGauge({ calls: 200, cap_calls: 100 }).pct, 100);   // clamps
+});
+
+test('pendingBefore counts queued jobs ahead of the watched job, excluding finished ones', () => {
+  const jobs = [
+    { id:'a', status:'done' },
+    { id:'b', status:'queued', chapter:'ch_intro' },
+    { id:'c', status:'queued', chapter:'ch_concl' },   // watched
+    { id:'d', status:'queued' },
+  ];
+  const info = pendingBefore(jobs, 'c');
+  assert.equal(info.found, true);
+  assert.equal(info.ahead, 1);                 // only 'b' is pending & ahead ('a' is done)
+  assert.equal(info.current.id, 'b');          // front of the pending queue
+});
+
+test('pendingBefore: watched job is first pending → ahead 0, no current', () => {
+  const info = pendingBefore([{ id:'a', status:'merged' }, { id:'b', status:'queued' }], 'b');
+  assert.deepEqual({ found:info.found, ahead:info.ahead, current:info.current }, { found:true, ahead:0, current:null });
+});
+
+test('pendingBefore: unknown job id → not found', () => {
+  assert.equal(pendingBefore([{ id:'a', status:'queued' }], 'zzz').found, false);
+});
+
+test('queueWaitText: 0 ahead or not found → plain waiting text', () => {
+  assert.equal(queueWaitText({ found:true, ahead:0, current:null }), 'Waiting for the cloud job to start…');
+  assert.equal(queueWaitText({ found:false, ahead:0, current:null }), 'Waiting for the cloud job to start…');
+});
+
+test('queueWaitText: N ahead with a label → informative', () => {
+  assert.equal(queueWaitText({ found:true, ahead:2, current:{ chapter:'ch_concl' } }, j => 'Chapter 9'),
+    '2 jobs ahead — processing Chapter 9…');
+  assert.equal(queueWaitText({ found:true, ahead:1, current:{ chapter:'x' } }), '1 job ahead…');
 });

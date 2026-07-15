@@ -9,7 +9,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel, sourceMarkerRepo, resolveSourceInfo } from './config.js?v=f58d6b0';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge } from './cloudprogress.js?v=770202d';
+import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge, pendingBefore, queueWaitText } from './cloudprogress.js?v=770202d';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=2122f4d';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
@@ -1940,6 +1940,17 @@ function openCloudActivity(jobId){
       const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('progress/' + jobId + '.jsonl')}?t=${Date.now()}`,
         { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
       if (r.ok){ const evs = parseEvents(await r.text()); render(evs); if (isTerminal(evs)){ stop = true; return; } }
+      else {
+        // No events yet: the job may be correctly queued BEHIND another (apply is serialized). Show its
+        // queue position so a normal wait doesn't read as a hang. Read-only on jobs.json.
+        const jr = await getJson(tok(), 'jobs.json').catch(() => ({ json: null }));
+        const info = pendingBefore(Array.isArray(jr.json) ? jr.json : [], jobId);
+        const head = panel.querySelector('#ca-head');
+        if (head) head.textContent = queueWaitText(info, j => {
+          try { return j && j.chapter ? unitLabel(chMeta(j.chapter), UNIT) : (j && j.type) || ''; }
+          catch (e2) { return (j && j.chapter) || ''; }
+        });
+      }
     } catch(e){}
     if (!stop) setTimeout(poll, 2500);
   }
