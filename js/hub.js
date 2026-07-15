@@ -196,14 +196,16 @@ const OWNER_FG_LIST = OWNER_KEY_PERMISSIONS
 // an ⓘ that toggles a below-control info panel with the approved storageInfo copy (see wireStorageInfo).
 export function storageControlHtml() {
   const seg = (style, kind) =>
-    `<button type="button" class="fn-seg-b${style === 'workspace' ? ' on' : ''}" data-style="${style}">${esc(storageLabel(kind))}<span class="fn-i" data-info="${kind}" role="button" tabindex="0" aria-label="About ${esc(storageLabel(kind))}">ⓘ</span></button>`;
-  const pop = kind => `<div class="fn-info-pop" data-info-for="${kind}" hidden>${esc(storageInfo(kind))}</div>`;
+    `<button type="button" class="fn-seg-b${style === 'workspace' ? ' on' : ''}" data-style="${style}">${esc(storageLabel(kind))}<span class="fn-i" data-info="${kind}" role="button" tabindex="0" aria-label="Preview ${esc(storageLabel(kind))}">ⓘ</span></button>`;
+  // ONE always-visible description panel that reflects the SELECTED option (initialized to the default-selected
+  // "shared"). It updates the instant you pick Shared vs Individual — no need to click the ⓘ (which now just
+  // previews the OTHER option's copy without selecting it).
   return `<div class="fn-field-lbl">How should this be stored?</div>
       <div class="fn-seg fn-seg-info" id="np-style">
         ${seg('workspace', 'shared')}
         ${seg('independent', 'individual')}
       </div>
-      ${pop('shared')}${pop('individual')}`;
+      <div class="fn-info-pop" id="np-store-info">${esc(storageInfo('shared'))}</div>`;
 }
 
 // The "Workspace ▾" picker at the top of the New Project sheet: the default group (empty value), every
@@ -218,20 +220,20 @@ export function workspacePickerHtml({ names = [], def = 'My documents', preWs = 
         <select id="np-ws">${opt('', def || 'My documents')}${groups}<option value="__new__">＋ New workspace…</option></select></label>`;
 }
 
-// Wire the storage ⓘ buttons within `scope` (the New Project scrim): clicking an ⓘ toggles the matching
-// info panel's visibility, hiding any other. Pure DOM plumbing over the markers storageControlHtml emits.
+// Wire the storage description panel within `scope` (the New Project scrim). The panel (#np-store-info) always
+// shows the SELECTED option's copy: selecting Shared/Individual updates it immediately (via addEventListener so
+// it coexists with the sheet's own selection handler), and the ⓘ PREVIEWS the other option's copy without
+// selecting. Pure DOM plumbing over the markers storageControlHtml emits.
 export function wireStorageInfo(scope) {
-  const pops = kind => scope.querySelector(`[data-info-for="${kind}"]`);
-  scope.querySelectorAll('.fn-i').forEach(i => {
-    i.onclick = () => {
-      const kind = i.dataset.info;
-      const target = pops(kind);
-      if (!target) return;
-      const show = target.hidden;                 // toggle this one; hide the others
-      ['shared', 'individual'].forEach(k => { const p = pops(k); if (p) p.hidden = true; });
-      target.hidden = !show;
-    };
-  });
+  const panel = scope.querySelector('#np-store-info');
+  const kindOf = seg => (seg.dataset.style === 'workspace' ? 'shared' : 'individual');
+  const setInfo = kind => { if (panel) panel.textContent = storageInfo(kind); };
+  const selected = scope.querySelector('#np-style .fn-seg-b.on');
+  setInfo(selected ? kindOf(selected) : 'shared');            // initialize to the selected option
+  scope.querySelectorAll('#np-style .fn-seg-b').forEach(seg =>
+    seg.addEventListener('click', () => setInfo(kindOf(seg))));   // selecting updates the description
+  scope.querySelectorAll('.fn-i').forEach(i =>
+    i.addEventListener('click', e => { e.stopPropagation(); setInfo(i.dataset.info); }));  // ⓘ previews the other
 }
 
 async function hubSha(hub, t) {
