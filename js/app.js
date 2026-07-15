@@ -9,7 +9,7 @@ import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from 
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { loadConfig, dataRepoParts, loadChapters, dataRepoReadable, loadProjects, resolveProject, setConfig, writeProjectPatch, assistantEnabled, sendMenuActions, dataPath, advisorInviteUrl, sourceLabel, sourceMarkerRepo, resolveSourceInfo } from './config.js?v=f58d6b0';
 import { processingMode, processingModePatch, modeMarker, modePill } from './processingmode.js?v=3407908';
-import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge, pendingBefore, queueWaitText } from './cloudprogress.js?v=770202d';
+import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usageTotals, usageLine, usageCostNote, usageGauge, pendingBefore, queueWaitText } from './cloudprogress.js?v=641fe51';
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=2122f4d';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
