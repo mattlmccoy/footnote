@@ -999,10 +999,22 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
                 say = f"{len(findings)} finding(s)" if findings else "no issues found"
                 aev("agent", say, agent=a, status="ok", usage=dict(ausage),
                     findings=R.finding_summaries(findings))
-            # route findings to the "AI Review Agents" reviewer so the owner gets the accept/decline flow
-            # (FROM REVIEWERS), same as human feedback — not buried as owner-side open comments.
-            fc = R.agent_findings_comments(job, outputs, _now_iso(), idgen=lambda i, j=jid: f"a_{j}_{i}")
-            route_findings_to_reviewer(prefix, ch, fc, _now_iso())
+            # Findings become Claude-authored review comments in reviews/<ch>.json (rendered inline as
+            # "Claude · review" cards via the normal comment card) and a follow-up apply-edits job drafts a
+            # proposed edit for each through the existing, fully-tested apply pipeline — so a finding arrives
+            # STAGED (flag + proposed-edit-upfront) with a green-bubble response the author Approves/Denies.
+            # Capped to keep per-run cost bounded (each finding costs one edit draft). NOTE: the follow-up is
+            # drained as a normal apply-edits job; the app dispatches apply after run-agents so it runs
+            # promptly (the drain's own jobs.json writeback is [skip ci] and would not self-trigger).
+            fcap = int(os.environ.get("REVIEW_FINDINGS_CAP", "8"))
+            findings_comments, followup = R.agent_findings_as_review(
+                job, outputs, _now_iso(), idgen=lambda k, j=jid: f"a_{j}_{k}", cap_total=fcap)
+            if findings_comments:
+                # APPEND to the existing review — NEVER overwrite live comments.
+                merged = {**review, "comments": [*(review.get("comments") or []), *findings_comments]}
+                _write_json(R.review_path(prefix, ch), merged)
+                if followup:
+                    jobs = [*jobs, followup]
             if ausage.get("errors") and ausage.get("calls", 0) == 0:
                 aev("usage", "Claude did not run — the connection or credentials failed (check your Claude "
                     "token or remaining credits). Nothing was charged.", status="conflict", usage=dict(ausage))
