@@ -315,6 +315,31 @@ export async function writeProjectPatch(appCfg, projectId, patch, token, fetchIm
   return next.map(normalizeProject);
 }
 
+// account.json in the hub repo = the account-level config (workspaces list + Overleaf-seal tracking).
+export async function loadAccount(appCfg, token, fetchImpl) {
+  if (!token || !appCfg.hubRepo) return null;
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null); if (!f) return null;
+  try {
+    const r = await f(`https://api.github.com/repos/${appCfg.hubRepo}/contents/account.json?t=${Date.now()}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' });
+    if (!r || !r.ok) return null;
+    const d = await r.json();
+    if (typeof d.content !== 'string') return null;
+    return JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, '')))));
+  } catch { return null; }
+}
+
+export async function writeAccount(appCfg, account, token, fetchImpl) {
+  const f = fetchImpl || (typeof fetch !== 'undefined' ? fetch : null); if (!f) throw new Error('no fetch');
+  const url = `https://api.github.com/repos/${appCfg.hubRepo}/contents/account.json`;
+  const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
+  let sha; try { const cur = await f(`${url}?t=${Date.now()}`, { headers: h, cache: 'no-store' }); if (cur && cur.ok) sha = (await cur.json()).sha; } catch {}
+  const content = btoa(unescape(encodeURIComponent(JSON.stringify(account, null, 2))));
+  const r = await f(url, { method: 'PUT', headers: { ...h, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message: 'account: update workspaces/settings', content, ...(sha ? { sha } : {}) }) });
+  if (!r || !r.ok) throw new Error(`account.json write ${r ? r.status : 'no response'}`);
+}
+
 // The live chapter list is discovered by parsing the adopter's document and stored as chapters.json
 // in the DATA repo (not shipped in config). Fetch it with the reader's token. Returns [] when there is
 // no token or no chapters.json yet (fresh instance → the app shows the "import your document" state).

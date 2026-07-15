@@ -2,7 +2,10 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage } from './config.js?v=eadc2bc';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=eadc2bc';
+import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=0000000';
+import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=0000000';
+import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue } from './account.js?v=0000000';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=8850a5c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
@@ -64,6 +67,110 @@ export function onboardingStep({ hasToken, hasHub, hasProjects } = {}) {
   return { index, total: ONBOARD_STEPS.length, label: ONBOARD_STEPS[index] };
 }
 
+// ---- M3: account Settings — pure builders + seal orchestration (unit-tested) ----
+
+// GitHub-access status for the Settings page. Takes the token but keeps only a boolean — the token value is
+// NEVER stored or rendered (the user's own credential). Copy is plain-English, no token echo.
+export function githubAccessStatus(token) {
+  const connected = !!(token && String(token).trim());
+  return connected
+    ? { connected: true, label: 'Connected', detail: 'Your GitHub token is set in this browser and sent only to GitHub.' }
+    : { connected: false, label: 'Not connected', detail: 'Connect a GitHub token to use Footnote.' };
+}
+
+// Overleaf-seal view for the Settings page, derived from account.json. `now` is injected so the 1-year
+// expiry test is deterministic. Never carries the token — only which repos it was sealed into and when.
+export function overleafSettingsView(account, now) {
+  const a = normalizeAccount(account);
+  const setAt = a.overleaf.setAt || '';
+  return {
+    sealedRepos: a.overleaf.sealedRepos,
+    setAt,
+    sealed: a.overleaf.sealedRepos.length > 0 || !!setAt,
+    expiryDue: overleafExpiryDue(setAt, now || new Date()),
+  };
+}
+
+// Seal the account-wide Overleaf token into EACH target repo (one public-key fetch + one sealed PUT per repo),
+// reusing ghsecrets/getPublicKey+putSecret (injected as deps so this is unit-testable without the network).
+// Returns ONLY the list of repos sealed — the raw token value is never returned, stored, or logged.
+export async function sealOverleafIntoRepos(token, repos, value, deps) {
+  const { getPublicKey, putSecret, sealFn } = deps;
+  const sealed = [];
+  for (const repo of repos) {
+    const pk = await getPublicKey(token, repo);
+    await putSecret(token, pk, sealFn, 'OVERLEAF_TOKEN', value, repo);
+    sealed.push(repo);
+  }
+  return sealed;
+}
+
+// Pretty date for the "sealed on" line (empty string when never sealed).
+function sealedOnLabel(setAt) {
+  if (!setAt) return '';
+  const d = new Date(setAt);
+  return isNaN(d) ? setAt : d.toISOString().slice(0, 10);
+}
+
+// The Settings page inner HTML (three sections). Pure string builder so the sections, empty states, and the
+// 1-year renewal reminder are unit-tested; the DOM wiring (buttons/handlers) lives in renderAccountSettings.
+// NOTE: this NEVER receives or renders the Overleaf/GitHub token value — only booleans, repo names, dates.
+export function settingsInnerHtml({ github, overleaf, names, sealTargets, workspaceRepo }) {
+  const esch = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const targets = sealTargets || [];
+  const wsNames = names || [];
+
+  const gh = `<section class="fn-set-sec">
+      <div class="fn-set-h">GitHub access</div>
+      <div class="fn-set-row"><span class="fn-set-dot ${github.connected ? 'on' : 'off'}"></span>
+        <div><div class="fn-set-lbl">${esch(github.label)}</div><div class="fn-set-sub">${esch(github.detail)}</div></div></div>
+      ${github.connected ? '' : `<button class="fn-btn fn-btn-primary" id="fn-set-connect">Connect GitHub</button>`}
+    </section>`;
+
+  const olTargets = targets.length
+    ? `Sealed into ${targets.length} repo${targets.length === 1 ? '' : 's'}: ${targets.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}.`
+    : `No Overleaf-linked documents yet — link a document to Overleaf first, then seal your token here.`;
+  const olState = overleaf.sealed
+    ? `<div class="fn-set-sub">Token sealed${overleaf.setAt ? ` on <span class="fn-mono">${esch(sealedOnLabel(overleaf.setAt))}</span>` : ''}${overleaf.sealedRepos.length ? ` into ${overleaf.sealedRepos.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}` : ''}.</div>`
+    : `<div class="fn-set-sub">Not set yet.</div>`;
+  const olExpiry = overleaf.expiryDue
+    ? `<div class="fn-set-warn">⚠ Your Overleaf token was sealed over a year ago. Overleaf git tokens expire after a year — generate a new one and re-seal it below to keep sync working.</div>`
+    : '';
+  const ol = `<section class="fn-set-sec">
+      <div class="fn-set-h">Overleaf token</div>
+      <div class="fn-set-sub">One Overleaf git-bridge token, sealed into every Overleaf-linked document's repo so cloud sync can run. ${olTargets}</div>
+      ${olState}
+      ${olExpiry}
+      <div class="fn-set-inline">
+        <input id="fn-set-oltok" type="password" placeholder="Overleaf git-bridge token" autocomplete="off" spellcheck="false" ${targets.length ? '' : 'disabled'}>
+        <button class="fn-btn fn-btn-primary" id="fn-set-olseal" ${targets.length ? '' : 'disabled'}>Seal for my workspaces</button>
+      </div>
+      <div class="fn-hint" id="fn-set-olstatus"></div>
+    </section>`;
+
+  const wsRows = wsNames.length
+    ? wsNames.map(n => `<div class="fn-set-wsrow" data-ws="${esch(n)}">
+          <span class="fn-set-wsname">${esch(n)}</span>
+          <span class="fn-set-wsact">
+            <button class="fn-link" data-ws-rename="${esch(n)}">Rename</button>
+            <button class="fn-link fn-set-wsdel" data-ws-del="${esch(n)}">Delete</button>
+          </span></div>`).join('')
+    : `<div class="fn-set-sub">No workspaces yet. Add one to group your documents on the shelf.</div>`;
+  const ws = `<section class="fn-set-sec">
+      <div class="fn-set-h">Workspaces</div>
+      <div class="fn-set-sub">Group your documents on the shelf. Deleting a workspace keeps its documents — they move back to your default group.</div>
+      <div class="fn-set-wslist">${wsRows}</div>
+      <div class="fn-set-inline">
+        <input id="fn-set-wsnew" placeholder="New workspace name" spellcheck="false">
+        <button class="fn-btn" id="fn-set-wsadd">＋ Add workspace</button>
+      </div>
+    </section>`;
+
+  return `<div class="fn-head fn-reveal"><span class="fn-eyebrow">Account</span><h1 class="fn-h1">Settings</h1>
+      <button class="fn-link" id="fn-set-back">← Back to library</button></div>
+    <div class="fn-settings fn-reveal">${gh}${ol}${ws}</div>`;
+}
+
 // ---- I/O + DOM (browser only) ----
 
 const API = 'https://api.github.com';
@@ -80,6 +187,52 @@ const FG_URL = fineGrainedUrl('Footnote');
 const OWNER_FG_LIST = OWNER_KEY_PERMISSIONS
   .filter(p => p.level === 'Read and write')
   .map(p => `<b>${p.name}</b>`).join(', ');
+
+// ---- M4: New Project storage relabel + ⓘ, and the workspace picker (pure HTML builders + one wiring fn) ----
+
+// The storage segmented control for the New Project sheet. Wording comes ONLY from storagecopy.js (single
+// source of truth): "Shared repo" (data-style="workspace") vs "Individual repo" (data-style="independent") —
+// the internal style values are UNCHANGED, so storage selection behaves exactly as before. Each label carries
+// an ⓘ that toggles a below-control info panel with the approved storageInfo copy (see wireStorageInfo).
+export function storageControlHtml() {
+  const seg = (style, kind) =>
+    `<button type="button" class="fn-seg-b${style === 'workspace' ? ' on' : ''}" data-style="${style}">${esc(storageLabel(kind))}<span class="fn-i" data-info="${kind}" role="button" tabindex="0" aria-label="About ${esc(storageLabel(kind))}">ⓘ</span></button>`;
+  const pop = kind => `<div class="fn-info-pop" data-info-for="${kind}" hidden>${esc(storageInfo(kind))}</div>`;
+  return `<div class="fn-field-lbl">How should this be stored?</div>
+      <div class="fn-seg fn-seg-info" id="np-style">
+        ${seg('workspace', 'shared')}
+        ${seg('independent', 'individual')}
+      </div>
+      ${pop('shared')}${pop('individual')}`;
+}
+
+// The "Workspace ▾" picker at the top of the New Project sheet: the default group (empty value), every
+// offered workspace name, then "New workspace…". `preWs` (the ＋ tile's data-ws, or the most-recent group)
+// is preselected. The picked value is the GROUPING label — spread into the new project as `workspaceLabel`
+// (never `workspace`, the storage boolean) at save time.
+export function workspacePickerHtml({ names = [], def = 'My documents', preWs = '' } = {}) {
+  const sel = (preWs || '').trim();
+  const opt = (value, label) => `<option value="${esc(value)}"${value === sel ? ' selected' : ''}>${esc(label)}</option>`;
+  const groups = (names || []).map(n => opt(n, n)).join('');
+  return `<label class="fn-field">Workspace <span class="fn-sub">which group this document lives in</span>
+        <select id="np-ws">${opt('', def || 'My documents')}${groups}<option value="__new__">＋ New workspace…</option></select></label>`;
+}
+
+// Wire the storage ⓘ buttons within `scope` (the New Project scrim): clicking an ⓘ toggles the matching
+// info panel's visibility, hiding any other. Pure DOM plumbing over the markers storageControlHtml emits.
+export function wireStorageInfo(scope) {
+  const pops = kind => scope.querySelector(`[data-info-for="${kind}"]`);
+  scope.querySelectorAll('.fn-i').forEach(i => {
+    i.onclick = () => {
+      const kind = i.dataset.info;
+      const target = pops(kind);
+      if (!target) return;
+      const show = target.hidden;                 // toggle this one; hide the others
+      ['shared', 'individual'].forEach(k => { const p = pops(k); if (p) p.hidden = true; });
+      target.hidden = !show;
+    };
+  });
+}
 
 async function hubSha(hub, t) {
   try { const r = await fetch(`${API}/repos/${hub}/contents/projects.json?t=${Date.now()}`, { headers: hdr(t), cache: 'no-store' });
@@ -185,9 +338,11 @@ export async function launch() {
 
   function frame(inner, opts = {}) {
     const avatar = _user.avatar ? `<img class="fn-avatar" src="${esc(_user.avatar)}" alt="" referrerpolicy="no-referrer">` : '';
+    const gear = opts.settings ? `<button class="fn-link fn-gear" id="fn-settings" title="Settings" aria-label="Account settings">⚙</button>` : '';
     const userbar = opts.signout ? `<div class="fn-userbar">
         ${avatar}<span class="fn-hi">Hi, ${esc(greetName(_user))}</span>
         <a class="fn-link" href="tutorials/index.html">Help</a>
+        ${gear}
         <button class="fn-link" id="fn-signout">Disconnect</button>
       </div>` : '';
     root.innerHTML = `<div class="fn-shell">
@@ -200,6 +355,8 @@ export async function launch() {
     </div>`;
     const so = document.getElementById('fn-signout');
     if (so) so.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
+    const gs = document.getElementById('fn-settings');
+    if (gs) gs.onclick = () => renderAccountSettings();
   }
 
   function connect() {
@@ -279,56 +436,86 @@ export async function launch() {
     };
   }
 
-  async function projects() {
-    frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
-    let list = [];
-    try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
-    // Each project is a face-out book standing on the shelf; its spine color comes from its position.
-    const books = list.map((p, i) => {
-      // Show WHERE the LaTeX lives (source), not the comments repo — that's what identifies a document
-      // on the shelf. projectStorage reports it honestly for every shape (uploaded / external / workspace).
-      const st = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, p);
-      const srcLine = st.source.mode === 'uploaded'
-        ? (st.source.inWorkspace ? 'uploaded · in workspace' : `uploaded · ${st.source.repo}`)
-        : (st.source.repo ? st.source.repo : 'no source yet');
-      return `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
+  // One face-out book on the shelf. `i` is the project's position in the FULL list so the spine color stays
+  // stable regardless of which workspace group it renders under. Markup is unchanged from the flat shelf;
+  // the storage/Overleaf badges are additive.
+  function bookCard(p, i) {
+    // Show WHERE the LaTeX lives (source), not the comments repo — that's what identifies a document
+    // on the shelf. projectStorage reports it honestly for every shape (uploaded / external / workspace).
+    const st = projectStorage({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, p);
+    const srcLine = st.source.mode === 'uploaded'
+      ? (st.source.inWorkspace ? 'uploaded · in workspace' : `uploaded · ${st.source.repo}`)
+      : (st.source.repo ? st.source.repo : 'no source yet');
+    const sb = storageBadge(st.source.inWorkspace ? 'shared' : 'individual');
+    const ol = p.overleaf ? `<span class="fn-badge fn-badge-ol" title="Overleaf-linked">🔗 Overleaf</span>` : '';
+    const badges = `<span class="fn-book-badges"><span class="fn-badge fn-badge-${sb.kind}" title="${esc(sb.label)}">${sb.glyph} ${esc(sb.label)}</span>${ol}</span>`;
+    return `<a class="fn-book fn-reveal" style="--i:${i};--spine:${spineColor(i)}" href="${projectHref(cfg, p.id)}">
         <span class="fn-book-spine"></span>
         <button class="fn-book-manage" data-mid="${esc(p.id)}" title="Manage project" aria-label="Manage ${esc(p.name)}">⋯</button>
         <span class="fn-book-type">${esc(texFileName(p.doc.noun).replace(/\.tex$/, ''))}<span class="fn-ext">.tex</span></span>
         <span class="fn-book-title">${esc(p.name)}</span>
         <span class="fn-book-repo" title="source">${esc(srcLine)}</span>
+        ${badges}
         <span class="fn-book-go">open</span></a>`;
-    }).join('');
-    // "Add a book" tile stands at the end of the shelf, same footprint as the books.
-    const addTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
+  }
+
+  async function projects() {
+    frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
+    let list = [];
+    try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
+    // Account-level config (workspaces list). Absent (404 → null) for existing users, which groups the whole
+    // list into ONE default workspace → isOnlyGroup=true → the flat shelf renders exactly as before.
+    const account = await loadAccount({ ...cfg, hubRepo: hub() }, tok()).catch(() => null);
+    // The grouping label lives in the DEDICATED string field `workspaceLabel` (read by groupByWorkspace),
+    // distinct from `project.workspace` (the storage boolean read by projectStorage). No projection needed:
+    // pass the real list. `i` is the project's position in the full list so spine colors stay stable.
+    const card = p => bookCard(p, list.indexOf(p));
+    const groups = groupByWorkspace(list, account);
+    // "Add a book" tile — the flat (single-group) shelf keeps today's exact tile (id=fn-new); grouped shelves
+    // get one per group, carrying data-ws so New Project can default to that workspace (M4).
+    const flatAddTile = `<button class="fn-book fn-book-new fn-reveal" style="--i:${list.length}" id="fn-new">
         <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
+    const groupAddTile = ws => `<button class="fn-book fn-book-new fn-reveal fn-book-new-ws" style="--i:${list.length}" data-ws="${esc(ws)}">
+        <span class="fn-book-plus">＋</span><span class="fn-book-newlabel"><span class="bs">\\</span>newproject</span><span class="fn-book-newhint">start a document</span></button>`;
+    // Single group (existing user / one workspace): the flat shelf, byte-compatible with today (no headers).
+    const shelfHtml = groups.length === 1
+      ? `<div class="fn-shelf">${groups[0].docs.map(card).join('')}${flatAddTile}</div><div class="fn-shelf-board"></div>`
+      : groups.map(g => {
+          const cards = g.docs.map(card).join('');
+          const header = `<div class="fn-wshead"><span class="fn-wsname">${esc(g.name)}</span><span class="fn-wscount">${g.docs.length} doc${g.docs.length === 1 ? '' : 's'}</span></div>`;
+          return `${header}<div class="fn-shelf">${cards}${groupAddTile(g.name)}</div><div class="fn-shelf-board"></div>`;
+        }).join('');
     frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
       ${list.length
-        ? `<div class="fn-shelf">${books}${addTile}</div><div class="fn-shelf-board"></div>`
+        ? shelfHtml
         : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
              <h2 class="fn-empty-h">Your shelf is empty</h2>
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
-      <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true });
-    const open = () => projectSheet(list, null);
-    ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = open; });
+      <div class="fn-ws">Workspace <span class="fn-mono">${esc(hub())}</span> · <button class="fn-link" id="fn-chg">change</button></div>`, { signout: true, settings: true });
+    const open = (preWs = '') => projectSheet(list, null, account, preWs);
+    ['fn-new', 'fn-new2'].forEach(id => { const b = document.getElementById(id); if (b) b.onclick = () => open(''); });
+    // Per-group new-document tiles (grouped shelves) also open New Project, preselecting THAT group (data-ws).
+    root.querySelectorAll('.fn-book-new-ws').forEach(b => { b.onclick = () => open(b.getAttribute('data-ws') || ''); });
     document.getElementById('fn-chg').onclick = () => { localStorage.removeItem(HUB_KEY); render(); };
-    // per-book manage menu (Edit / Remove). The ⋯ button must not open the project.
+    // per-book manage menu (Edit / Remove / Move). The ⋯ button must not open the project.
     list.forEach(p => {
       const mb = root.querySelector(`.fn-book-manage[data-mid="${cssId(p.id)}"]`);
-      if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list); };
+      if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list, account); };
     });
   }
 
   function cssId(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'); }
 
   function closeManageMenu() { const m = document.getElementById('fn-menu'); if (m) m.remove(); }
-  function openManageMenu(anchor, project, list) {
+  function openManageMenu(anchor, project, list, account) {
     closeManageMenu();
     const menu = document.createElement('div'); menu.className = 'fn-menu'; menu.id = 'fn-menu';
     // Legacy projects (own repos) can be folded into the one workspace repo; workspace projects can't re-migrate.
+    // NB: `project.workspace` here is the STORAGE boolean (consolidated-repo flag), NOT the grouping label.
     const canMigrate = !project.workspace && hub() && project.dataRepo && project.dataRepo !== hub();
     menu.innerHTML = `<button class="fn-menu-item" data-act="edit">Edit details</button>
+      <button class="fn-menu-item" data-act="move">Move to workspace ▸</button>
       ${canMigrate ? `<button class="fn-menu-item" data-act="migrate">Move into workspace repo</button>` : ''}
       <button class="fn-menu-item fn-menu-danger" data-act="remove">Remove from library</button>`;
     document.body.appendChild(menu);
@@ -336,8 +523,44 @@ export async function launch() {
     menu.style.top = (r.bottom + 6) + 'px';
     menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
     menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
+    // stopPropagation: showMoveTargets rebuilds this menu's innerHTML in place, which detaches the clicked
+    // button; without this the document-level outside-click handler would then see a detached target and
+    // close the menu before the targets pane is visible.
+    menu.querySelector('[data-act="move"]').onclick = e => { e.stopPropagation(); showMoveTargets(menu, project, list, account); };
     menu.querySelector('[data-act="remove"]').onclick = () => { closeManageMenu(); confirmRemove(list, project); };
     if (canMigrate) menu.querySelector('[data-act="migrate"]').onclick = () => { closeManageMenu(); confirmMigrate(list, project); };
+  }
+
+  // Second pane of the manage menu: pick a workspace to move this document into. The grouping label is
+  // persisted to the DEDICATED `workspaceLabel` field (never `project.workspace`, the storage boolean), so a
+  // move only re-groups the card — it never changes where the document's repos/comments live.
+  function showMoveTargets(menu, project, list, account) {
+    const names = workspaceNames(list, account);
+    const def = defaultWorkspaceName(account, hub());
+    const current = typeof project.workspaceLabel === 'string' ? project.workspaceLabel.trim() : '';
+    const row = (label, value, isCurrent) =>
+      `<button class="fn-menu-item${isCurrent ? ' fn-menu-cur' : ''}" data-mv="${esc(value)}"${isCurrent ? ' disabled' : ''}>${isCurrent ? '✓ ' : ''}${esc(label)}</button>`;
+    const items = [row(def, '', current === '')]
+      .concat(names.map(n => row(n, n, current === n)))
+      .concat([`<button class="fn-menu-item fn-menu-new" data-mv-new="1">＋ New workspace…</button>`]);
+    menu.innerHTML = `<div class="fn-menu-head">Move to workspace</div>${items.join('')}`;
+    const doMove = async (name, isNew) => {
+      closeManageMenu();
+      try {
+        if (isNew) {
+          const raw = (prompt('New workspace name:') || '').trim();
+          if (!raw) return render();
+          name = raw;
+          const next = addWorkspace(account, name);
+          await writeAccount({ ...cfg, hubRepo: hub() }, next, tok());
+        }
+        // moveDocPatch returns { workspaceLabel } — the grouping label only; the storage boolean is untouched.
+        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, project.id, moveDocPatch(name), tok());
+        render();
+      } catch (e) { console.warn('move:', e.message); render(); }
+    };
+    menu.querySelectorAll('[data-mv]').forEach(b => { if (!b.disabled) b.onclick = () => doMove(b.getAttribute('data-mv'), false); });
+    const nb = menu.querySelector('[data-mv-new]'); if (nb) nb.onclick = () => doMove('', true);
   }
 
   // Copy a legacy project's own source + data repos INTO the one workspace repo under <id>/, then flip it
@@ -370,9 +593,9 @@ export async function launch() {
 
   // One sheet for both New (existing=null) and Edit. On edit the comments repo is read-only (it's the
   // project's identity + holds all existing comments) and no repo is created/seeded — only projects.json changes.
-  function projectSheet(list, existing) {
+  function projectSheet(list, existing, account, preWs) {
     if (existing) return editProjectSheet(list, existing);
-    return newProjectSheet(list);
+    return newProjectSheet(list, account, preWs);
   }
 
   // Edit: rename, repoint the source repo, change the noun. Never creates/seeds repos; the comments repo
@@ -469,6 +692,10 @@ export async function launch() {
       const id = q('#ovl-id').value.trim(); if (!id) return ost('Enter your Overleaf project id first.', true);
       try { q('#ovl-save').disabled = true; ost('Saving Overleaf link…');
         await commitSourceFile(wsRepo, `${v.id}/overleaf.json`, JSON.stringify(overleafMarker(id, q('#ovl-branch').value), null, 2), tok(), `overleaf: link ${v.id}`);
+        // Also record project.overleaf on the project list so the 🔗 badge + account seal-targets recognize
+        // this B2 (edit-sheet) linkage uniformly with B1 (New Project "In Overleaf"). Additive: the file
+        // marker above (which ci_overleaf.py needs) is untouched; this only mirrors it into projects.json.
+        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, v.id, { overleaf: overleafMarker(id, q('#ovl-branch').value) }, tok());
         ost('Linked. Seal your token, then Pull.');
       } catch (e) { ost(e.message, true); } finally { q('#ovl-save').disabled = false; }
     };
@@ -498,18 +725,20 @@ export async function launch() {
   // has to know what a repo is. Both repos are auto-named from the project name; power users override under
   // Advanced. mode='local' uploads a .tex (Footnote creates the repo + commits it); 'github'/'overleaf'
   // point at an existing repo.
-  function newProjectSheet(list) {
+  function newProjectSheet(list, account, preWs) {
     let mode = 'local', style = 'workspace', pendingTex = null, pendingFiles = null, detectedLevel = null;
     const wsRepo = hub();   // ONE workspace repo holds every project as a subfolder — no per-paper repos
+    // Workspace picker: the offered names + the default group. `preWs` (the ＋ tile's data-ws) is preselected.
+    // The picked value is the GROUPING label written to `workspaceLabel` at save — NEVER the storage boolean.
+    const wsNames = workspaceNames(list, account);
+    const wsDefault = defaultWorkspaceName(account, hub());
+    let acct = account;   // may gain a workspace via "New workspace…" during save
     const scrim = document.createElement('div'); scrim.className = 'fn-scrim';
     scrim.innerHTML = `<div class="fn-sheet fn-reveal">
       <div class="fn-sheet-h">New project</div>
       <label class="fn-field">Project name<input id="np-name" placeholder="My Thesis" spellcheck="false"></label>
-      <div class="fn-field-lbl">How should this be stored?</div>
-      <div class="fn-seg" id="np-style">
-        <button type="button" class="fn-seg-b on" data-style="workspace">Keep it in my workspace</button>
-        <button type="button" class="fn-seg-b" data-style="independent">Its own repos</button>
-      </div>
+      ${workspacePickerHtml({ names: wsNames, def: wsDefault, preWs })}
+      ${storageControlHtml()}
       <div class="fn-field-lbl" style="margin-top:14px">Where's your writing?</div>
       <div class="fn-seg" id="np-modes">
         <button type="button" class="fn-seg-b on" data-mode="local">On my computer</button>
@@ -522,6 +751,7 @@ export async function launch() {
       <div class="fn-err" id="np-err"></div>
       <div class="fn-actions fn-right"><button class="fn-btn" id="np-x">Cancel</button><button class="fn-btn fn-btn-primary" id="np-save">Create project</button></div></div>`;
     root.appendChild(scrim);
+    wireStorageInfo(scrim);   // the storage ⓘ toggles reveal the approved copy
     const q = s => scrim.querySelector(s), close = () => scrim.remove();
     const slugPreview = () => projectIdFromName((q('#np-name') && q('#np-name').value.trim()) || 'project');
     const renderPanel = () => {
@@ -623,7 +853,22 @@ export async function launch() {
         // "In Overleaf" (tokenless B1): the picked repo is the Overleaf bridge repo (Overleaf's own GitHub
         // sync target). Record the marker so the owner portal offers "Refresh from Overleaf"; source stays external.
         const olPatch = mode === 'overleaf' ? overleafNewProjectPatch(externalSrc) : null;
-        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun }, ...(olPatch ? { overleaf: olPatch.overleaf } : {}) });
+        // Grouping label from the picker (M4.2). "New workspace…" prompts for a name and persists it to
+        // account.json. The picked NAME goes into `workspaceLabel` (the grouping STRING via moveDocPatch) —
+        // NEVER `workspace` (the storage boolean, set from plan.workspace). Picking the default writes ''.
+        let workspaceLabel = '';
+        const wsSel = q('#np-ws');
+        if (wsSel) {
+          workspaceLabel = wsSel.value;
+          if (workspaceLabel === '__new__') {
+            const raw = (prompt('New workspace name:') || '').trim();
+            if (!raw) return q('#np-err').textContent = 'Name your new workspace, or pick an existing one.';
+            workspaceLabel = raw;
+            acct = addWorkspace(acct, raw);
+            try { await writeAccount({ ...cfg, hubRepo: hub() }, acct, tok()); } catch (e) { console.warn('account:', e.message); }
+          }
+        }
+        const next = addProject(list, { id, name, dataRepo, sourceRepo: plan.sourceRepo, workspace: plan.workspace, uploaded: plan.uploaded, doc: { noun, unitNoun }, ...moveDocPatch(workspaceLabel), ...(olPatch ? { overleaf: olPatch.overleaf } : {}) });
         q('#np-save').disabled = true;
         // Create every repo the plan needs (workspace repo, or the dedicated data (+ source) repos). createRepo
         // tolerates an already-existing repo (422). Never creates an external source repo the user points at.
@@ -670,6 +915,94 @@ export async function launch() {
       } catch (e) { q('#np-err').textContent = e.message; q('#np-save').disabled = false; }
     };
     setTimeout(() => q('#np-name').focus(), 30);
+  }
+
+  // Account Settings page (launcher-level ⚙). Three sections: GitHub access (status of the ghpat token),
+  // the account-wide Overleaf token (sealed into every Overleaf-linked doc's repo + a 1-year renewal
+  // reminder), and the Workspaces manager (add / rename / delete→reassign to the default group). account.json
+  // is written LAZILY — only when the user actually saves a change here (existing users who never open this
+  // see no account.json and zero behavior change). The Overleaf token is the user's own credential: it is
+  // prompted, sealed, and discarded — never stored in projects.json/account.json, logged, or rendered back.
+  async function renderAccountSettings() {
+    const appCfg = { ...cfg, hubRepo: hub(), workspaceRepo: hub() };
+    let list = [];
+    try { list = await loadProjects(appCfg, tok()); } catch {}
+    let account = await loadAccount(appCfg, tok()).catch(() => null);   // null (404) for existing users → defaults
+    const draw = () => {
+      const acct = normalizeAccount(account);
+      const sealTargets = overleafSealTargets(list, appCfg);
+      frame(settingsInnerHtml({
+        github: githubAccessStatus(tok()),
+        overleaf: overleafSettingsView(account, new Date()),
+        names: acct.workspaces,
+        sealTargets,
+        workspaceRepo: hub(),
+      }), { signout: true, settings: true });
+
+      const back = document.getElementById('fn-set-back'); if (back) back.onclick = () => render();
+      const conn = document.getElementById('fn-set-connect'); if (conn) conn.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
+
+      // ---- Overleaf: seal the token into every target repo, then persist account.json.overleaf ----
+      const olStatus = m => { const s = document.getElementById('fn-set-olstatus'); if (s) s.textContent = m; };
+      const sealBtn = document.getElementById('fn-set-olseal');
+      if (sealBtn) sealBtn.onclick = async () => {
+        const input = document.getElementById('fn-set-oltok');
+        const val = (input && input.value || '').trim();
+        if (!val) return olStatus('Paste your Overleaf git-bridge token first.');
+        if (!sealTargets.length) return olStatus('Link a document to Overleaf first — nothing to seal into yet.');
+        try {
+          sealBtn.disabled = true; olStatus(`Sealing into ${sealTargets.length} repo${sealTargets.length === 1 ? '' : 's'}…`);
+          const sealed = await sealOverleafIntoRepos(tok(), sealTargets, val,
+            { getPublicKey, putSecret, sealFn: sealToBase64 });
+          if (input) input.value = '';   // never keep the token in the DOM
+          account = { ...normalizeAccount(account), overleaf: { sealedRepos: sealed, setAt: new Date().toISOString() } };
+          await writeAccount(appCfg, account, tok());
+          draw();   // re-render with the sealed state + fresh expiry check
+        } catch (e) {
+          olStatus(e.code === 'NOSCOPE' ? 'Your key needs Secrets: write to seal this (regenerate with repo scope).' : e.message);
+          sealBtn.disabled = false;
+        }
+      };
+
+      // ---- Workspaces: add / rename / delete(→reassign docs to default) — all persisted via writeAccount ----
+      const addBtn = document.getElementById('fn-set-wsadd');
+      if (addBtn) addBtn.onclick = async () => {
+        const input = document.getElementById('fn-set-wsnew');
+        const name = (input && input.value || '').trim();
+        if (!name) return;
+        try { addBtn.disabled = true; account = addWorkspace(account, name); await writeAccount(appCfg, account, tok()); draw(); }
+        catch (e) { console.warn('add workspace:', e.message); addBtn.disabled = false; }
+      };
+      root.querySelectorAll('[data-ws-rename]').forEach(b => b.onclick = async () => {
+        const oldName = b.getAttribute('data-ws-rename');
+        const raw = (prompt('Rename workspace:', oldName) || '').trim();
+        if (!raw || raw === oldName) return;
+        try {
+          // Rename = re-point every doc in the group + swap the name in account.workspaces (order preserved).
+          const docs = list.filter(p => (typeof p.workspaceLabel === 'string' ? p.workspaceLabel.trim() : '') === oldName);
+          for (const p of docs) await writeProjectPatch(appCfg, p.id, moveDocPatch(raw), tok());
+          const acct = normalizeAccount(account);
+          acct.workspaces = acct.workspaces.map(w => (w === oldName ? raw : w));
+          account = acct; await writeAccount(appCfg, account, tok());
+          list = await loadProjects(appCfg, tok()).catch(() => list);
+          draw();
+        } catch (e) { console.warn('rename workspace:', e.message); draw(); }
+      });
+      root.querySelectorAll('[data-ws-del]').forEach(b => b.onclick = async () => {
+        const name = b.getAttribute('data-ws-del');
+        const docs = list.filter(p => (typeof p.workspaceLabel === 'string' ? p.workspaceLabel.trim() : '') === name);
+        if (!confirm(docs.length
+          ? `Delete workspace “${name}”? Its ${docs.length} document${docs.length === 1 ? '' : 's'} move back to your default group (nothing is deleted).`
+          : `Delete workspace “${name}”?`)) return;
+        try {
+          for (const p of docs) await writeProjectPatch(appCfg, p.id, moveDocPatch(''), tok());   // reassign to default
+          account = removeWorkspace(account, name); await writeAccount(appCfg, account, tok());
+          list = await loadProjects(appCfg, tok()).catch(() => list);
+          draw();
+        } catch (e) { console.warn('delete workspace:', e.message); draw(); }
+      });
+    };
+    draw();
   }
 
   // Remove = unregister only. It never deletes the comments repo or the document on GitHub — the confirm

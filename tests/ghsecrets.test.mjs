@@ -1,6 +1,37 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, permissionFromError, applyRunLabel } from '../js/ghsecrets.js';
+import { PROVIDERS, detectProvider, genKey, isScopeError, aiSecretsPlan, claudeConnectionStatus, permissionFromError, applyRunLabel, getPublicKey, putSecret } from '../js/ghsecrets.js';
+
+// M3: getPublicKey/putSecret gained an OPTIONAL trailing `repo` arg so the account-wide OVERLEAF_TOKEN can
+// be sealed into MULTIPLE repos (each Overleaf-linked doc's repo). Absent → today's behavior (the data repo
+// from slug(), exercised by every existing call site + kept green by the full suite). These stub
+// globalThis.fetch and assert the explicit-repo target URL + sealed (never raw) body.
+test('getPublicKey targets an explicit repo when given', async () => {
+  const savedFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, opts) => { calls.push(String(url)); return { ok: true, status: 200, json: async () => ({ key_id: 'kid', key: 'pk' }) }; };
+  try {
+    const pk = await getPublicKey('tok', 'me/target-repo');
+    assert.equal(calls[0], 'https://api.github.com/repos/me/target-repo/actions/secrets/public-key');
+    assert.deepStrictEqual(pk, { key_id: 'kid', key: 'pk' });
+  } finally { globalThis.fetch = savedFetch; }
+});
+
+test('putSecret PUTs a sealed secret into an explicit repo, never the raw value', async () => {
+  const savedFetch = globalThis.fetch;
+  const calls = [];
+  globalThis.fetch = async (url, opts) => { calls.push({ url: String(url), opts }); return { ok: true, status: 200, text: async () => '' }; };
+  try {
+    const seal = (key, value) => 'SEALED(' + value + ')';   // stand-in for sealToBase64
+    await putSecret('tok', { key: 'pk', key_id: 'kid' }, seal, 'OVERLEAF_TOKEN', 'super-secret', 'me/target-repo');
+    assert.equal(calls[0].url, 'https://api.github.com/repos/me/target-repo/actions/secrets/OVERLEAF_TOKEN');
+    assert.equal(calls[0].opts.method, 'PUT');
+    const body = JSON.parse(calls[0].opts.body);
+    assert.equal(body.key_id, 'kid');
+    assert.equal(body.encrypted_value, 'SEALED(super-secret)');   // sealed ciphertext, not the raw token
+    assert.ok(!calls[0].opts.body.includes('"super-secret"'));    // the raw value is never sent verbatim
+  } finally { globalThis.fetch = savedFetch; }
+});
 
 // After the owner applies review decisions, the apply.yml workflow processes the queue on GitHub.
 // applyRunLabel turns a workflow-run snapshot into a plain-English status so a queued job never looks
