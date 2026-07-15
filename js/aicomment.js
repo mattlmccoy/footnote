@@ -44,3 +44,14 @@ export function findingCardState(c) {
     status: (c && c.status) || 'open',
   };
 }
+
+// A Claude-authored proactive review comment (the finding model, stored in reviews/<ch>.json with a
+// staged edit already drafted so it arrives ready to Approve/Deny).
+export function isClaudeReview(c) {
+  return !!c && c.author === 'claude' && c.source === 'review';
+}
+// Neutral predicate for the reviewer portal: keep only owner/reviewer-authored comments. Deliberately
+// phrased WITHOUT assistant terms so advisor.js stays grep-clean while still hiding Claude-review comments.
+export function isOwnerOrReviewer(c) {
+  return !!c && !isClaudeReview(c);
+}
