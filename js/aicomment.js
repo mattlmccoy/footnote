@@ -23,3 +23,24 @@ export function buildAdvisorClaudeJob({ id, chapter, commentId, advisorId, cid, 
   if (n) { job.revision = true; job.revise_note = n; }
   return job;
 }
+
+// Split an advisor-comment list into Claude findings (isAiComment) vs human reviewer comments.
+// Pure — used by the owner portal so findings render inline while reviewers stay in the reviewers list.
+export function partitionAdvisorComments(list) {
+  const findings = [], reviewers = [];
+  for (const c of (list || [])) (isAiComment(c) ? findings : reviewers).push(c);
+  return { findings, reviewers };
+}
+
+// Per-comment display state for a finding card — never a chapter/shared flag (fixes findings all
+// showing as "submitted"). Pure.
+export function findingCardState(c) {
+  const cl = (c && c.claude) || {};
+  return {
+    acted: !!(c && c.sent),
+    staged: !!(c && c.staged_edit) || (c && c.status === 'staged'),
+    conflict: !!cl.conflict || (c && c.status === 'conflict'),
+    dismissed: !!(c && c.resolution && c.resolution.state === 'declined'),
+    status: (c && c.status) || 'open',
+  };
+}
