@@ -5,7 +5,7 @@
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=98c897b';
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=48fa24b';
 import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=d7cc02b';
-import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue } from './account.js?v=7dc30bd';
+import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue, overleafSaveTargets, needsOverleafSeal, withSealedRepo } from './account.js?v=0000000';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=c823c55';
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=9f27b8e';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
@@ -128,22 +128,27 @@ export function settingsInnerHtml({ github, overleaf, names, sealTargets, worksp
     </section>`;
 
   const olTargets = targets.length
-    ? `Sealed into ${targets.length} repo${targets.length === 1 ? '' : 's'}: ${targets.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}.`
-    : `No Overleaf-linked documents yet — link a document to Overleaf first, then seal your token here.`;
+    ? `It will be sealed into ${targets.length} document repo${targets.length === 1 ? '' : 's'} now (${targets.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}), and every new Overleaf document connects automatically.`
+    : `Save it now even before you link any Overleaf document — new Overleaf documents then connect automatically.`;
+  // When a token is saved locally, lead with the auto-connect assurance. The token value is NEVER rendered.
+  const olSaved = overleaf.tokenSaved
+    ? `<div class="fn-set-sub">Overleaf token saved — new documents connect automatically.</div>`
+    : '';
   const olState = overleaf.sealed
     ? `<div class="fn-set-sub">Token sealed${overleaf.setAt ? ` on <span class="fn-mono">${esch(sealedOnLabel(overleaf.setAt))}</span>` : ''}${overleaf.sealedRepos.length ? ` into ${overleaf.sealedRepos.map(r => `<span class="fn-mono">${esch(r)}</span>`).join(', ')}` : ''}.</div>`
-    : `<div class="fn-set-sub">Not set yet.</div>`;
+    : (overleaf.tokenSaved ? '' : `<div class="fn-set-sub">Not set yet.</div>`);
   const olExpiry = overleaf.expiryDue
     ? `<div class="fn-set-warn">⚠ Your Overleaf token was sealed over a year ago. Overleaf git tokens expire after a year — generate a new one and re-seal it below to keep sync working.</div>`
     : '';
   const ol = `<section class="fn-set-sec">
       <div class="fn-set-h">Overleaf token</div>
-      <div class="fn-set-sub">One Overleaf git-bridge token, sealed into every Overleaf-linked document's repo so cloud sync can run. ${olTargets}</div>
+      <div class="fn-set-sub">One Overleaf git-bridge token, sealed into your document repos so cloud sync can run. ${olTargets}</div>
+      ${olSaved}
       ${olState}
       ${olExpiry}
       <div class="fn-set-inline">
-        <input id="fn-set-oltok" type="password" placeholder="Overleaf git-bridge token" autocomplete="off" spellcheck="false" ${targets.length ? '' : 'disabled'}>
-        <button class="fn-btn fn-btn-primary" id="fn-set-olseal" ${targets.length ? '' : 'disabled'}>Seal for my workspaces</button>
+        <input id="fn-set-oltok" type="password" placeholder="Overleaf git-bridge token" autocomplete="off" spellcheck="false">
+        <button class="fn-btn fn-btn-primary" id="fn-set-olseal">Save Overleaf token</button>
       </div>
       <div class="fn-hint" id="fn-set-olstatus"></div>
     </section>`;
@@ -176,6 +181,10 @@ export function settingsInnerHtml({ github, overleaf, names, sealTargets, worksp
 const API = 'https://api.github.com';
 const HUB_KEY = 'footnote:hub';
 const TOK_KEY = 'ghpat';
+// The account-wide Overleaf git-bridge token, stored locally (mirrors the GitHub `ghpat` token) so it can be
+// saved once and re-sealed into any newly linked document's repo without re-prompting. It is the user's own
+// credential — only ever passed to putSecret as a sealed value; NEVER logged or rendered into the DOM.
+const OVL_KEY = 'footnote:overleaftoken';
 const hdr = t => ({ Authorization: `Bearer ${t}`, Accept: 'application/vnd.github+json' });
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 // The Owner key. Classic repo + workflow is one-click AND correctly scoped (repo → Contents + Secrets +
@@ -322,7 +331,29 @@ export async function launch() {
   const cfg = await loadConfig();
   const root = document.getElementById('app') || document.body;
   const tok = () => localStorage.getItem(TOK_KEY);
+  const overleafToken = () => localStorage.getItem(OVL_KEY);
+  const setOverleafToken = (v) => localStorage.setItem(OVL_KEY, v);
   const hub = () => localStorage.getItem(HUB_KEY) || cfg.hubRepo || '';
+
+  // Auto-connect: once the account Overleaf token is saved (Settings), seal it into a newly linked document's
+  // repo so linking any doc needs no manual "Seal token" step. Best-effort — a seal failure NEVER blocks the
+  // link (wrapped in try/catch). No-ops when no token is saved (backward-compatible: the manual per-project
+  // seal still works) or when `repo` is already sealed. The token is only ever passed to putSecret as a sealed
+  // value; it is never logged (console.warn carries only the error message, never the token).
+  async function ensureOverleafTokenSealed(repo) {
+    const val = overleafToken();
+    if (!val || !repo) return;
+    try {
+      const appCfg = { ...cfg, hubRepo: hub(), workspaceRepo: hub() };
+      const account = await loadAccount(appCfg, tok()).catch(() => null);
+      if (!needsOverleafSeal(repo, account)) return;                     // already sealed → nothing to do
+      const pk = await getPublicKey(tok(), repo);
+      await putSecret(tok(), pk, sealToBase64, 'OVERLEAF_TOKEN', val, repo);
+      const next = withSealedRepo(account, repo);
+      if (!next.overleaf.setAt) next.overleaf.setAt = new Date().toISOString();
+      await writeAccount(appCfg, next, tok());
+    } catch (e) { console.warn('overleaf auto-seal:', e.message); }
+  }
   document.documentElement.style.setProperty('--accent', cfg.brand.accent);
 
   // Derive the real GitHub username from the token so defaults aren't the "your-github-username"
@@ -698,7 +729,9 @@ export async function launch() {
         // this B2 (edit-sheet) linkage uniformly with B1 (New Project "In Overleaf"). Additive: the file
         // marker above (which ci_overleaf.py needs) is untouched; this only mirrors it into projects.json.
         await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, v.id, { overleaf: overleafMarker(id, q('#ovl-branch').value) }, tok());
-        ost('Linked. Seal your token, then Pull.');
+        // If the account Overleaf token is already saved, auto-seal it into this doc's repo (no manual step).
+        await ensureOverleafTokenSealed(wsRepo);
+        ost(overleafToken() ? 'Linked and connected — your saved token is sealed here. Pull when ready.' : 'Linked. Seal your token, then Pull.');
       } catch (e) { ost(e.message, true); } finally { q('#ovl-save').disabled = false; }
     };
     q('#ovl-token').onclick = async () => {
@@ -907,6 +940,9 @@ export async function launch() {
         }
         q('#np-err').textContent = 'Saving…';
         await writeProjects(hub(), tok(), next);
+        // If this new document is Overleaf-linked and the account token is already saved, auto-seal it into the
+        // doc's data repo (where the sync CI runs) so no manual "Seal token" step is needed. Best-effort.
+        if (mode === 'overleaf') await ensureOverleafTokenSealed(dataRepo);
         if (renderBlocked) {   // project is created, but the reading view can't build until the token is fixed
           render();            // still show the new project on the shelf
           q('#np-save').disabled = false;
@@ -932,10 +968,12 @@ export async function launch() {
     let account = await loadAccount(appCfg, tok()).catch(() => null);   // null (404) for existing users → defaults
     const draw = () => {
       const acct = normalizeAccount(account);
-      const sealTargets = overleafSealTargets(list, appCfg);
+      // Save targets ALWAYS include the workspace/registry repo, so the token can be saved with zero linked docs
+      // and auto-covers every shared-repo Overleaf document.
+      const sealTargets = overleafSaveTargets(list, appCfg);
       frame(settingsInnerHtml({
         github: githubAccessStatus(tok()),
-        overleaf: overleafSettingsView(account, new Date()),
+        overleaf: { ...overleafSettingsView(account, new Date()), tokenSaved: !!overleafToken() },
         names: acct.workspaces,
         sealTargets,
         workspaceRepo: hub(),
@@ -944,22 +982,23 @@ export async function launch() {
       const back = document.getElementById('fn-set-back'); if (back) back.onclick = () => render();
       const conn = document.getElementById('fn-set-connect'); if (conn) conn.onclick = () => { localStorage.removeItem(TOK_KEY); render(); };
 
-      // ---- Overleaf: seal the token into every target repo, then persist account.json.overleaf ----
+      // ---- Overleaf: store the token locally + seal it into every target repo (the workspace repo is always a
+      // target, so this works with ZERO linked docs), then persist account.json.overleaf. ----
       const olStatus = m => { const s = document.getElementById('fn-set-olstatus'); if (s) s.textContent = m; };
       const sealBtn = document.getElementById('fn-set-olseal');
       if (sealBtn) sealBtn.onclick = async () => {
         const input = document.getElementById('fn-set-oltok');
         const val = (input && input.value || '').trim();
         if (!val) return olStatus('Paste your Overleaf git-bridge token first.');
-        if (!sealTargets.length) return olStatus('Link a document to Overleaf first — nothing to seal into yet.');
         try {
-          sealBtn.disabled = true; olStatus(`Sealing into ${sealTargets.length} repo${sealTargets.length === 1 ? '' : 's'}…`);
+          sealBtn.disabled = true; olStatus(`Saving your Overleaf token${sealTargets.length ? ` and sealing into ${sealTargets.length} repo${sealTargets.length === 1 ? '' : 's'}` : ''}…`);
+          setOverleafToken(val);   // retain the raw token locally (own credential) so new docs auto-connect
           const sealed = await sealOverleafIntoRepos(tok(), sealTargets, val,
             { getPublicKey, putSecret, sealFn: sealToBase64 });
           if (input) input.value = '';   // never keep the token in the DOM
           account = { ...normalizeAccount(account), overleaf: { sealedRepos: sealed, setAt: new Date().toISOString() } };
           await writeAccount(appCfg, account, tok());
-          draw();   // re-render with the sealed state + fresh expiry check
+          draw();   // re-render with the saved/sealed state + fresh expiry check
         } catch (e) {
           olStatus(e.code === 'NOSCOPE' ? 'Your key needs Secrets: write to seal this (regenerate with repo scope).' : e.message);
           sealBtn.disabled = false;

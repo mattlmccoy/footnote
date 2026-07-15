@@ -194,6 +194,35 @@ test('settingsInnerHtml shows the 1-year renewal reminder only when the seal is 
   assert.ok(!/expire soon|please renew|renew your Overleaf/i.test(fresh));
 });
 
+test('settingsInnerHtml: Save Overleaf token button is ALWAYS enabled, even with zero seal targets', () => {
+  const html = settingsInnerHtml({
+    github: githubAccessStatus('ghp_x'),
+    overleaf: overleafSettingsView(null, new Date('2026-07-14')),
+    names: [], sealTargets: [], workspaceRepo: 'me/hub',    // zero Overleaf docs
+  });
+  // the button carries the new label and no `disabled` attribute
+  const btn = html.match(/<button[^>]*id="fn-set-olseal"[^>]*>[^<]*<\/button>/)[0];
+  assert.match(btn, /Save Overleaf token/);
+  assert.ok(!/disabled/.test(btn), 'save button is not disabled with zero targets');
+  const input = html.match(/<input[^>]*id="fn-set-oltok"[^>]*>/)[0];
+  assert.ok(!/disabled/.test(input), 'token input is not disabled with zero targets');
+});
+
+test('settingsInnerHtml: when the token is saved, the auto-connect help line is shown (token value never rendered)', () => {
+  const html = settingsInnerHtml({
+    github: githubAccessStatus('ghp_x'),
+    overleaf: { ...overleafSettingsView({ overleaf: { sealedRepos: ['me/hub'], setAt: '2026-07-10' } }, new Date('2026-07-14')), tokenSaved: true },
+    names: [], sealTargets: ['me/hub'], workspaceRepo: 'me/hub',
+  });
+  assert.match(html, /new documents connect automatically/i);
+  const notSaved = settingsInnerHtml({
+    github: githubAccessStatus('ghp_x'),
+    overleaf: { ...overleafSettingsView(null, new Date('2026-07-14')), tokenSaved: false },
+    names: [], sealTargets: [], workspaceRepo: 'me/hub',
+  });
+  assert.ok(!/new documents connect automatically/i.test(notSaved));
+});
+
 // ---- M4.1: New Project storage relabel (Shared repo / Individual repo) + ⓘ copy ----
 
 test('storageControlHtml reads "Shared repo" / "Individual repo" from storagecopy (single source of truth)', () => {
