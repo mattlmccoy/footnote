@@ -1,4 +1,4 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved } from './model.js?v=f0898b1';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount } from './model.js?v=f0898b1';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=ec910f6';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=d47929c';
@@ -2332,7 +2332,7 @@ async function loadOwnerOutline(){
   loadAdvisorComments('__outline__').then(() => renderOwnerOutline(data));   // pull advisor outline comments into the rail + refresh node badges
 }
 function renderOwnerOutline(data){
-  const cnt = (label, sec) => review.comments.concat(advisorComments).filter(c => c.anchor?.quote===label && c.anchor?.section===sec).length;   // count your notes AND advisor comments on this node
+  const cnt = (label, sec) => nodeActiveCommentCount(review.comments.concat(advisorComments), label, sec);   // count ACTIVE notes + advisor comments on this node (resolved ones must not light the badge)
   const badge = n => n ? `<i class="ti ti-message"></i>${n}` : `<i class="ti ti-message-plus"></i>`;
   const node = (title, synopsis, sec, cls) => `<div class="ol-node ${cls}"><div class="ol-srow"><span class="ol-slabel">${escapeHtml(title)}</span>${synopsis?`<span class="ol-syn">${escapeHtml(synopsis)}</span>`:''}</div>
       <button class="ol-cmt" data-node="${escapeHtml(title)}" data-sec="${escapeHtml(sec)}">${badge(cnt(title, sec))}</button></div>`;

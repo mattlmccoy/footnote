@@ -1487,7 +1487,7 @@ function renderOutlineTopbar(){
   document.getElementById('btn-key').onclick=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
 }
 function renderOutline(data){
-  const cnt=(label,sec)=>review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===sec).length;
+  const cnt=(label,sec)=>review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===sec && !_isArchived(c)).length;   // ACTIVE only — a resolved comment must not light the node badge
   const badge=n=>n?`<i class="ti ti-message"></i>${n}`:`<i class="ti ti-message-plus"></i>`;
   const node=(title, synopsis, sec, cls)=>`<div class="ol-node ${cls}">
       <div class="ol-srow"><span class="ol-slabel">${escapeHtml(title)}</span>${synopsis?`<span class="ol-syn">${escapeHtml(synopsis)}</span>`:''}</div>
