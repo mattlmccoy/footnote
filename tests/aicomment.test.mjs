@@ -1,7 +1,7 @@
 // tests/aicomment.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AI_REVIEWER_ID, isAiComment, buildAdvisorClaudeJob } from '../js/aicomment.js';
+import { AI_REVIEWER_ID, isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from '../js/aicomment.js';
 
 test('AI_REVIEWER_ID matches the engine reviewer id', () => {
   assert.equal(AI_REVIEWER_ID, 'ai-review-agents');
@@ -39,4 +39,32 @@ test('buildAdvisorClaudeJob: blank/whitespace note is treated as no note', () =>
   const j = buildAdvisorClaudeJob({ id: 'j3', chapter: 'ch1', commentId: 'c9', advisorId: 'x', cid: 'a3', note: '   ', ts: 'T' });
   assert.equal('revision' in j, false);
   assert.equal('revise_note' in j, false);
+});
+
+test('partitionAdvisorComments splits AI findings from human reviewer comments', () => {
+  const list = [
+    { id: 'r1', _advisor: 'jane-smith' },
+    { id: 'f1', _advisor: 'ai-review-agents' },
+    { id: 'r2', _advisor: 'bob-lee' },
+    { id: 'f2', _advisor: 'ai-review-agents' },
+  ];
+  const { findings, reviewers } = partitionAdvisorComments(list);
+  assert.deepEqual(findings.map(c => c.id), ['f1', 'f2']);
+  assert.deepEqual(reviewers.map(c => c.id), ['r1', 'r2']);
+});
+
+test('partitionAdvisorComments handles empty / missing input', () => {
+  assert.deepEqual(partitionAdvisorComments([]), { findings: [], reviewers: [] });
+  assert.deepEqual(partitionAdvisorComments(undefined), { findings: [], reviewers: [] });
+});
+
+test('findingCardState reads per-comment acted/outcome state', () => {
+  assert.deepEqual(
+    findingCardState({ sent: false, status: 'open' }),
+    { acted: false, staged: false, conflict: false, dismissed: false, status: 'open' });
+  assert.deepEqual(
+    findingCardState({ sent: true, status: 'staged', staged_edit: { before: 'x', after: 'y' } }),
+    { acted: true, staged: true, conflict: false, dismissed: false, status: 'staged' });
+  assert.equal(findingCardState({ status: 'queued', claude: { conflict: { reason: 'r' } } }).conflict, true);
+  assert.equal(findingCardState({ resolution: { state: 'declined' } }).dismissed, true);
 });
