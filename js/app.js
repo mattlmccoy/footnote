@@ -29,7 +29,7 @@ import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from '
 import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
-import { isAiComment, buildAdvisorClaudeJob } from './aicomment.js?v=1a7f4b2';
+import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from './aicomment.js?v=1a7f4b2';
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -962,7 +962,7 @@ function renderComments(){
   const pane = document.getElementById('comments');
   const open = review.comments.filter(c => c.status === 'open').length;
   pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
-  if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; renderAdvisorSection(pane); return; }
+  if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; renderClaudeFindings(pane); renderAdvisorSection(pane); return; }
   // filter / sort toolbar
   const bar = document.createElement('div'); bar.className = 'cbar';
   const present = new Set(review.comments.map(c => c.status));
@@ -997,6 +997,7 @@ function renderComments(){
     head.onclick = () => { resolvedOpen = !resolvedOpen; body.style.display = resolvedOpen?'block':'none'; head.querySelector('i').className = `ti ti-chevron-${resolvedOpen?'down':'right'}`; };
     grp.appendChild(head); grp.appendChild(body); pane.appendChild(grp);
   }
+  renderClaudeFindings(pane);
   renderAdvisorSection(pane);
 }
 function buildCommentCard(c){
@@ -1088,10 +1089,33 @@ async function replyToComment(id, text){
   } catch(e){ flash('Reply saved; sync failed: '+e.message); }
 }
 let advResolvedOpen = false;
+// Claude review findings render inline as their own "CLAUDE · REVIEW" section (out of the reviewers list),
+// reusing buildAdvCard's AI action wiring. Slice A: relocation + relabel (the richer at-anchor mockup card
+// lands in Slice B's unified render).
+function renderClaudeFindings(pane){
+  const { findings } = partitionAdvisorComments(advisorComments);
+  const active = findings.filter(c => !RESOLVED_STATES.has(c.status));
+  const resolved = findings.filter(c => RESOLVED_STATES.has(c.status));
+  if (!active.length && !resolved.length) return;
+  const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
+  lbl.innerHTML = `<i class="ti ti-robot-face" style="margin-right:5px"></i>CLAUDE · REVIEW<span style="margin-left:auto">${active.length}</span>`;
+  pane.appendChild(lbl);
+  active.forEach(c => pane.appendChild(buildAdvCard(c)));
+  if (resolved.length){
+    const grp = document.createElement('div'); grp.className = 'resolved-grp';
+    const head = document.createElement('button'); head.className = 'resolved-head';
+    head.innerHTML = `<i class="ti ti-chevron-${advResolvedOpen?'down':'right'}"></i><span>Resolved</span><span class="rcount">${resolved.length}</span>`;
+    const body = document.createElement('div'); body.className = 'resolved-body'; body.style.display = advResolvedOpen?'block':'none';
+    resolved.forEach(c => body.appendChild(buildAdvCard(c)));
+    head.onclick = () => { advResolvedOpen = !advResolvedOpen; body.style.display = advResolvedOpen?'block':'none'; head.querySelector('i').className = `ti ti-chevron-${advResolvedOpen?'down':'right'}`; };
+    grp.appendChild(head); grp.appendChild(body); pane.appendChild(grp);
+  }
+}
 function renderAdvisorSection(pane){
-  if (!advisorComments.length) return;
-  const active = advisorComments.filter(c => !RESOLVED_STATES.has(c.status));
-  const resolved = advisorComments.filter(c => RESOLVED_STATES.has(c.status));
+  const { reviewers } = partitionAdvisorComments(advisorComments);
+  if (!reviewers.length) return;
+  const active = reviewers.filter(c => !RESOLVED_STATES.has(c.status));
+  const resolved = reviewers.filter(c => RESOLVED_STATES.has(c.status));
   const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
   lbl.innerHTML = `<i class="ti ti-users" style="margin-right:5px"></i>FROM REVIEWERS<span style="margin-left:auto">${active.length}</span>`;
   pane.appendChild(lbl);
@@ -1154,9 +1178,12 @@ function buildAdvCard(c){
   const ai = isAiComment(c);
   card.innerHTML = `<div class="row">
       <label class="rel-read"><input type="checkbox" class="adv-readbox" ${c.read?'checked':''}>read</label>
-      <span class="chip advchip" style="${ai?'background:var(--info-bg);color:var(--info)':''}"><i class="ti ti-${ai?'robot-face':'user'}" style="font-size:11px;margin-right:3px"></i>${escapeHtml(whoLabel(c))}</span>
+      <span class="chip advchip" style="${ai?'background:var(--info-bg);color:var(--info)':''}"><i class="ti ti-${ai?'robot-face':'user'}" style="font-size:11px;margin-right:3px"></i>${ai?'Claude · review':escapeHtml(whoLabel(c))}</span>
       ${c.tag&&c.tag!=='other'?`<span class="chip" style="margin-left:5px">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:10px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>`:''}
-      ${c.sent?'<span class="status" style="margin-left:auto;background:var(--info-bg);color:var(--info)">sent</span>':c.status==='submitted'?'<span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span>':''}</div>
+      ${ai
+        ? (() => { const s = findingCardState(c); const chip = (bg,fg,t)=>`<span class="status" style="margin-left:auto;background:${bg};color:${fg}">${t}</span>`;
+            return s.conflict ? chip('var(--warn-bg)','var(--warn)','needs you') : s.staged ? chip('var(--success-bg)','var(--success)','staged') : s.acted ? chip('var(--info-bg)','var(--info)','sent') : ''; })()
+        : (c.sent?'<span class="status" style="margin-left:auto;background:var(--info-bg);color:var(--info)">sent</span>':c.status==='submitted'?'<span class="status" style="margin-left:auto;background:var(--success-bg);color:var(--success)">submitted</span>':'')}</div>
     <div class="snip">"${escapeHtml((c.anchor?.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
     <div class="body">${escapeHtml(c.body)}</div>${suggHtml(c)}${resolHtml(c)}${threadHtml(c)}
     ${notes.map(n=>`<div class="rel-note"><i class="ti ti-lock" style="font-size:12px"></i> ${escapeHtml(n.text)} <span style="color:var(--text-3);font-size:11px">· private · ${fmtDate(n.ts)}</span></div>`).join('')}
