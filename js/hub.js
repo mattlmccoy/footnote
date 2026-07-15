@@ -692,6 +692,10 @@ export async function launch() {
       const id = q('#ovl-id').value.trim(); if (!id) return ost('Enter your Overleaf project id first.', true);
       try { q('#ovl-save').disabled = true; ost('Saving Overleaf link…');
         await commitSourceFile(wsRepo, `${v.id}/overleaf.json`, JSON.stringify(overleafMarker(id, q('#ovl-branch').value), null, 2), tok(), `overleaf: link ${v.id}`);
+        // Also record project.overleaf on the project list so the 🔗 badge + account seal-targets recognize
+        // this B2 (edit-sheet) linkage uniformly with B1 (New Project "In Overleaf"). Additive: the file
+        // marker above (which ci_overleaf.py needs) is untouched; this only mirrors it into projects.json.
+        await writeProjectPatch({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, v.id, { overleaf: overleafMarker(id, q('#ovl-branch').value) }, tok());
         ost('Linked. Seal your token, then Pull.');
       } catch (e) { ost(e.message, true); } finally { q('#ovl-save').disabled = false; }
     };

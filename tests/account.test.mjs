@@ -20,6 +20,12 @@ test('overleafSealTargets: repos that hold an Overleaf-linked doc (shared repo O
   assert.deepEqual(overleafSealTargets(projects, cfg).sort(), ['me/c-data', 'me/hub']);
 });
 
+test('overleafSealTargets: an edit-sheet/B2-linked doc (overleaf.projectId only, no bridgeRepo) is a seal target', () => {
+  const projects = [{ id: 'd', dataRepo: 'me/hub', workspaceLabel: 'W', overleaf: { projectId: 'abc' } }];
+  const cfg = { owner: 'me', hubRepo: 'me/hub', workspaceRepo: 'me/hub' };
+  assert.ok(overleafSealTargets(projects, cfg).includes('me/hub'));
+});
+
 test('overleafExpiryDue: ~1 year', () => {
   assert.equal(overleafExpiryDue('2025-07-01', new Date('2026-07-14')), true);   // >1yr
   assert.equal(overleafExpiryDue('2026-06-01', new Date('2026-07-14')), false);
