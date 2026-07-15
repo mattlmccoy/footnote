@@ -16,6 +16,20 @@ export const deleteComment = (r, id) =>
   ({ ...r, comments:r.comments.filter(c => c.id!==id), deleted:[...new Set([...(r.deleted||[]), id])] });
 export const setCursor = (r, cursor) => ({ ...r, cursor });
 
+// Owner-finalized / resolved comment statuses — a comment in one of these no longer needs attention.
+const _RESOLVED_STATUS = new Set(['merged', 'declined', 'resolved', 'answered']);
+// Is a comment still "live" (should light a node's comment badge)? A reopened comment is active again;
+// otherwise it's inactive once finalized by status, or once it carries a resolution / advisor_state=resolved.
+export const isActiveComment = (c) => {
+  if (!c) return false;
+  if (c.reopened) return true;
+  return !(_RESOLVED_STATUS.has(c.status) || !!c.resolution || c.advisor_state === 'resolved');
+};
+// Count the ACTIVE comments anchored to one outline node (quote+section). Used by the owner and reviewer
+// outline badges so a node with only resolved comments shows the "add" icon, not a phantom count.
+export const nodeActiveCommentCount = (comments, label, sec) =>
+  (comments || []).filter(c => c.anchor?.quote === label && c.anchor?.section === sec && isActiveComment(c)).length;
+
 // owner decision on a staged edit: 'approve' | 'reject' | 'revise' | null (clear)
 export const setDecision = (r, id, decision, note) => ({ ...r, comments: r.comments.map(c => {
   if (c.id !== id) return c;

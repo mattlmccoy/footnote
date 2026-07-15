@@ -1,7 +1,7 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
 import { newReview, addComment, updateComment, deleteComment, setCursor } from '../js/model.js';
 import { setDecision, partitionByDecision } from '../js/model.js';
-import { queueApproved } from '../js/model.js';
+import { queueApproved, isActiveComment, nodeActiveCommentCount } from '../js/model.js';
 
 test('newReview seeds empty review for a chapter', () => {
   const r = newReview('ch_modeling', 'abc123');
@@ -99,4 +99,43 @@ test('addComment defaults to open but honors an explicit status', () => {
   assert.equal(r.comments[0].status, 'open');                 // default unchanged
   r = addComment(r, { tag:'wording', body:'live', anchor:{quote:'q2'}, status:'submitted' });
   assert.equal(r.comments[1].status, 'submitted');            // explicit status wins
+});
+
+// ---- isActiveComment / nodeActiveCommentCount: outline badge should light ONLY for live comments ----
+test('isActiveComment: open & submitted are active; finalized states are not', () => {
+  assert.equal(isActiveComment({ status:'open' }), true);
+  assert.equal(isActiveComment({ status:'submitted' }), true);
+  assert.equal(isActiveComment({ status:'staged' }), true);
+  for (const s of ['merged','declined','resolved','answered'])
+    assert.equal(isActiveComment({ status:s }), false, `${s} should be inactive`);
+});
+test('isActiveComment: a resolution or advisor_state=resolved deactivates regardless of status', () => {
+  assert.equal(isActiveComment({ status:'submitted', resolution:{ by:'CJS' } }), false);
+  assert.equal(isActiveComment({ status:'submitted', advisor_state:'resolved' }), false);
+});
+test('isActiveComment: reopened overrides resolution (active again)', () => {
+  assert.equal(isActiveComment({ status:'resolved', reopened:true }), true);
+  assert.equal(isActiveComment({ status:'submitted', resolution:{}, reopened:true }), true);
+});
+test('isActiveComment: null/undefined is not active', () => {
+  assert.equal(isActiveComment(null), false);
+  assert.equal(isActiveComment(undefined), false);
+});
+test('nodeActiveCommentCount: counts only active comments matching quote+section', () => {
+  const comments = [
+    { anchor:{ quote:'Background and Related Work', section:'Introduction' }, status:'resolved' }, // resolved → not counted
+    { anchor:{ quote:'Background and Related Work', section:'Introduction' }, status:'submitted' },// active → counted
+    { anchor:{ quote:'Background and Related Work', section:'Introduction' }, status:'merged' },   // finalized → not counted
+    { anchor:{ quote:'Other', section:'Introduction' }, status:'open' },                            // wrong node
+    { anchor:{ quote:'Background and Related Work', section:'Elsewhere' }, status:'open' },          // wrong section
+  ];
+  assert.equal(nodeActiveCommentCount(comments, 'Background and Related Work', 'Introduction'), 1);
+  assert.equal(nodeActiveCommentCount(comments, 'Background and Related Work', 'Introduction'), 1);
+});
+test('nodeActiveCommentCount: all-resolved node counts 0 (the reported bug)', () => {
+  const comments = [
+    { anchor:{ quote:'Motivation', section:'Introduction' }, status:'resolved' },
+    { anchor:{ quote:'Motivation', section:'Introduction' }, status:'merged' },
+  ];
+  assert.equal(nodeActiveCommentCount(comments, 'Motivation', 'Introduction'), 0);
 });
