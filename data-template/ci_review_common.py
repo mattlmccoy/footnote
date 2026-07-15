@@ -413,6 +413,27 @@ def process_run_agents_job(job, review, outputs_by_agent, ts, idgen):
     return {**review, "comments": [*(review.get("comments") or []), *added]}
 
 
+def finding_to_comment(finding, cid):
+    """A review-agent finding as a Claude-authored proactive comment for reviews/<ch>.json. author/source
+    mark it so the owner renders it as a 'Claude · review' card and the reviewer portal filters it out. The
+    proposed edit (staged_edit + claude.response) is drafted by a later apply-edits pass, so the finding
+    arrives ready to Approve/Deny; this builder only makes the base comment. Accepts a nested anchor or a
+    flat {quote, section}. Pure — input not mutated."""
+    anchor = finding.get("anchor") or {"quote": finding.get("quote", ""), "section": finding.get("section", "")}
+    return {
+        "id": cid,
+        "author": "claude",
+        "source": "review",
+        "kind": "text",
+        "status": "open",
+        "anchor": {"quote": anchor.get("quote", ""), "section": anchor.get("section", ""),
+                   "synctex": None, "rects": [], "figure": None, "confirmed": False},
+        "tag": finding.get("tag", "wording"),
+        "body": finding.get("body", ""),
+        "claude": {"branch": None, "commit": None, "response": None, "resolved_line": None, "ts": None},
+    }
+
+
 def comment_source_edit(comment):
     """The {find, replacement} source edit for a comment, from ``edit`` (apply-direct) or
     ``source_edit`` (Claude apply-edits), or None if it carries neither."""
