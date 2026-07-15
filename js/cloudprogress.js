@@ -114,3 +114,25 @@ export function usageGauge(u) {
   const level = pct >= 90 ? 'high' : pct >= 60 ? 'warn' : 'ok';
   return { pct, calls, cap, level, label: `${calls} / ${cap} calls` };
 }
+
+// Queue position for the watched cloud job among jobs still awaiting the drain (in queue order).
+// Cloud apply runs are serialized, so a freshly-queued job often waits behind others; this lets the
+// panel say "N ahead" instead of a flat "waiting" that reads as stuck. Pure — unit-tested.
+// Returns { found, ahead, current }: ahead = how many pending jobs precede jobId; current = the job at
+// the front of the pending queue (the one being processed) when jobId isn't first, else null.
+export function pendingBefore(jobs, jobId) {
+  const DONE = new Set(['done', 'merged', 'error', 'cancelled']);
+  const pending = (jobs || []).filter(j => j && !DONE.has(j.status));
+  const idx = pending.findIndex(j => j && j.id === jobId);
+  if (idx < 0) return { found: false, ahead: 0, current: null };
+  return { found: true, ahead: idx, current: idx > 0 ? pending[0] : null };
+}
+
+// Head text while the watched job hasn't produced events yet. `labelFor(job)` → a short label (e.g. a
+// chapter name) for the job currently being processed; optional.
+export function queueWaitText(info, labelFor) {
+  if (!info || !info.found || info.ahead === 0) return 'Waiting for the cloud job to start…';
+  const n = info.ahead;
+  const cur = info.current && labelFor ? labelFor(info.current) : '';
+  return `${n} job${n > 1 ? 's' : ''} ahead${cur ? ` — processing ${cur}` : ''}…`;
+}
