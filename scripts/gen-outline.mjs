@@ -4,6 +4,7 @@
 // writes the nested outline JSON to stdout (or --out <file>). Used by refresh-source AND the dissertation
 // outline-sync workflow so an updated main.tex auto-regenerates outline.json. Reuses the SAME parser the
 // browser import uses (one source of truth). --prev <outline.json> preserves curated synopses/intro/title.
+// --built-from <sha> stamps outline.built_from_commit for provenance (the source commit it was generated from).
 import { readdirSync, readFileSync, statSync, writeFileSync } from 'fs';
 import { join, relative } from 'path';
 import { outlineFromFiles, mergeOutlinePrev } from '../js/importdoc.js';
@@ -13,9 +14,11 @@ const outIdx = args.indexOf('--out');
 const outFile = outIdx >= 0 ? args[outIdx + 1] : null;
 const prevIdx = args.indexOf('--prev');
 const prevFile = prevIdx >= 0 ? args[prevIdx + 1] : null;
-const optVal = i => (outIdx >= 0 && i === outIdx + 1) || (prevIdx >= 0 && i === prevIdx + 1);
+const bfIdx = args.indexOf('--built-from');
+const builtFrom = bfIdx >= 0 ? args[bfIdx + 1] : null;
+const optVal = i => [outIdx, prevIdx, bfIdx].some(oi => oi >= 0 && i === oi + 1);
 const dir = args.find((a, i) => !a.startsWith('--') && !optVal(i));
-if (!dir) { console.error('usage: gen-outline.mjs <source-dir> [--prev outline.json] [--out outline.json]'); process.exit(2); }
+if (!dir) { console.error('usage: gen-outline.mjs <source-dir> [--prev outline.json] [--built-from sha] [--out outline.json]'); process.exit(2); }
 
 function walk(d, base, out) {
   for (const e of readdirSync(d)) {
@@ -36,6 +39,7 @@ if (prevFile) {
   catch (e) { console.error(`gen-outline: --prev ${prevFile} unreadable (${e.message}); generating without preservation`); }
   mergeOutlinePrev(outline, prev);
 }
+if (builtFrom) outline.built_from_commit = builtFrom;   // provenance: the source commit this was generated from
 const json = JSON.stringify(outline, null, 2);
 if (outFile) { writeFileSync(outFile, json); console.error(`gen-outline: wrote ${outFile} (${outline.chapters.length} chapters)`); }
 else process.stdout.write(json + '\n');
