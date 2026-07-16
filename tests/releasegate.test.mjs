@@ -36,6 +36,11 @@ test('uncited appendix (no home) is hidden by default, shown only via override',
   assert.ok(visibleUnitIds(units, [], { app_u: 'show' }).includes('app_u'));
 });
 
+test('legacy: an appendix explicitly in released stays visible (unless pinned hide)', () => {
+  assert.ok(visibleUnitIds(units, ['app_x']).includes('app_x'));            // explicit legacy release
+  assert.ok(!visibleUnitIds(units, ['app_x'], { app_x: 'hide' }).includes('app_x'));  // hide still wins
+});
+
 test('empty / missing args do not throw', () => {
   assert.deepEqual(visibleUnitIds(units), []);
   assert.deepEqual(visibleUnitIds(), []);

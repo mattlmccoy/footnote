@@ -14,7 +14,9 @@ export function visibleUnitIds(units = [], released = [], appendixOverride = {})
     if (!u || !u.id) continue;
     if (u.kind === 'appendix') {
       const pin = ov[u.id];
-      const visible = pin === 'show' || (pin !== 'hide' && !!u.home && rel.has(u.home));
+      // visible when pinned 'show', or (not pinned 'hide' and) either explicitly released (legacy /
+      // force-release) or its home chapter is released.
+      const visible = pin === 'show' || (pin !== 'hide' && (rel.has(u.id) || (!!u.home && rel.has(u.home))));
       if (visible) out.push(u.id);
     } else if (rel.has(u.id)) {
       out.push(u.id);
