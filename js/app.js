@@ -25,6 +25,7 @@ import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
+import { visibleUnitIds } from './releasegate.js?v=1';   // appendices follow their home chapter's release
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -3728,7 +3729,9 @@ async function openReleasePanel(opts){
         const homeMeta = c.home ? chMeta(c.home) : null;
         const follows = homeMeta ? `releases with ${escapeHtml(unitLabel(homeMeta, UNIT))}` : 'not cited by any chapter';
         return `<tr><td>${escapeHtml(unitLabel(c, UNIT))} · ${escapeHtml(shortTitle(c.title))}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${follows}</div></td>${advs.map(a => {
-          const ov = (rel[a].appendix_override||{})[c.id] || '';
+          // Migrate a legacy explicit appendix release into the override model, so Save never silently
+          // drops it (appendices no longer have a checkbox in the released[] array).
+          const ov = (rel[a].appendix_override||{})[c.id] || ((rel[a].released||[]).includes(c.id) ? 'show' : '');
           return `<td style="text-align:center"><select data-appov="${c.id}" data-a="${a}" style="font:inherit;font-size:11px;padding:2px 4px;border:.5px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text)"><option value=""${ov===''?' selected':''}>Follow</option><option value="show"${ov==='show'?' selected':''}>Always show</option><option value="hide"${ov==='hide'?' selected':''}>Always hide</option></select></td>`;
         }).join('')}</tr>`;
       }).join('') : '';
@@ -4438,7 +4441,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     try {
       const paths = await ghTree(t);   // ghTree already strips this project's dataPrefix → match BARE paths (dpath() here double-prefixed → preflight was always amber for workspace projects)
       const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes('content/'+id+'.html'));
-      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => rel[k].released || []))];
+      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => visibleUnitIds(CHAPTERS, rel[k].released || [], rel[k].appendix_override || {})))];
       renderBuilt = renderBuiltStatus({ allUnitIds: CHAPTERS.map(c => c.id), releasedUnitIds, builtUnitIds });
     } catch(e){}
     try { await checkActionsAccess(t); await getPublicKey(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }   // Actions read AND Secrets write (email/AI/key seal all need the latter)
