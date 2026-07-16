@@ -18,7 +18,7 @@ import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, pa
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
-import { startWatch as startNetWatch } from './netstatus.js?v=131b82f';
+import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=131b82f';
 import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
@@ -141,7 +141,7 @@ function loadDemoChapterOwner(){
       <table><caption>Table 3.1. Sample results.</caption><thead><tr><th>Case</th><th>Value</th></tr></thead>
         <tbody><tr><td>Baseline</td><td>12.4</td></tr><tr><td>Compensated</td><td>4.1</td></tr></tbody></table>
       <p>Sed ut perspiciatis unde omnis iste natus error sit voluptatem accusantium doloremque laudantium totam rem aperiam.</p></article>`;
-  cmt.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">1 · 0 open</span></div>
+  cmt.innerHTML = `<div class="lbl">COMMENTS${statusDot()}<span style="margin-left:auto">1 · 0 open</span></div>
     ${sugCard}
     <div class="lbl adv-lbl"><i class="ti ti-users" style="margin-right:5px"></i>FROM REVIEWERS<span style="margin-left:auto">1</span></div>
     ${advCard}`;
@@ -1043,7 +1043,8 @@ function filteredComments(){
 function renderComments(){
   const pane = document.getElementById('comments');
   const open = review.comments.filter(c => c.status === 'open').length;
-  pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
+  pane.innerHTML = `<div class="lbl">COMMENTS${statusDot()}<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
+  paintDots();   // color the comments-rail status dot to the current connection state
   if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; renderClaudeFindings(pane); renderAdvisorSection(pane); return; }
   // filter / sort toolbar
   const bar = document.createElement('div'); bar.className = 'cbar';
@@ -1585,7 +1586,7 @@ function renderWholeComments(){
   const pane = document.getElementById('comments');
   const flat = mergeReviews(_reviews, _wholeUnits).filter(x => !RESOLVED_STATES.has(x.comment.status));
   const open = flat.filter(x => x.comment.status === 'open').length;
-  pane.innerHTML = `<div class="lbl">COMMENTS<span style="margin-left:auto">${flat.length} · ${open} open</span></div>`;
+  pane.innerHTML = `<div class="lbl">COMMENTS${statusDot()}<span style="margin-left:auto">${flat.length} · ${open} open</span></div>`;
   if (!flat.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text in any ${escapeHtml(UNIT)} to leave a comment. Open a single ${escapeHtml(UNIT)} to reply or resolve.</div>`; return; }
   flat.forEach(({ chapterId, comment }) => pane.appendChild(buildWholeCard(chapterId, comment)));
 }
@@ -1831,6 +1832,9 @@ function markFigure(doc, c){
   if (fig){ fig.classList.add('cmark-fig'); fig.dataset.cid = c.id; fig.style.setProperty('--mk', `var(--${c.tag})`); }
 }
 const escapeHtml = s => (s||'').replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m]));
+// A tiny online-status dot for a section that depends on GitHub. Grey until painted; netstatus colors it
+// live (green online / amber unstable / grey offline) via paintDots() — the section itself never disappears.
+const statusDot = () => `<span class="fn-status-dot" title="Checking connection…" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--text-3);vertical-align:middle;margin-left:7px;flex:none"></span>`;
 // ---------- advisor registry + invite helpers ----------
 const portalBase = () => location.origin + location.pathname.replace(/[^/]*$/, '');
 // Invite links carry the project's data repo (&data=owner/repo) so an advisor — who has no hub access —
@@ -2352,6 +2356,7 @@ function enterHome(){
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
+  paintDots();   // color the setup-card + inbox status dots to the current connection state
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg => tg.onclick = () => {
     const grid = tg.parentElement.querySelector('.appx-home-grid');
@@ -2600,13 +2605,14 @@ function renderInbox(panel, { jobs, chData, adv }){
     </div>`).join('');
   panel.style.display = 'block';
   panel.innerHTML = `
-    <div class="ibx-head"><i class="ti ti-inbox"></i>Needs you${(stagedTotal||advTotal||queued||running)?'':' — all clear ✓'}</div>
+    <div class="ibx-head"><i class="ti ti-inbox"></i>Needs you${(stagedTotal||advTotal||queued||running)?'':' — all clear ✓'}${statusDot()}</div>
     ${chips ? `<div class="ibx-chips">${chips}</div>` : ''}
     <div class="mxgrid">
       <div class="mxrow mxhead"><span class="mxname"></span><span class="mx">open</span><span class="mx">staged</span><span class="mx">reviewer</span><span class="mx">merged</span></div>
       ${rows}
     </div>`;
   panel.querySelectorAll('[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+  paintDots();   // color this render's status dots to the current connection state
 }
 // ---------- import: parse the author's document → chapters.json (no hardcoded chapters) ----------
 // Fetch one raw file from a source repo (adopter's own repo + token; never a Footnote-held credential).
@@ -2850,7 +2856,7 @@ function setupChecklistHtml(){
   // if the reading view isn't built yet (avoids a flash on ready projects).
   const hide = src && parsed;
   return `<div id="setup-strip" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:24px;background:var(--bg-2)${hide ? ';display:none' : ''}">
-      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Project setup</div>
+      <div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Project setup${statusDot()}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         ${(() => { const sl = sourceLabel(_CFG, parsed); return _setupStep(src, 'Source connected', sl.repo ? escapeHtml(sl.repo) : sl.text); })()}
         ${_setupStep(parsed, 'Document parsed', parsed ? `${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''}` : `import your ${DOC}`)}

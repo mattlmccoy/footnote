@@ -38,9 +38,43 @@ export function shouldShow(state, dismissedState) {
 // Honest per-state copy. Empty string means "show nothing".
 export function bannerText(state) {
   if (state === 'offline') return 'You’re offline — Footnote can’t reach GitHub. Pages and comments can’t load or save until your connection is back.';
-  if (state === 'unreachable') return 'Can’t reach GitHub — an ad-blocker or privacy extension may be blocking api.github.com. Disable blockers for this site (or try another browser), then reload.';
+  if (state === 'unreachable') return 'Can’t reach GitHub right now — usually a GitHub outage (check githubstatus.com) or a local blocker (ad-blocker / privacy extension / VPN). Your data is safe; things recover on their own when GitHub is back.';
   if (state === 'slow') return 'Slow connection — loading and saving may be delayed.';
   return '';
+}
+
+// Collapse the health state into a subtle 3-way dot status: 'online' (green), 'unstable' (amber),
+// 'offline' (grey). 'unreachable' (blocked/outage) and 'offline' both read as grey — the element stays,
+// the dot just goes quiet. Default optimistic so a dot never starts alarming. Pure.
+export function uiStatus(state) {
+  if (state === 'offline' || state === 'unreachable') return 'offline';
+  if (state === 'slow') return 'unstable';
+  return 'online';
+}
+
+// ---- per-element status dots (subtle green/amber/grey; verified in the browser) ----
+
+let _ui = 'online';
+export function currentUiStatus() { return _ui; }   // for fresh renders to bake in the current status
+
+// Paint one dot element for a ui status. Generic DOM — no app state. Colors fall back if the CSS var is absent.
+export function applyDot(el, ui = _ui) {
+  if (!el) return;
+  const color = ui === 'online' ? 'var(--success, #3aa76d)'
+              : ui === 'unstable' ? 'var(--warn, #b8860b)'
+              : 'var(--text-3, #9aa0a6)';
+  const label = ui === 'online' ? 'Online — GitHub reachable'
+              : ui === 'unstable' ? 'Unstable connection — GitHub is responding slowly'
+              : 'Can’t reach GitHub right now — your data is safe; this section will refill when it’s back';
+  el.style.background = color;
+  el.title = label;
+  el.setAttribute('data-ui', ui);
+}
+
+// Repaint every `.fn-status-dot` in the document to the current status. Cheap; safe to call anytime.
+export function paintDots(doc = (typeof document !== 'undefined' ? document : null)) {
+  if (!doc || !doc.querySelectorAll) return;
+  doc.querySelectorAll('.fn-status-dot').forEach(el => applyDot(el, _ui));
 }
 
 // ---- browser wiring (not unit-tested; verified in the browser) ----
@@ -89,7 +123,7 @@ export function startWatch(win = (typeof window !== 'undefined' ? window : null)
   const now = () => (win.performance && win.performance.now ? win.performance.now() : new Date().getTime());
   let state = { online: win.navigator ? win.navigator.onLine !== false : true, recent: [] };
   let shown = null;
-  const refresh = () => { const s = netHealth(state); if (s !== shown) { shown = s; paint(s); } };
+  const refresh = () => { const s = netHealth(state); _ui = uiStatus(s); paintDots(); if (s !== shown) { shown = s; paint(s); } };
 
   const orig = win.fetch.bind(win);
   win.fetch = async (...args) => {
