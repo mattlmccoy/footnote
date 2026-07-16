@@ -455,27 +455,38 @@ async function renderChapterAppendices(ch){
   const view = attachmentsView(CHAPTERS);
   const cites = view.byChapter[ch] || [];
   if (!cites.length) return;
-  const t = tok(); if (!t) return;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const t = tok();
+  if (!dev && !t) return;
+  // One appendix's rendered HTML: dev-fallback to a local file first (UI work without a token), else GitHub.
+  const fetchAppendix = async (appId) => {
+    if (dev){ try { const r = await fetch(`./chapters/${appId}.html`); if (r.ok) return await r.text(); } catch(e){} }
+    if (!t) return null;
+    try {
+      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+appId+'.html')}`,
+        { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      return await r.text();
+    } catch(e){ return null; }
+  };
+  // Fetch every homed appendix CONCURRENTLY (was one sequential GitHub round-trip per appendix).
+  const homed = cites.filter(appId => view.homeOf[appId] === ch);
+  const htmlById = {};
+  await Promise.all(homed.map(async appId => { htmlById[appId] = await fetchAppendix(appId); }));
+  if (current !== ch) return;                                     // user switched chapters mid-fetch — don't splice stale content
   const wrap = document.createElement('div');
   wrap.className = 'appx-attached';
   for (const appId of cites){
     const am = chMeta(appId);
     const label = `${unitLabel(am, UNIT)} · ${escapeHtml(shortTitle(am.title))}`;
     if (view.homeOf[appId] === ch){
-      // Inline collapsible, expanded by default.
       const block = document.createElement('details');
       block.className = 'appx-block'; block.open = true;
-      block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body"><div class="empty"><i class="ti ti-loader-2"></i></div></div>`;
+      const html = htmlById[appId];
+      const body = html != null ? html : `<div class="empty" style="font-size:12px">Appendix not built yet — open it from the home grid to render it.</div>`;
+      block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body">${body}</div>`;
       wrap.appendChild(block);
-      const body = block.querySelector('.appx-body');
-      try {
-        const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+appId+'.html')}`,
-          { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
-        if (!r.ok) throw new Error('HTTP '+r.status);
-        body.innerHTML = await r.text();
-      } catch(e){ body.innerHTML = `<div class="empty" style="font-size:12px">Appendix not built yet — open it from the home grid to render it.</div>`; }
     } else {
-      // Link card to the appendix's home.
       const card = document.createElement('button');
       card.className = 'appx-card'; card.dataset.ch = appId;
       card.innerHTML = `<span>${label}</span><span class="appx-arrow">→</span>`;
