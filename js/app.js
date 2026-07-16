@@ -500,7 +500,9 @@ async function renderChapterAppendices(ch){
       wrap.appendChild(card);
     }
   }
-  read.appendChild(wrap);
+  // Append INSIDE the #doc reading column so the appendix matches the chapter's width/typography
+  // (not stretched full-pane); fall back to `read` if the article wrapper isn't present.
+  (read.querySelector('#doc') || read).appendChild(wrap);
 }
 // ---------- in-context direct editor (prose -> confirm LaTeX diff -> stage) ----------
 const _srcmap = {};   // ch -> { normHead: source_text }
