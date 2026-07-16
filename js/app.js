@@ -412,7 +412,7 @@ async function cloudBuildReadingView(ch){
     for (let i = 0; i < 60; i++){                            // poll up to ~5 min; load the instant this section lands
       await wait(5000);
       const c = await fetchContent();
-      if (c && c.ok){ renderDoc(await c.text()); return; }
+      if (c && c.ok){ renderDoc(await c.text()); renderChapterAppendices(ch); return; }
       run = await renderRun(t).catch(() => null);
       if (run && run.status === 'completed' && run.conclusion !== 'success'){
         say('The build didn’t succeed. Open the <b>Actions</b> tab on your Review repo to see why, then reload.'); return;
