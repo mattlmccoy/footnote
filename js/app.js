@@ -24,6 +24,7 @@ import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=ac1558c';
+import { includePaths } from './apprefs.js?v=1';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -2610,14 +2611,39 @@ async function ghRaw(src, path, t){
 async function detectFromRepo(src, entry, t){
   const sp = _CFG.srcPrefix || '';   // workspace mode: source lives under <id>/source/
   const main = await ghRaw(src, sp + entry, t);
-  const includes = [...main.matchAll(/\\(?:include|input)\s*\{([^}]+)\}/g)].map(m => m[1].trim().replace(/\.tex$/, ''));
+  const includes = includePaths(main);
   const map = {};
   await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${sp}${p}.tex`, t); } catch { map[p] = null; } }));
   const resolve = p => map[p] ?? null;
   const chapters = parseLatexChapters(main, resolve);
   // Attachment is derived from source HERE (source is in hand at scan) and cached on the units.
-  // map is keyed by include path (no .tex); annotateAttachments matches unit.sourceFile tolerant of .tex.
+  // A chapter can \cref an appendix from a NESTED \input sub-file (rfam cites appendices from sections/
+  // files two levels below main → chapter → sub-section), so flatten each unit's source down its whole
+  // include tree before scanning — a one-level scan misses those references.
+  const entryKey = entry.replace(/\.tex$/, '');
+  const fetchTex = async p => (p in map ? map[p] : await ghRaw(src, `${sp}${p}.tex`, t).catch(() => null));
+  const flatten = async rootText => {
+    const seen = new Set(); let acc = rootText || ''; let frontier = includePaths(acc);
+    while (frontier.length) {
+      const fresh = [...new Set(frontier)].filter(p => !seen.has(p)); fresh.forEach(p => seen.add(p));
+      const texts = await Promise.all(fresh.map(p => fetchTex(p)));
+      const next = [];
+      for (const txt of texts) { if (txt == null) continue; acc += '\n' + txt; next.push(...includePaths(txt)); }
+      frontier = next;
+    }
+    return acc;
+  };
+  // map is keyed by include path (no .tex); srcFor in appattach matches unit.sourceFile tolerant of .tex.
   const sourceByFile = { ...map, 'main.tex': main, [entry]: main };
+  await Promise.all(chapters.map(async u => {
+    const key = (u.sourceFile || '').replace(/\.tex$/, '');
+    // A unit defined inline in the entry (sourceFile null or 'main.tex') uses the already-fetched `main`
+    // — never re-fetch a literal 'main' path, which 404s when the real entry has another name.
+    const base = (!key || key === 'main' || key === entryKey) ? main : (map[key] ?? await fetchTex(key));
+    const flat = await flatten(base || '');
+    if (key) sourceByFile[key] = flat;
+    if (u.sourceFile) sourceByFile[u.sourceFile] = flat;
+  }));
   annotateAttachments(chapters, sourceByFile);
   return { chapters, level: detectUnitLevel(main, resolve) };
 }

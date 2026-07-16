@@ -17,3 +17,10 @@ export function referencedLabels(src) { return collect(src, REF_RE); }
 
 // Every label string DEFINED (\label{...}) in one unit's source.
 export function appendixLabels(src) { return collect(src, LABEL_RE); }
+
+// The \input/\include target paths in one unit's source (.tex stripped), so a chapter's references can be
+// gathered from its whole nested include tree, not just the top file (rfam cites appendices from sections/ sub-files).
+const INCLUDE_RE = /\\(?:input|include)\s*\{([^{}]+)\}/g;
+export function includePaths(src) {
+  return [...String(src || '').matchAll(INCLUDE_RE)].map(m => m[1].trim().replace(/\.tex$/, '')).filter(Boolean);
+}

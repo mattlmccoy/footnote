@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { referencedLabels, appendixLabels } from '../js/apprefs.js';
+import { referencedLabels, appendixLabels, includePaths } from '../js/apprefs.js';
 
 test('referencedLabels: single \\cref', () => {
   assert.deepEqual(referencedLabels('See \\cref{app:derivations} for details.'), ['app:derivations']);
@@ -22,4 +22,13 @@ test('referencedLabels: none', () => {
 test('appendixLabels: extracts \\label definitions', () => {
   assert.deepEqual(appendixLabels('\\chapter{Data}\\label{app:data}\nx \\label{app:data:sub}'),
     ['app:data', 'app:data:sub']);
+});
+
+test('includePaths: \\input and \\include targets, .tex stripped, order preserved', () => {
+  const src = '\\include{chapters/ch_platform}\ntext \\input{sections/metrology.tex}\n\\input{ preamble/macros }';
+  assert.deepEqual(includePaths(src), ['chapters/ch_platform', 'sections/metrology', 'preamble/macros']);
+});
+
+test('includePaths: none', () => {
+  assert.deepEqual(includePaths('no includes here \\cref{app:x}'), []);
 });
