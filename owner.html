@@ -219,6 +219,15 @@ span.cqd{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var
 .mxrow.mxhead .mx{font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;cursor:default;background:none;border:none}
 .mxname{text-align:left;background:none;border:none;color:var(--text-2);font:inherit;font-size:12.5px;padding:5px 2px;cursor:pointer}
 .mxname:hover{color:var(--accent)}
+.appx-attached{margin-top:34px;border-top:2px solid var(--accent);padding-top:6px}
+.appx-block{margin:14px 0;border:.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.appx-sum{cursor:pointer;font-weight:600;color:var(--accent);padding:11px 14px;list-style:none}
+.appx-sum::-webkit-details-marker{display:none}
+.appx-sum::before{content:'▾ ';font-size:11px}
+.appx-block:not([open]) .appx-sum::before{content:'▸ '}
+.appx-body{padding:0 16px 16px}
+.appx-card{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:12px 0;padding:11px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:none;cursor:pointer;color:var(--accent);font:inherit;font-weight:600}
+.appx-arrow{margin-left:auto}
 .mx{display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;height:26px;border-radius:6px;border:none;font-family:inherit;cursor:pointer}
 .mx0{color:var(--bg-3,#ccc);cursor:default;font-weight:400}
 .mxopen{background:color-mix(in srgb,var(--accent) 13%,transparent);color:var(--accent)}

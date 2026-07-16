@@ -23,6 +23,7 @@ import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
+import { annotateAttachments, attachmentsView } from './appattach.js?v=1';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -319,7 +320,7 @@ async function loadChapter(ch){
   previewing = false;
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading chapter ${chMeta(ch).n}…</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
+  if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); renderChapterAppendices(ch); return; } } catch(e){} }
   const t = tok();
   if (!t){ renderConnect(); return; }
   try {
@@ -327,6 +328,7 @@ async function loadChapter(ch){
       { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
     if (!r.ok) throw new Error('HTTP '+r.status);
     renderDoc(await r.text());
+    renderChapterAppendices(ch);
   } catch(e){
     if (/\b401\b/.test(e.message)){ read.innerHTML = `<div class="empty"><i class="ti ti-key-off" style="font-size:24px;color:var(--text-3)"></i>
       <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Your access token expired</div>
@@ -410,7 +412,7 @@ async function cloudBuildReadingView(ch){
     for (let i = 0; i < 60; i++){                            // poll up to ~5 min; load the instant this section lands
       await wait(5000);
       const c = await fetchContent();
-      if (c && c.ok){ renderDoc(await c.text()); return; }
+      if (c && c.ok){ renderDoc(await c.text()); renderChapterAppendices(ch); return; }
       run = await renderRun(t).catch(() => null);
       if (run && run.status === 'completed' && run.conclusion !== 'success'){
         say('The build didn’t succeed. Open the <b>Actions</b> tab on your Review repo to see why, then reload.'); return;
@@ -443,6 +445,60 @@ function renderDoc(fragment){
   loadAdvisorComments(current);
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
+}
+// Attached-appendix rendering: after a chapter is painted, show each appendix HOMED here inline
+// (collapsible, expanded by default) and a link card for appendices this chapter cites but that are
+// homed elsewhere. Derived from the per-unit home/citedBy fields — no extra parse.
+async function renderChapterAppendices(ch){
+  const meta = chMeta(ch);
+  if (!meta || meta.kind === 'appendix') return;                 // appendices opened on their own don't recurse
+  const view = attachmentsView(CHAPTERS);
+  const cites = view.byChapter[ch] || [];
+  if (!cites.length) return;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  const t = tok();
+  if (!dev && !t) return;
+  // One appendix's rendered HTML: dev-fallback to a local file first (UI work without a token), else GitHub.
+  const fetchAppendix = async (appId) => {
+    if (dev){ try { const r = await fetch(`./chapters/${appId}.html`); if (r.ok) return await r.text(); } catch(e){} }
+    if (!t) return null;
+    try {
+      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+appId+'.html')}`,
+        { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+      if (!r.ok) throw new Error('HTTP '+r.status);
+      return await r.text();
+    } catch(e){ return null; }
+  };
+  // Fetch every homed appendix CONCURRENTLY (was one sequential GitHub round-trip per appendix).
+  const homed = cites.filter(appId => view.homeOf[appId] === ch);
+  const htmlById = {};
+  await Promise.all(homed.map(async appId => { htmlById[appId] = await fetchAppendix(appId); }));
+  if (current !== ch) return;                                     // user switched chapters mid-fetch — don't splice stale content
+  const wrap = document.createElement('div');
+  wrap.className = 'appx-attached';
+  for (const appId of cites){
+    const am = chMeta(appId);
+    const label = `${unitLabel(am, UNIT)} · ${escapeHtml(shortTitle(am.title))}`;
+    if (view.homeOf[appId] === ch){
+      const block = document.createElement('details');
+      block.className = 'appx-block'; block.open = true;
+      const html = htmlById[appId];
+      const body = html != null ? html : `<div class="empty" style="font-size:12px">Appendix not built yet — open it from the home grid to render it.</div>`;
+      block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body">${body}</div>`;
+      wrap.appendChild(block);
+      if (html != null){                              // render like a chapter: math, figures, citations, cross-refs
+        const bodyEl = block.querySelector('.appx-body');
+        fixFootnotes(bodyEl); runKatex(bodyEl); wireFigures(bodyEl); wireCitations(bodyEl); linkCrossRefs(bodyEl);
+      }
+    } else {
+      const card = document.createElement('button');
+      card.className = 'appx-card'; card.dataset.ch = appId;
+      card.innerHTML = `<span>${label}</span><span class="appx-arrow">→</span>`;
+      card.onclick = () => enterChapter(appId);
+      wrap.appendChild(card);
+    }
+  }
+  read.appendChild(wrap);
 }
 // ---------- in-context direct editor (prose -> confirm LaTeX diff -> stage) ----------
 const _srcmap = {};   // ch -> { normHead: source_text }
@@ -2292,6 +2348,13 @@ function enterHome(){
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+  read.querySelectorAll('#appx-home .appx-toggle').forEach(tg => tg.onclick = () => {
+    const grid = tg.parentElement.querySelector('.appx-home-grid');
+    const open = grid.style.display === 'none';
+    grid.style.display = open ? 'grid' : 'none';
+    tg.querySelector('.appx-caret').textContent = open ? '▾' : '▸';
+    localStorage.setItem('home:appendicesOpen', open ? '1' : '0');
+  });
   const imp = document.getElementById('import-doc');
   if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : openSettingsPage('access');
   refreshInbox();
@@ -2551,7 +2614,12 @@ async function detectFromRepo(src, entry, t){
   const map = {};
   await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${sp}${p}.tex`, t); } catch { map[p] = null; } }));
   const resolve = p => map[p] ?? null;
-  return { chapters: parseLatexChapters(main, resolve), level: detectUnitLevel(main, resolve) };
+  const chapters = parseLatexChapters(main, resolve);
+  // Attachment is derived from source HERE (source is in hand at scan) and cached on the units.
+  // map is keyed by include path (no .tex); annotateAttachments matches unit.sourceFile tolerant of .tex.
+  const sourceByFile = { ...map, 'main.tex': main, [entry]: main };
+  annotateAttachments(chapters, sourceByFile);
+  return { chapters, level: detectUnitLevel(main, resolve) };
 }
 async function saveChapters(chs, t){
   let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
@@ -2797,7 +2865,8 @@ function homeHtml(){
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
-  const cards = CHAPTERS.map(c => {
+  const chOnly = CHAPTERS.filter(c => c.kind !== 'appendix');
+  const cards = chOnly.map(c => {
     const s = chapterStats(c.id); const pct = Math.round(s.frac*100);
     const done = s.readDone;
     const bar = done ? 'var(--success)' : 'var(--accent)';
@@ -2809,6 +2878,25 @@ function homeHtml(){
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
   }).join('');
+  const appUnits = CHAPTERS.filter(c => c.kind === 'appendix');
+  const appOpen = localStorage.getItem('home:appendicesOpen') !== '0';
+  const appCard = a => {
+    const homeMeta = a.home ? chMeta(a.home) : null;
+    const sub = homeMeta ? `attached to ${unitLabel(homeMeta, UNIT)}` : 'uncited';
+    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
+        <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
+        <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
+        <div style="font-size:11px;color:var(--text-2)">${escapeHtml(sub)}</div></div>`;
+  };
+  const appendixSection = appUnits.length
+    ? `<div id="appx-home" style="margin-top:26px">
+         <div class="home-allch appx-toggle" data-open="${appOpen?1:0}" style="cursor:pointer;user-select:none">
+           <span class="appx-caret">${appOpen?'▾':'▸'}</span> APPENDICES <span style="color:var(--text-3)">· ${appUnits.length}</span>
+         </div>
+         <div class="appx-home-grid" style="display:${appOpen?'grid':'none'};grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px;margin-top:13px">
+           ${appUnits.map(appCard).join('')}</div>
+       </div>`
+    : '';
   const hasTok = !!localStorage.getItem('ghpat');
   // No chapters yet → the document hasn't been imported. Show an import call-to-action, not a blank grid.
   const empty = `<div id="home-empty" style="border:1px dashed var(--border-2);border-radius:var(--r-lg);padding:40px 28px;text-align:center;max-width:520px;margin:6vh auto 0">
@@ -2825,7 +2913,8 @@ function homeHtml(){
   const allCh = CHAPTERS.length
     ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
        ${wholeBtn}
-       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
+       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>
+       ${appendixSection}`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
       ${setupChecklistHtml()}
