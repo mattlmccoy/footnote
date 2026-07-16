@@ -25,7 +25,7 @@ export function computeAttachments({ chapters = [], refsByChapter = {}, labelsBy
   return { byChapter, homeOf, citersOf, uncited };
 }
 
-import { referencedLabels, appendixLabels } from './apprefs.js';
+import { referencedLabels, appendixLabels } from './apprefs.js?v=2da6de3';
 
 // Look up a unit's source text tolerant of a trailing .tex on either the key or the sourceFile.
 function srcFor(sourceByFile, sf) {
