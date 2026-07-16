@@ -23,6 +23,7 @@ import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
+import { annotateAttachments } from './appattach.js?v=1';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -2551,7 +2552,12 @@ async function detectFromRepo(src, entry, t){
   const map = {};
   await Promise.all(includes.map(async p => { try { map[p] = await ghRaw(src, `${sp}${p}.tex`, t); } catch { map[p] = null; } }));
   const resolve = p => map[p] ?? null;
-  return { chapters: parseLatexChapters(main, resolve), level: detectUnitLevel(main, resolve) };
+  const chapters = parseLatexChapters(main, resolve);
+  // Attachment is derived from source HERE (source is in hand at scan) and cached on the units.
+  // map is keyed by include path (no .tex); annotateAttachments matches unit.sourceFile tolerant of .tex.
+  const sourceByFile = { ...map };
+  annotateAttachments(chapters, sourceByFile);
+  return { chapters, level: detectUnitLevel(main, resolve) };
 }
 async function saveChapters(chs, t){
   let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
