@@ -979,12 +979,15 @@ function paintCommentsIn(root, comments){
   root.querySelectorAll('.cmark-el').forEach(e=>{ e.classList.remove('cmark-el'); delete e.dataset.cid; e.onclick=null; });   // block-level fallback marks
   const blocks=[...root.querySelectorAll('p, li, figcaption')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
   const figs=[...root.querySelectorAll('figure')].map(el=>({el,txt:el.textContent.replace(/\s+/g,' ')}));
-  (comments||[]).forEach(c=>{ if(c.kind==='figure'){ const q=(c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30); const fig=(figs.find(f=>f.txt.includes(q)) || figs.find(f=>f.el.querySelector('img')?.src.endsWith(c.anchor.figure||' ')))?.el; if(fig){ fig.classList.add('cmark-fig'); fig.dataset.cid=c.id; fig.style.setProperty('--mk',`var(--${c.tag})`); } return; }
+  // Only live comments light an anchor: a resolved/archived comment folds into the collapsed Resolved
+  // group, so keeping its highlight (or flagging it as an orphan) would be noise. Same predicate the cards use.
+  const live=(comments||[]).filter(c=>!_isArchived(c));
+  live.forEach(c=>{ if(c.kind==='figure'){ const q=(c.anchor.quote||'').replace(/^[^:]*:\s*/,'').replace(/\s+/g,' ').trim().slice(0,30); const fig=(figs.find(f=>f.txt.includes(q)) || figs.find(f=>f.el.querySelector('img')?.src.endsWith(c.anchor.figure||' ')))?.el; if(fig){ fig.classList.add('cmark-fig'); fig.dataset.cid=c.id; fig.style.setProperty('--mk',`var(--${c.tag})`); } return; }
     const q=(c.anchor.quote||'').replace(/\s+/g,' ').trim(); if(q.length<4) return; const needle=q.slice(0,50); const el=blocks.find(b=>b.txt.includes(needle.slice(0,40)))?.el; if(!el) return; if(!wrapInNode(el,needle,c)){ el.classList.add('cmark-el'); el.dataset.cid=c.id; el.style.setProperty('--mk',`var(--${c.tag})`); el.onclick=()=>activateComment(c.id); } });
   // F6: a text comment whose quote no longer appears (author edited/removed the passage) can't paint and
   // would silently vanish. Return those so the caller can surface them instead of dropping them.
   const isPresent=q=>blocks.some(b=>b.txt.includes(q.slice(0,40)));
-  return orphanComments(comments, isPresent); }
+  return orphanComments(live, isPresent); }
 function paintHighlights(){ const doc=document.getElementById('doc'); if(!doc) return; if(WHOLE){ paintWholeHighlights(); return; } renderOrphanNotice(paintCommentsIn(doc, review.comments)); }
 function paintWholeHighlights(){ const doc=document.getElementById('doc'); if(!doc) return; let orphans=[];
   _wholeUnits.forEach(u=>{ const seg=document.getElementById('wd-'+u.id); if(!seg) return; orphans=orphans.concat(paintCommentsIn(seg, (_reviews[u.id]&&_reviews[u.id].comments)||[])); });

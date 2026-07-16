@@ -1,4 +1,4 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount } from './model.js?v=9ed6bbe';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount, isResolved } from './model.js?v=c284b81';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=ec910f6';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=d47929c';
@@ -1374,7 +1374,7 @@ function paintCommentsIn(root, comments, advComments){
   root.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
   const blocks = [...root.querySelectorAll('p, li, figcaption')];
   (comments||[]).forEach(c => {
-    if (RESOLVED_STATES.has(c.status)) return;   // don't highlight finalized comments (merged/answered/declined/resolved)
+    if (isResolved(c)) return;   // don't highlight finalized comments (merged/answered/declined/resolved, or reopened→active)
     if (c.kind === 'figure'){ markFigure(root, c); return; }
     const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);
@@ -1384,6 +1384,7 @@ function paintCommentsIn(root, comments, advComments){
   });
   // advisor comments — distinct marker, jump to their card
   (advComments||[]).forEach(c => {
+    if (isResolved(c)) return;   // a resolved AI/advisor finding folds into Resolved — never keep its anchor lit
     if (c.kind === 'figure') return;
     const q = (c.anchor?.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
     const needle = q.slice(0, 50);

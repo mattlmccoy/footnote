@@ -29,6 +29,11 @@ export const isActiveComment = (c) => {
 // outline badges so a node with only resolved comments shows the "add" icon, not a phantom count.
 export const nodeActiveCommentCount = (comments, label, sec) =>
   (comments || []).filter(c => c.anchor?.quote === label && c.anchor?.section === sec && isActiveComment(c)).length;
+// A comment is resolved iff it is not active. Used to keep a resolved comment's anchor
+// highlight OFF in the reading views (owner painter) — the exact inverse of isActiveComment,
+// so paint decisions and outline/active counts can never drift. A null comment is not
+// something to paint, so it is treated as "not resolved" (false), not painted anyway.
+export const isResolved = (c) => !!c && !isActiveComment(c);
 
 // owner decision on a staged edit: 'approve' | 'reject' | 'revise' | null (clear)
 export const setDecision = (r, id, decision, note) => ({ ...r, comments: r.comments.map(c => {
