@@ -23,7 +23,7 @@ import { settingsSections, resolveSection } from './settings.js?v=621de9a';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
-import { annotateAttachments } from './appattach.js?v=1';
+import { annotateAttachments, attachmentsView } from './appattach.js?v=1';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -320,7 +320,7 @@ async function loadChapter(ch){
   previewing = false;
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading chapter ${chMeta(ch).n}…</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
-  if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
+  if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); renderChapterAppendices(ch); return; } } catch(e){} }
   const t = tok();
   if (!t){ renderConnect(); return; }
   try {
@@ -328,6 +328,7 @@ async function loadChapter(ch){
       { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
     if (!r.ok) throw new Error('HTTP '+r.status);
     renderDoc(await r.text());
+    renderChapterAppendices(ch);
   } catch(e){
     if (/\b401\b/.test(e.message)){ read.innerHTML = `<div class="empty"><i class="ti ti-key-off" style="font-size:24px;color:var(--text-3)"></i>
       <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Your access token expired</div>
@@ -444,6 +445,45 @@ function renderDoc(fragment){
   loadAdvisorComments(current);
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
+}
+// Attached-appendix rendering: after a chapter is painted, show each appendix HOMED here inline
+// (collapsible, expanded by default) and a link card for appendices this chapter cites but that are
+// homed elsewhere. Derived from the per-unit home/citedBy fields — no extra parse.
+async function renderChapterAppendices(ch){
+  const meta = chMeta(ch);
+  if (!meta || meta.kind === 'appendix') return;                 // appendices opened on their own don't recurse
+  const view = attachmentsView(CHAPTERS);
+  const cites = view.byChapter[ch] || [];
+  if (!cites.length) return;
+  const t = tok(); if (!t) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'appx-attached';
+  for (const appId of cites){
+    const am = chMeta(appId);
+    const label = `${unitLabel(am, UNIT)} · ${escapeHtml(shortTitle(am.title))}`;
+    if (view.homeOf[appId] === ch){
+      // Inline collapsible, expanded by default.
+      const block = document.createElement('details');
+      block.className = 'appx-block'; block.open = true;
+      block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body"><div class="empty"><i class="ti ti-loader-2"></i></div></div>`;
+      wrap.appendChild(block);
+      const body = block.querySelector('.appx-body');
+      try {
+        const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+appId+'.html')}`,
+          { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+        if (!r.ok) throw new Error('HTTP '+r.status);
+        body.innerHTML = await r.text();
+      } catch(e){ body.innerHTML = `<div class="empty" style="font-size:12px">Appendix not built yet — open it from the home grid to render it.</div>`; }
+    } else {
+      // Link card to the appendix's home.
+      const card = document.createElement('button');
+      card.className = 'appx-card'; card.dataset.ch = appId;
+      card.innerHTML = `<span>${label}</span><span class="appx-arrow">→</span>`;
+      card.onclick = () => enterChapter(appId);
+      wrap.appendChild(card);
+    }
+  }
+  read.appendChild(wrap);
 }
 // ---------- in-context direct editor (prose -> confirm LaTeX diff -> stage) ----------
 const _srcmap = {};   // ch -> { normHead: source_text }
