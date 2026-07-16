@@ -486,6 +486,10 @@ async function renderChapterAppendices(ch){
       const body = html != null ? html : `<div class="empty" style="font-size:12px">Appendix not built yet — open it from the home grid to render it.</div>`;
       block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body">${body}</div>`;
       wrap.appendChild(block);
+      if (html != null){                              // render like a chapter: math, figures, citations, cross-refs
+        const bodyEl = block.querySelector('.appx-body');
+        fixFootnotes(bodyEl); runKatex(bodyEl); wireFigures(bodyEl); wireCitations(bodyEl); linkCrossRefs(bodyEl);
+      }
     } else {
       const card = document.createElement('button');
       card.className = 'appx-card'; card.dataset.ch = appId;
@@ -2613,7 +2617,7 @@ async function detectFromRepo(src, entry, t){
   const chapters = parseLatexChapters(main, resolve);
   // Attachment is derived from source HERE (source is in hand at scan) and cached on the units.
   // map is keyed by include path (no .tex); annotateAttachments matches unit.sourceFile tolerant of .tex.
-  const sourceByFile = { ...map };
+  const sourceByFile = { ...map, 'main.tex': main, [entry]: main };
   annotateAttachments(chapters, sourceByFile);
   return { chapters, level: detectUnitLevel(main, resolve) };
 }
