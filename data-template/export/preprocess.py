@@ -78,16 +78,28 @@ def _source_of(row, entry):
     return (row.get("sourceFile") or entry)
 
 
-def assemble_full(rows, read_tex, entry):
+def assemble_full(rows, read_tex, entry, mark_appendix=False):
     """The whole document in reading order (for numbering + cross-refs): flatten each unique
-    source file once, in row order. Single-file articles collapse to flatten(entry)."""
-    seen, parts = set(), []
+    source file once, in row order. Single-file articles collapse to flatten(entry).
+
+    mark_appendix (build_label_map only): prepend a synthetic '\\appendix\\n' before the first
+    kind=='appendix' row's body. The real dissertation puts \\appendix / \\begin{theappendices} in
+    main.tex (the entry, which is NOT concatenated in dedicated-file mode) while the appendix unit
+    files start with a plain \\chapter, so the in-text marker never reaches this assembled string.
+    Injecting from the reliable row-kind signal lets build_label_map switch to letter numbering. It
+    is idempotent: if a real \\appendix already precedes, build_label_map's in_app flag is a boolean,
+    so a second marker is harmless. Every other caller keeps byte-identical output (default False)."""
+    seen, parts, marked = set(), [], False
     for r in rows:
         sf = _source_of(r, entry)
         if sf in seen:
             continue
         seen.add(sf)
-        parts.append(strip_comments(flatten(sf, read_tex)))
+        body = strip_comments(flatten(sf, read_tex))
+        if mark_appendix and not marked and r.get("kind") == "appendix":
+            body = "\\appendix\n" + body
+            marked = True
+        parts.append(body)
     if not parts:                       # no rows / no sourceFiles -> fall back to the entry
         parts.append(strip_comments(flatten(entry, read_tex)))
     return "\n".join(parts)
@@ -157,12 +169,23 @@ def build_acronyms(read_tex):
 # label -> (kind, number) map, article/chapter aware
 # ---------------------------------------------------------------------------
 
+def _letter(n):
+    """Spreadsheet-column style top-level label used after \\appendix: 1->A, 26->Z, 27->AA.
+    Mirrors how report/book renumber appendix chapters as letters."""
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+
 def build_label_map(read_tex, rows, entry):
-    full = assemble_full(rows, read_tex, entry)
+    full = assemble_full(rows, read_tex, entry, mark_appendix=True)
     has_chapter = detect_level(full) == "chapter"
     labels = {}
-    chap = sec = subsec = subsubsec = 0
+    chap = appc = sec = subsec = subsubsec = 0
     figc = tabc = eqc = 0
+    in_app = False   # after \appendix / \begin{theappendices}: top level renumbers as letters
     env_stack = []   # list of (env_name, starred)
     last = None
     # Equations follow the report/book class: one number per numbered ROW (align rows count
@@ -177,24 +200,33 @@ def build_label_map(read_tex, rows, entry):
         r"\\begin\{(figure|table|equation|align|gather|multline|eqnarray|" + NEST + r")(\*?)\}|"
         r"\\end\{(figure|table|equation|align|gather|multline|eqnarray|" + NEST + r")\*?\}|"
         r"\\label\{([^}]+)\}|"
-        r"(\\\\)")
+        r"(\\\\)|"
+        r"(\\appendix\b|\\begin\{theappendices\})")
+
+    def topnum():
+        # top-level number for section/figure/equation prefixes: letter in appendix mode, else digit
+        return _letter(appc) if in_app else str(chap)
 
     def secnum():
         # In article mode there is no chapter: sections are the top level.
-        parts = ([str(chap)] if has_chapter else []) + \
+        parts = ([topnum()] if has_chapter else []) + \
                 [str(x) for x in (sec, subsec, subsubsec) if x]
         return ".".join(parts) if parts else "0"
 
     def fignum(counter):
-        return f"{chap}.{counter}" if has_chapter else f"{counter}"
+        return f"{topnum()}.{counter}" if has_chapter else f"{counter}"
 
     def eqnum(counter):
-        return f"({chap}.{counter})" if has_chapter else f"({counter})"
+        return f"({topnum()}.{counter})" if has_chapter else f"({counter})"
 
     for m in token.finditer(full):
-        if m.group(1):
+        if m.group(7):
+            in_app = True
+        elif m.group(1):
             lvl = m.group(1)
-            if lvl == "chapter":
+            if lvl == "chapter" and in_app:
+                appc += 1; sec = subsec = subsubsec = 0; figc = tabc = eqc = 0; last = "appendix"
+            elif lvl == "chapter":
                 chap += 1; sec = subsec = subsubsec = 0; figc = tabc = eqc = 0; last = "chapter"
             elif lvl == "section":
                 sec += 1; subsec = subsubsec = 0; last = "section"
@@ -220,7 +252,9 @@ def build_label_map(read_tex, rows, entry):
                 elif e == "table": labels[lbl] = ("Table", fignum(tabc))
                 elif e in NUM_ENVS and not starred: labels[lbl] = ("Equation", eqnum(eqc))
             elif last == "chapter":
-                labels[lbl] = ("Chapter", f"{chap}")
+                labels[lbl] = ("Chapter", str(chap))
+            elif last == "appendix":
+                labels[lbl] = ("Appendix", _letter(appc))
             else:
                 labels[lbl] = ("Section", secnum())
         elif m.group(6):   # row break: a new numbered row inside an align-family environment
@@ -319,18 +353,29 @@ def _count_eq_rows(text):
 
 
 def unit_equation_context(rows, unit_id, read_tex, entry):
-    """(prefix, offset) for numbering one unit's equations. Chapter mode: prefix '<chap>.' and
-    offset 0 (the equation counter resets each chapter). Article mode: prefix '' and offset = the
-    count of numbered equation rows in all preceding units (equations run flat across the doc)."""
+    """(prefix, offset) for numbering one unit's equations. Chapter mode: prefix '<chap>.' (or the
+    appendix LETTER '<A>.' for kind=='appendix' units) and offset 0 — the equation counter resets each
+    chapter/appendix. Article mode: prefix '' and offset = the count of numbered equation rows in all
+    preceding units (equations run flat across the doc)."""
     full = assemble_full(rows, read_tex, entry)
     has_chapter = detect_level(full) == "chapter"
-    chap_before = eq_before = 0
+    chap_before = app_before = eq_before = 0
     for row in rows:
         rid = row.get("id")
+        is_app = row.get("kind") == "appendix"
         body = unit_body(rows, rid, read_tex, entry)
         if rid == unit_id:
-            return (f"{chap_before + 1}.", 0) if has_chapter else ("", eq_before)
-        chap_before += len(re.findall(r"\\chapter\b", strip_comments(body)))
+            if not has_chapter:
+                return ("", eq_before)
+            if is_app:
+                return (f"{_letter(app_before + 1)}.", 0)
+            return (f"{chap_before + 1}.", 0)
+        # appendix units advance the letter counter, not the numeric chapter counter (their internal
+        # \chapter commands must not inflate the chapter number of a later main-matter unit)
+        if is_app:
+            app_before += 1
+        else:
+            chap_before += len(re.findall(r"\\chapter\b", strip_comments(body)))
         eq_before += _count_eq_rows(body)
     return ("", 0)
 

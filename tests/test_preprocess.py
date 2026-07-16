@@ -213,3 +213,95 @@ def test_unit_body_index_slice_ignores_frontmatter_starred_chapters():
     assert "Platform prose." in body
     assert "Background prose." not in body      # the off-by-one bug returned this
     assert "Unnumbered summary" not in body
+
+
+# ---------------- appendix numbering (report/book \appendix -> LETTER chapters) ----------------
+# Ground truth = the compiled PDF: after \appendix (or \begin{theappendices}) the top-level counter
+# switches to letters. Appendix "chapters" become A, B, C...; their equations reset per appendix and
+# render (A.1),(A.2),...; and \cref{app:foo} resolves to "Appendix A" (not "chapter 3").
+
+def _appendix_fixture():
+    """A book: one numbered chapter, then two \\appendix units (each a numbered equation)."""
+    rows = [{"id": "ch_a", "n": 1, "title": "A", "sourceFile": "chapters/ch_a.tex", "kind": "chapter"},
+            {"id": "app_a", "n": 2, "title": "Data", "sourceFile": "appendices/app_a.tex", "kind": "appendix"},
+            {"id": "app_b", "n": 3, "title": "More", "sourceFile": "appendices/app_b.tex", "kind": "appendix"}]
+    files = {
+        "main.tex": ("\\include{chapters/ch_a}\n\\appendix\n"
+                     "\\include{appendices/app_a}\n\\include{appendices/app_b}"),
+        "chapters/ch_a.tex": ("\\chapter{A}\\label{ch:a}\n"
+                              "\\begin{equation} a=b \\label{eq:main_one}\\end{equation}"),
+        # the boundary marker leads the first appendix source so the assembled stream carries it
+        "appendices/app_a.tex": ("\\appendix\n\\chapter{Data}\\label{app:one}\n"
+                                 "\\begin{equation} u=v \\label{eq:appx_one}\\end{equation}"),
+        "appendices/app_b.tex": ("\\chapter{More}\\label{app:two}\n"
+                                 "\\begin{equation} p=q \\label{eq:appx_two}\\end{equation}")}
+    return rows, files
+
+
+def test_letter_spreadsheet_style():
+    assert P._letter(1) == "A" and P._letter(26) == "Z" and P._letter(27) == "AA"
+
+
+def test_label_map_appendix_chapters_use_letters():
+    rows, files = _appendix_fixture()
+    labels = P.build_label_map(reader_from(files), rows, "main.tex")
+    # normal chapter is unchanged
+    assert labels["ch:a"] == ("Chapter", "1")
+    assert labels["eq:main_one"] == ("Equation", "(1.1)")
+    # first appendix -> letter A, equations (A.N)
+    assert labels["app:one"] == ("Appendix", "A")
+    assert labels["eq:appx_one"] == ("Equation", "(A.1)")
+    # second appendix -> letter B, equations reset (B.N)
+    assert labels["app:two"] == ("Appendix", "B")
+    assert labels["eq:appx_two"] == ("Equation", "(B.1)")
+
+
+def test_label_map_appendix_via_theappendices_env():
+    rows = [{"id": "app_a", "n": 1, "title": "Data", "sourceFile": "appendices/app_a.tex", "kind": "appendix"}]
+    files = {"main.tex": "\\include{appendices/app_a}",
+             "appendices/app_a.tex": ("\\begin{theappendices}\n\\chapter{Data}\\label{app:one}\n"
+                                      "\\begin{equation} u=v \\label{eq:appx_one}\\end{equation}\n"
+                                      "\\end{theappendices}")}
+    labels = P.build_label_map(reader_from(files), rows, "main.tex")
+    assert labels["app:one"] == ("Appendix", "A")
+    assert labels["eq:appx_one"] == ("Equation", "(A.1)")
+
+
+def test_label_map_appendix_from_row_kind_when_marker_only_in_entry():
+    """The real dissertation: \\begin{theappendices} lives in main.tex (the entry, which
+    assemble_full does NOT concatenate in dedicated-file mode), and the appendix unit files start
+    with a plain \\chapter{...}\\label{app:...} — no in-file boundary marker. build_label_map must
+    still switch to letters using the reliable kind=='appendix' row signal."""
+    rows = [{"id": "ch_a", "n": 1, "title": "A", "sourceFile": "chapters/ch_a.tex", "kind": "chapter"},
+            {"id": "app_a", "n": 2, "title": "Data", "sourceFile": "appendices/app_a.tex", "kind": "appendix"},
+            {"id": "app_b", "n": 3, "title": "More", "sourceFile": "appendices/app_b.tex", "kind": "appendix"}]
+    files = {
+        "main.tex": ("\\include{chapters/ch_a}\n\\begin{theappendices}\n"
+                     "\\include{appendices/app_a}\n\\include{appendices/app_b}\n\\end{theappendices}"),
+        "chapters/ch_a.tex": "\\chapter{A}\\label{ch:a}",
+        # NO \appendix / \begin{theappendices} inside the appendix unit files
+        "appendices/app_a.tex": ("\\chapter{Data}\\label{app:one}\n"
+                                 "\\begin{equation} u=v \\label{eq:appx_one}\\end{equation}"),
+        "appendices/app_b.tex": ("\\chapter{More}\\label{app:two}\n"
+                                 "\\begin{equation} p=q \\label{eq:appx_two}\\end{equation}")}
+    labels = P.build_label_map(reader_from(files), rows, "main.tex")
+    assert labels["ch:a"] == ("Chapter", "1")
+    assert labels["app:one"] == ("Appendix", "A")
+    assert labels["eq:appx_one"] == ("Equation", "(A.1)")
+    assert labels["app:two"] == ("Appendix", "B")
+    assert labels["eq:appx_two"] == ("Equation", "(B.1)")
+
+
+def test_unit_equation_context_appendix_units_use_letters():
+    rows, files = _appendix_fixture()
+    r = reader_from(files)
+    # chapter unit unchanged
+    assert P.unit_equation_context(rows, "ch_a", r, "main.tex") == ("1.", 0)
+    # appendix units get letter prefixes, counter resets per appendix (offset 0)
+    assert P.unit_equation_context(rows, "app_a", r, "main.tex") == ("A.", 0)
+    assert P.unit_equation_context(rows, "app_b", r, "main.tex") == ("B.", 0)
+
+
+def test_tag_equations_appendix_prefix_yields_letter_tag():
+    out = P.tag_equations(r"\begin{equation}u=v\end{equation}", "A.", 0)
+    assert r"\tag{A.1}" in out
