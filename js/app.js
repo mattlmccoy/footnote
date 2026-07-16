@@ -2344,6 +2344,13 @@ function enterHome(){
   document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+  read.querySelectorAll('#appx-home .appx-toggle').forEach(tg => tg.onclick = () => {
+    const grid = tg.parentElement.querySelector('.appx-home-grid');
+    const open = grid.style.display === 'none';
+    grid.style.display = open ? 'grid' : 'none';
+    tg.querySelector('.appx-caret').textContent = open ? '▾' : '▸';
+    localStorage.setItem('home:appendicesOpen', open ? '1' : '0');
+  });
   const imp = document.getElementById('import-doc');
   if (imp) imp.onclick = () => localStorage.getItem('ghpat') ? importDocument() : openSettingsPage('access');
   refreshInbox();
@@ -2854,7 +2861,8 @@ function homeHtml(){
         ${lr?.comments?.length ? `<div style="font-size:11.5px;color:var(--text-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">last comment: "${escapeHtml(lr.comments[lr.comments.length-1].body).slice(0,64)}"</div>` : ''}
       </div>
       <button class="btn" data-ch="${last}" style="margin-left:auto;flex-shrink:0">Resume</button></div>` : '';
-  const cards = CHAPTERS.map(c => {
+  const chOnly = CHAPTERS.filter(c => c.kind !== 'appendix');
+  const cards = chOnly.map(c => {
     const s = chapterStats(c.id); const pct = Math.round(s.frac*100);
     const done = s.readDone;
     const bar = done ? 'var(--success)' : 'var(--accent)';
@@ -2866,6 +2874,25 @@ function homeHtml(){
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
   }).join('');
+  const appUnits = CHAPTERS.filter(c => c.kind === 'appendix');
+  const appOpen = localStorage.getItem('home:appendicesOpen') !== '0';
+  const appCard = a => {
+    const homeMeta = a.home ? chMeta(a.home) : null;
+    const sub = homeMeta ? `attached to ${unitLabel(homeMeta, UNIT)}` : 'uncited';
+    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
+        <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
+        <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
+        <div style="font-size:11px;color:var(--text-2)">${escapeHtml(sub)}</div></div>`;
+  };
+  const appendixSection = appUnits.length
+    ? `<div id="appx-home" style="margin-top:26px">
+         <div class="home-allch appx-toggle" data-open="${appOpen?1:0}" style="cursor:pointer;user-select:none">
+           <span class="appx-caret">${appOpen?'▾':'▸'}</span> APPENDICES <span style="color:var(--text-3)">· ${appUnits.length}</span>
+         </div>
+         <div class="appx-home-grid" style="display:${appOpen?'grid':'none'};grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px;margin-top:13px">
+           ${appUnits.map(appCard).join('')}</div>
+       </div>`
+    : '';
   const hasTok = !!localStorage.getItem('ghpat');
   // No chapters yet → the document hasn't been imported. Show an import call-to-action, not a blank grid.
   const empty = `<div id="home-empty" style="border:1px dashed var(--border-2);border-radius:var(--r-lg);padding:40px 28px;text-align:center;max-width:520px;margin:6vh auto 0">
@@ -2882,7 +2909,8 @@ function homeHtml(){
   const allCh = CHAPTERS.length
     ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
        ${wholeBtn}
-       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`
+       <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>
+       ${appendixSection}`
     : empty;
   return `<div id="home-wrap" style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
       ${setupChecklistHtml()}
