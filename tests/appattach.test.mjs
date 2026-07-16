@@ -49,3 +49,38 @@ test('override naming a non-citer is ignored (falls back to first citer)', () =>
   const r = computeAttachments({ ...base, override: { app_x: 'ch_b_nope' } });
   assert.equal(r.homeOf.app_x, 'ch_a');
 });
+
+import { annotateAttachments, attachmentsView } from '../js/appattach.js';
+
+const scanUnits = [
+  { id: 'ch_a', sourceFile: 'chapters/ch_a.tex' },
+  { id: 'ch_b', sourceFile: 'chapters/ch_b.tex' },
+  { id: 'app_x', kind: 'appendix', sourceFile: 'appendices/app_x.tex' },
+  { id: 'app_z', kind: 'appendix', sourceFile: 'appendices/app_z.tex' },
+];
+const sourceByFile = {
+  'chapters/ch_a': 'intro cites \\cref{app:x}',
+  'chapters/ch_b': 'no refs here',
+  'appendices/app_x': '\\chapter{X}\\label{app:x}',
+  'appendices/app_z': '\\chapter{Z}\\label{app:z}',   // uncited
+};
+
+test('annotateAttachments writes home + citedBy onto appendix units (matches sourceFile with/without .tex)', () => {
+  const out = annotateAttachments(scanUnits.map(u => ({ ...u })), sourceByFile);
+  const x = out.find(u => u.id === 'app_x');
+  const z = out.find(u => u.id === 'app_z');
+  assert.deepEqual(x.citedBy, ['ch_a']);
+  assert.equal(x.home, 'ch_a');
+  assert.deepEqual(z.citedBy, []);
+  assert.equal(z.home, null);
+  assert.equal(out.find(u => u.id === 'ch_a').home, undefined);   // chapters untouched
+});
+
+test('attachmentsView reconstructs maps from stored fields (no source needed)', () => {
+  const annotated = annotateAttachments(scanUnits.map(u => ({ ...u })), sourceByFile);
+  const v = attachmentsView(annotated);
+  assert.deepEqual(v.byChapter.ch_a, ['app_x']);
+  assert.equal(v.homeOf.app_x, 'ch_a');
+  assert.deepEqual(v.citersOf.app_x, ['ch_a']);
+  assert.deepEqual(v.uncited, ['app_z']);
+});

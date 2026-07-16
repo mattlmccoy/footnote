@@ -24,3 +24,42 @@ export function computeAttachments({ chapters = [], refsByChapter = {}, labelsBy
 
   return { byChapter, homeOf, citersOf, uncited };
 }
+
+import { referencedLabels, appendixLabels } from './apprefs.js';
+
+// Look up a unit's source text tolerant of a trailing .tex on either the key or the sourceFile.
+function srcFor(sourceByFile, sf) {
+  if (sf == null) return '';
+  const bare = String(sf).replace(/\.tex$/, '');
+  return sourceByFile[sf] ?? sourceByFile[bare] ?? sourceByFile[bare + '.tex'] ?? '';
+}
+
+// SCAN-TIME: compute attachment from source and write additive home/citedBy onto appendix units.
+// Returns the same units array (mutated appendix entries) for chaining into saveChapters.
+export function annotateAttachments(units, sourceByFile = {}) {
+  const refsByChapter = {}, labelsByAppendix = {};
+  for (const u of units) {
+    if (u.kind === 'appendix') labelsByAppendix[u.id] = appendixLabels(srcFor(sourceByFile, u.sourceFile));
+    else refsByChapter[u.id] = referencedLabels(srcFor(sourceByFile, u.sourceFile));
+  }
+  const { citersOf, homeOf } = computeAttachments({ chapters: units, refsByChapter, labelsByAppendix, override: {} });
+  for (const u of units) {
+    if (u.kind !== 'appendix') continue;
+    u.citedBy = citersOf[u.id] || [];
+    u.home = homeOf[u.id] ?? null;
+  }
+  return units;
+}
+
+// LOAD-TIME: rebuild the maps purely from the stored home/citedBy fields (no source, no fetch).
+export function attachmentsView(units = []) {
+  const citersOf = {}, homeOf = {}, byChapter = {}, uncited = [];
+  const chapterUnits = units.filter(u => !isAppendix(u));
+  for (const u of units) if (isAppendix(u)) {
+    citersOf[u.id] = u.citedBy || [];
+    if (u.home) homeOf[u.id] = u.home; else uncited.push(u.id);
+  }
+  for (const c of chapterUnits)
+    byChapter[c.id] = units.filter(a => isAppendix(a) && (a.citedBy || []).includes(c.id)).map(a => a.id);
+  return { byChapter, homeOf, citersOf, uncited };
+}
