@@ -366,7 +366,28 @@ async function refreshFromOverleaf(){
   } catch (e){ flash('Refresh failed: ' + (e && e.message || e)); }
 }
 
+// Opening a not-yet-rendered unit. In LOCAL mode the author renders with their own (fast) pipeline, so we
+// NEVER silently install/dispatch a cloud render — we ASK: build locally (recommended) or a one-off cloud
+// render. In CLOUD mode we auto-build on their GitHub as before. (Fixes: a Local-mode project auto-firing a
+// slow cloud render that competes with the local pipeline.)
 async function autoBuildReadingView(ch){
+  const t = tok(); if (!t){ renderConnect(); return; }
+  if (processingMode(_CFG) === 'local'){
+    read.innerHTML = `<div class="empty"><i class="ti ti-file-text" style="font-size:22px"></i>
+      <div style="font-size:16px;font-weight:500;margin:10px 0 6px">This ${escapeHtml(UNIT)} isn’t rendered yet</div>
+      <div style="font-size:12.5px;color:var(--text-3);max-width:460px;margin:0 auto 14px;line-height:1.7">You’re in <b>Local mode</b>. Build it with your local render pipeline (fast — recommended), then reload; or run a one-off cloud render on your GitHub (slower, and it renders on Actions rather than your machine).</div>
+      <div style="display:flex;gap:8px;justify-content:center">
+        <button class="btn" id="rv-reload"><i class="ti ti-refresh"></i>I built it — reload</button>
+        <button class="btn" id="rv-cloud"><i class="ti ti-cloud"></i>Cloud render once</button>
+      </div></div>`;
+    const rl = document.getElementById('rv-reload'); if (rl) rl.onclick = () => location.reload();
+    const cb = document.getElementById('rv-cloud'); if (cb) cb.onclick = () => cloudBuildReadingView(ch);
+    return;
+  }
+  return cloudBuildReadingView(ch);
+}
+
+async function cloudBuildReadingView(ch){
   const t = tok(); if (!t){ renderConnect(); return; }
   const wait = ms => new Promise(r => setTimeout(r, ms));
   read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i>
