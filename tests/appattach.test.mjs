@@ -1,0 +1,51 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { computeAttachments } from '../js/appattach.js';
+
+const units = [
+  { id: 'ch_a', kind: undefined },
+  { id: 'ch_b', kind: undefined },
+  { id: 'app_x', kind: 'appendix' },   // cited by ch_a then ch_b
+  { id: 'app_y', kind: 'appendix' },   // cited only by ch_b
+  { id: 'app_z', kind: 'appendix' },   // uncited
+];
+const base = {
+  chapters: units,
+  refsByChapter: { ch_a: ['app:x'], ch_b: ['app:x', 'app:y'] },
+  labelsByAppendix: { app_x: ['app:x'], app_y: ['app:y'], app_z: ['app:z'] },
+  override: {},
+};
+
+test('first citer is home; second citer is a non-home citer', () => {
+  const r = computeAttachments(base);
+  assert.equal(r.homeOf.app_x, 'ch_a');
+  assert.deepEqual(r.citersOf.app_x, ['ch_a', 'ch_b']);
+});
+
+test('single citer', () => {
+  const r = computeAttachments(base);
+  assert.equal(r.homeOf.app_y, 'ch_b');
+  assert.deepEqual(r.citersOf.app_y, ['ch_b']);
+});
+
+test('uncited appendix', () => {
+  const r = computeAttachments(base);
+  assert.deepEqual(r.uncited, ['app_z']);
+  assert.equal(r.homeOf.app_z, undefined);
+});
+
+test('byChapter lists appendices a chapter cites, in doc order', () => {
+  const r = computeAttachments(base);
+  assert.deepEqual(r.byChapter.ch_a, ['app_x']);
+  assert.deepEqual(r.byChapter.ch_b, ['app_x', 'app_y']);
+});
+
+test('override pins a valid citer as home', () => {
+  const r = computeAttachments({ ...base, override: { app_x: 'ch_b' } });
+  assert.equal(r.homeOf.app_x, 'ch_b');
+});
+
+test('override naming a non-citer is ignored (falls back to first citer)', () => {
+  const r = computeAttachments({ ...base, override: { app_x: 'ch_b_nope' } });
+  assert.equal(r.homeOf.app_x, 'ch_a');
+});
