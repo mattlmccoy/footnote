@@ -267,6 +267,31 @@ def test_label_map_appendix_via_theappendices_env():
     assert labels["eq:appx_one"] == ("Equation", "(A.1)")
 
 
+def test_label_map_appendix_from_row_kind_when_marker_only_in_entry():
+    """The real dissertation: \\begin{theappendices} lives in main.tex (the entry, which
+    assemble_full does NOT concatenate in dedicated-file mode), and the appendix unit files start
+    with a plain \\chapter{...}\\label{app:...} — no in-file boundary marker. build_label_map must
+    still switch to letters using the reliable kind=='appendix' row signal."""
+    rows = [{"id": "ch_a", "n": 1, "title": "A", "sourceFile": "chapters/ch_a.tex", "kind": "chapter"},
+            {"id": "app_a", "n": 2, "title": "Data", "sourceFile": "appendices/app_a.tex", "kind": "appendix"},
+            {"id": "app_b", "n": 3, "title": "More", "sourceFile": "appendices/app_b.tex", "kind": "appendix"}]
+    files = {
+        "main.tex": ("\\include{chapters/ch_a}\n\\begin{theappendices}\n"
+                     "\\include{appendices/app_a}\n\\include{appendices/app_b}\n\\end{theappendices}"),
+        "chapters/ch_a.tex": "\\chapter{A}\\label{ch:a}",
+        # NO \appendix / \begin{theappendices} inside the appendix unit files
+        "appendices/app_a.tex": ("\\chapter{Data}\\label{app:one}\n"
+                                 "\\begin{equation} u=v \\label{eq:appx_one}\\end{equation}"),
+        "appendices/app_b.tex": ("\\chapter{More}\\label{app:two}\n"
+                                 "\\begin{equation} p=q \\label{eq:appx_two}\\end{equation}")}
+    labels = P.build_label_map(reader_from(files), rows, "main.tex")
+    assert labels["ch:a"] == ("Chapter", "1")
+    assert labels["app:one"] == ("Appendix", "A")
+    assert labels["eq:appx_one"] == ("Equation", "(A.1)")
+    assert labels["app:two"] == ("Appendix", "B")
+    assert labels["eq:appx_two"] == ("Equation", "(B.1)")
+
+
 def test_unit_equation_context_appendix_units_use_letters():
     rows, files = _appendix_fixture()
     r = reader_from(files)

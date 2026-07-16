@@ -78,16 +78,28 @@ def _source_of(row, entry):
     return (row.get("sourceFile") or entry)
 
 
-def assemble_full(rows, read_tex, entry):
+def assemble_full(rows, read_tex, entry, mark_appendix=False):
     """The whole document in reading order (for numbering + cross-refs): flatten each unique
-    source file once, in row order. Single-file articles collapse to flatten(entry)."""
-    seen, parts = set(), []
+    source file once, in row order. Single-file articles collapse to flatten(entry).
+
+    mark_appendix (build_label_map only): prepend a synthetic '\\appendix\\n' before the first
+    kind=='appendix' row's body. The real dissertation puts \\appendix / \\begin{theappendices} in
+    main.tex (the entry, which is NOT concatenated in dedicated-file mode) while the appendix unit
+    files start with a plain \\chapter, so the in-text marker never reaches this assembled string.
+    Injecting from the reliable row-kind signal lets build_label_map switch to letter numbering. It
+    is idempotent: if a real \\appendix already precedes, build_label_map's in_app flag is a boolean,
+    so a second marker is harmless. Every other caller keeps byte-identical output (default False)."""
+    seen, parts, marked = set(), [], False
     for r in rows:
         sf = _source_of(r, entry)
         if sf in seen:
             continue
         seen.add(sf)
-        parts.append(strip_comments(flatten(sf, read_tex)))
+        body = strip_comments(flatten(sf, read_tex))
+        if mark_appendix and not marked and r.get("kind") == "appendix":
+            body = "\\appendix\n" + body
+            marked = True
+        parts.append(body)
     if not parts:                       # no rows / no sourceFiles -> fall back to the entry
         parts.append(strip_comments(flatten(entry, read_tex)))
     return "\n".join(parts)
@@ -168,7 +180,7 @@ def _letter(n):
 
 
 def build_label_map(read_tex, rows, entry):
-    full = assemble_full(rows, read_tex, entry)
+    full = assemble_full(rows, read_tex, entry, mark_appendix=True)
     has_chapter = detect_level(full) == "chapter"
     labels = {}
     chap = appc = sec = subsec = subsubsec = 0
