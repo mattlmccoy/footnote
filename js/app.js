@@ -2521,7 +2521,7 @@ function renderInbox(panel, { jobs, chData, adv }){
   const cell = (n, cls, ch) => n
     ? `<button class="mx ${cls}" data-ch="${ch}">${n}</button>` : `<span class="mx mx0">·</span>`;
   const rows = chData.map(c => `<div class="mxrow">
-      <button class="mxname" data-ch="${c.ch}">Ch ${c.n}</button>
+      <button class="mxname" data-ch="${c.ch}">${escapeHtml(unitLabel(chMeta(c.ch), UNIT))}</button>
       ${cell(c.open,'mxopen',c.ch)}${cell(c.staged,'mxstaged',c.ch)}${advByCh[c.ch]?`<button class="mx mxadv" data-ch="${c.ch}">${advByCh[c.ch]}</button>`:'<span class="mx mx0">·</span>'}${cell(c.merged,'mxmerged',c.ch)}
     </div>`).join('');
   panel.style.display = 'block';
