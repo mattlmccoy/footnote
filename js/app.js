@@ -25,6 +25,7 @@ import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
+import { visibleUnitIds } from './releasegate.js?v=1';   // appendices follow their home chapter's release
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -3718,7 +3719,23 @@ async function openReleasePanel(opts){
   const idLabel = id => ADVISOR_NAME[id] || (/^general-/.test(id) ? (inbox[id]?.[0]?.c.author || 'Lab reviewer') : (rel[id]?.name || id));
   // inbox sections: named advisors first, then per-person lab reviewers
   const inboxIds = Object.keys(inbox).sort((a,b) => (/^general-/.test(a)?1:0) - (/^general-/.test(b)?1:0) || idLabel(a).localeCompare(idLabel(b)));
-  const rows = CHAPTERS.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
+  // Chapters get a per-reviewer release checkbox. Appendices are NOT released directly — they follow their
+  // home chapter (see releasegate.visibleUnitIds), with a per-reviewer override select (show/hide/follow).
+  const chOnly = CHAPTERS.filter(c => c.kind !== 'appendix');
+  const appx = CHAPTERS.filter(c => c.kind === 'appendix');
+  const chapterRows = chOnly.map(c => `<tr><td>${c.n}. ${escapeHtml(shortTitle(c.title))}</td>${advs.map(a => `<td style="text-align:center"><input type="checkbox" data-a="${a}" data-ch="${c.id}" ${(rel[a].released||[]).includes(c.id)?'checked':''}></td>`).join('')}</tr>`).join('');
+  const appxRows = appx.length ? `<tr><td colspan="${advs.length+1}" style="padding-top:15px;font-size:10px;letter-spacing:.05em;color:var(--text-3);text-transform:uppercase">Appendices — released with their chapter unless overridden</td></tr>`
+    + appx.map(c => {
+        const homeMeta = c.home ? chMeta(c.home) : null;
+        const follows = homeMeta ? `releases with ${escapeHtml(unitLabel(homeMeta, UNIT))}` : 'not cited by any chapter';
+        return `<tr><td>${escapeHtml(unitLabel(c, UNIT))} · ${escapeHtml(shortTitle(c.title))}<div style="font-weight:400;font-size:10px;color:var(--text-3)">${follows}</div></td>${advs.map(a => {
+          // Migrate a legacy explicit appendix release into the override model, so Save never silently
+          // drops it (appendices no longer have a checkbox in the released[] array).
+          const ov = (rel[a].appendix_override||{})[c.id] || ((rel[a].released||[]).includes(c.id) ? 'show' : '');
+          return `<td style="text-align:center"><select data-appov="${c.id}" data-a="${a}" style="font:inherit;font-size:11px;padding:2px 4px;border:.5px solid var(--border);border-radius:5px;background:var(--bg);color:var(--text)"><option value=""${ov===''?' selected':''}>Follow</option><option value="show"${ov==='show'?' selected':''}>Always show</option><option value="hide"${ov==='hide'?' selected':''}>Always hide</option></select></td>`;
+        }).join('')}</tr>`;
+      }).join('') : '';
+  const rows = chapterRows + appxRows;
   const unreadOf = a => (inbox[a]||[]).filter(({c}) => !c.read && c.status==='submitted').length;
   const advHeadHtml = a => { const unread = unreadOf(a); const pr = pres[a]||{};
     const active = pr.lastActive ? (Date.now()-new Date(pr.lastActive).getTime())/1000 < 120 : false;
@@ -4424,7 +4441,7 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
     try {
       const paths = await ghTree(t);   // ghTree already strips this project's dataPrefix → match BARE paths (dpath() here double-prefixed → preflight was always amber for workspace projects)
       const builtUnitIds = CHAPTERS.map(c => c.id).filter(id => paths.includes('content/'+id+'.html'));
-      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => rel[k].released || []))];
+      const releasedUnitIds = [...new Set(Object.keys(rel).filter(k => k !== '_comment').flatMap(k => visibleUnitIds(CHAPTERS, rel[k].released || [], rel[k].appendix_override || {})))];
       renderBuilt = renderBuiltStatus({ allUnitIds: CHAPTERS.map(c => c.id), releasedUnitIds, builtUnitIds });
     } catch(e){}
     try { await checkActionsAccess(t); await getPublicKey(t); tokenCanWrite = true; } catch(e){ tokenCanWrite = isScopeError(e) ? false : null; }   // Actions read AND Secrets write (email/AI/key seal all need the latter)
@@ -4453,7 +4470,9 @@ gh variable set DOC_NOUN --repo ${dataRepo}    # e.g. ${DOC}</pre>
   // (Notify-me digest + AI setup moved to the dedicated Settings page.)
   document.getElementById('rel-save').onclick = async () => {
     advs.forEach(a => { rel[a].released = [...document.querySelectorAll(`input[data-a="${a}"]:checked`)].map(x => x.dataset.ch);
-      rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked; });
+      rel[a].responses_released = !!document.querySelector(`input[data-resp="${a}"]`)?.checked;
+      const ov = {}; document.querySelectorAll(`select[data-appov][data-a="${a}"]`).forEach(s => { if (s.value) ov[s.dataset.appov] = s.value; });
+      if (Object.keys(ov).length) rel[a].appendix_override = ov; else delete rel[a].appendix_override; });
     const stat = document.getElementById('rel-stat'); stat.textContent = 'Publishing…';
     try { sha = await putJson(t, 'release.json', rel, sha, 'release: update advisor chapter gate'); stat.textContent = 'Published ✓'; }
     catch(e){ stat.textContent = 'Failed: ' + e.message; }

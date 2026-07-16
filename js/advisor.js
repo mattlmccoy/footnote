@@ -5,6 +5,7 @@ import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { wordDiff } from './textdiff.js?v=112b6a1';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=f58d6b0';   // instance config + chapter manifest; assistant-free by construction
+import { visibleUnitIds } from './releasegate.js?v=1';   // appendices follow their home chapter's release (one rule, both portals)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
@@ -438,7 +439,12 @@ async function loadRelease(){
     if (r.status === 401){ keyBad = true; return; }
     if (r.ok) apply(await r.json()); } catch(e){ released = []; }
   function apply(j){ if (j && typeof j === 'object' && !(RELEASE_ID in j)){ revoked = true; return; }   // no gate entry → this reviewer was removed
-    released = (j?.[RELEASE_ID]?.released) || []; responsesReleased = !!(j?.[RELEASE_ID]?.responses_released); }
+    const raw = (j?.[RELEASE_ID]?.released) || [];
+    const ov = (j?.[RELEASE_ID]?.appendix_override) || {};
+    // Appendices are released with their home chapter (unless pinned show/hide). Fall back to the raw list
+    // if the manifest isn't loaded yet, so chapters are never lost.
+    released = CHAPTERS.length ? visibleUnitIds(CHAPTERS, raw, ov) : raw;
+    responsesReleased = !!(j?.[RELEASE_ID]?.responses_released); }
 }
 function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
 async function loadChapter(ch){
