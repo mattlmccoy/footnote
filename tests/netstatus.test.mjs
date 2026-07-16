@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { netHealth, pushSample, bannerText } from '../js/netstatus.js';
+import { netHealth, pushSample, bannerText, uiStatus } from '../js/netstatus.js';
+
+// ---- uiStatus: collapse the health state into a 3-way dot status (green/amber/grey) ----
+test('uiStatus maps health → online | unstable | offline', () => {
+  assert.equal(uiStatus('ok'), 'online');
+  assert.equal(uiStatus('slow'), 'unstable');
+  assert.equal(uiStatus('unreachable'), 'offline');   // can't reach GitHub → grey/offline
+  assert.equal(uiStatus('offline'), 'offline');
+  assert.equal(uiStatus(undefined), 'online');        // default optimistic
+});
 
 // ---- pushSample: bounded ring buffer of recent request outcomes ----
 test('pushSample appends and caps the window to max', () => {
