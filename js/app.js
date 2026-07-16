@@ -26,6 +26,7 @@ import { readProgress } from './cardstats.js?v=cfa6c99';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
+import { readingViewState } from './setupstatus.js?v=1';   // distinguish a failed tree read from genuinely-not-built
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -2568,7 +2569,13 @@ async function refreshInbox(){
   const panel = document.getElementById('inbox-panel'); if (!panel) return;
   const t = tok(); if (!t){ panel.style.display = 'none'; return; }
   try { renderInbox(panel, await gatherInbox(t)); }
-  catch(e){ panel.innerHTML = `<div class="ibx-empty">Couldn't load triage (${escapeHtml(e.message)}).</div>`; }
+  catch(e){
+    // A failed tree/jobs read (blocked/throttled GitHub) must not make the panel silently vanish — show
+    // an honest connection message with a retry, not a blank space.
+    panel.style.display = 'block';
+    panel.innerHTML = `<div class="ibx-empty">Couldn’t load your triage — can’t reach GitHub right now (${escapeHtml(e.message)}). <button class="btn" id="ibx-retry" style="margin-left:6px;padding:2px 9px;font-size:11.5px">Retry</button></div>`;
+    const r = panel.querySelector('#ibx-retry'); if (r) r.onclick = () => refreshInbox();
+  }
 }
 function renderInbox(panel, { jobs, chData, adv }){
   const advByCh = {}; adv.forEach(a => { advByCh[a.ch] = (advByCh[a.ch]||0) + a.count; });
@@ -2853,19 +2860,24 @@ function setupChecklistHtml(){
 async function refreshSetup(){
   const strip = document.getElementById('setup-strip'); if (!strip) return;
   const line = document.getElementById('setup-render'); const t = tok();
-  const parsed = CHAPTERS.length > 0; let built = 0;
+  const parsed = CHAPTERS.length > 0; let built = 0, failed = false;
   if (t && parsed){
     try { const set = new Set(await ghTree(t));
       // ghTree() already strips this project's dataPrefix, so match the bare repo-relative path (no dpath()).
-      built = CHAPTERS.filter(c => set.has('content/' + c.id + '.html')).length; } catch(e){}
+      built = CHAPTERS.filter(c => set.has('content/' + c.id + '.html')).length; }
+    catch(e){ failed = true; }   // couldn't read the repo tree (blocked/throttled) — NOT proof content is missing
   }
-  const allBuilt = parsed && built >= CHAPTERS.length;
-  const detail = !parsed ? `import your ${DOC} first`
-    : allBuilt ? `all ${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''} rendered`
-    : built > 0 ? `${built} of ${CHAPTERS.length} rendered — building the rest`
+  const state = readingViewState({ parsed, failed, built, total: CHAPTERS.length });
+  const allBuilt = state === 'built';
+  const detail = state === 'unimported' ? `import your ${DOC} first`
+    : state === 'unreachable' ? `couldn’t check — can’t reach GitHub right now (see the banner); your rendered ${UNIT}s aren’t affected`
+    : state === 'built' ? `all ${CHAPTERS.length} ${UNIT}${CHAPTERS.length !== 1 ? 's' : ''} rendered`
+    : state === 'partial' ? `${built} of ${CHAPTERS.length} rendered — building the rest`
     : 'not built yet — renders once your source is in place';
   if (line) line.innerHTML = _setupStep(allBuilt, 'Reading view built', detail);
-  strip.style.display = allBuilt ? 'none' : '';   // all units rendered ⟹ source+parsed done → hide the strip
+  // Hide the strip only when we CONFIRMED all units are built. On an unreachable tree read we can't
+  // confirm either way — leave the strip as-is rather than flipping it open with a false "not built".
+  if (state !== 'unreachable') strip.style.display = allBuilt ? 'none' : '';
 }
 // No chapters on the home can mean two very different things: the document was never imported, OR the
 // app can't READ the data repo (a dropped GitHub-App repo permission / narrowed token — a private repo
