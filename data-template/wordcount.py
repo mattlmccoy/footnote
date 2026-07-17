@@ -6,23 +6,43 @@ the input is a well-formed pandoc HTML5 fragment and this must run without extra
 """
 import re
 
-# citeproc emits <section id="refs"> ... ; some templates use a .references wrapper.
-# Attribute values may be single- or double-quoted, so both quote styles are matched.
-_REF_RE = re.compile(r'<section\b[^>]*\bid=["\']refs["\'][^>]*>.*?</section>', re.I | re.S)
-_REF_CLASS_RE = re.compile(r'<(section|div)\b[^>]*\bclass=["\'][^"\']*\breferences\b[^"\']*["\'][^>]*>.*?</\1>', re.I | re.S)
-# pandoc footnotes: <section class="footnotes" ...> ... </section>
-_FN_RE = re.compile(r'<section\b[^>]*\bclass=["\'][^"\']*\bfootnotes\b[^"\']*["\'][^>]*>.*?</section>', re.I | re.S)
-# math stays as <span class="math ...">\(...\)</span> in server HTML (KaTeX renders client-side)
+# Blocks excluded WITH their nested content: the bibliography and the footnotes list. citeproc emits
+# <div id="refs" class="references csl-bib-body"> wrapping NESTED <div class="csl-entry"> — a non-greedy
+# regex stops at the FIRST inner </div> and leaks every following reference into the count, so match the
+# closing tag by BALANCED depth instead. Attribute values may be single- or double-quoted.
+_REF_OPEN = re.compile(r'<(div|section)\b[^>]*\bid=["\']refs["\'][^>]*>', re.I)
+_REFCLASS_OPEN = re.compile(r'<(div|section)\b[^>]*\bclass=["\'][^"\']*\breferences\b[^"\']*["\'][^>]*>', re.I)
+_FN_OPEN = re.compile(r'<(section|div|aside)\b[^>]*\bclass=["\'][^"\']*\bfootnotes\b[^"\']*["\'][^>]*>', re.I)
+# math stays as <span class="math ...">\(...\)</span> in server HTML (KaTeX renders client-side); leaf, no nesting.
 _MATH_RE = re.compile(r'<span\b[^>]*\bclass=["\'][^"\']*\bmath\b[^"\']*["\'][^>]*>.*?</span>', re.I | re.S)
 _TAG_RE = re.compile(r'<[^>]+>')
 _ENT_RE = re.compile(r'&[a-zA-Z]+;|&#\d+;')
 
 
+def _strip_balanced(s, opener):
+    """Remove every element matched by `opener` INCLUDING nested content, finding the matching close by
+    counting same-name open/close tags (regex alone can't balance nested divs like a citeproc bibliography)."""
+    while True:
+        m = opener.search(s)
+        if not m:
+            return s
+        tag = m.group(1)
+        close = re.compile(r'<(/?)' + tag + r'\b[^>]*>', re.I)
+        depth, end = 1, None
+        for t in close.finditer(s, m.end()):
+            depth += -1 if t.group(1) else 1
+            if depth == 0:
+                end = t.end()
+                break
+        s = s[:m.start()] + " " + (s[end:] if end is not None else "")
+
+
 def word_count(html):
     s = html or ""
-    for rx in (_REF_RE, _REF_CLASS_RE, _FN_RE, _MATH_RE):
-        s = rx.sub(" ", s)
+    for opener in (_REF_OPEN, _REFCLASS_OPEN, _FN_OPEN):
+        s = _strip_balanced(s, opener)
+    s = _MATH_RE.sub(" ", s)
     s = _TAG_RE.sub(" ", s)
     s = _ENT_RE.sub(" ", s)
     words = s.split()
-    return {"words": len(words), "chars": sum(len(w) for w in words)}
+    return {"words": len(words), "chars": len(" ".join(words))}   # chars WITH spaces (Word's default metric)

@@ -457,8 +457,10 @@ function renderDoc(fragment){
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
   if (current && current !== '__whole__' && !previewing && COUNTS[current]?.words == null){
-    try { COUNTS[current] = countWords(read.querySelector('#doc')?.innerHTML || ''); } catch(e){}
+    // count the RAW fragment (pre-KaTeX) — the live #doc is post-KaTeX and would inflate the count.
+    try { COUNTS[current] = countWords(fragment); } catch(e){}
   }
+  if (!previewing) renderWordCountFab();
 }
 // Attached-appendix rendering: after a chapter is painted, show each appendix HOMED here inline
 // (collapsible, expanded by default) and a link card for appendices this chapter cites but that are
@@ -3162,6 +3164,20 @@ function openWordCountPanel(){
         <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalWords(COUNTS).toLocaleString('en-US')}</td>
         <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalChars(COUNTS).toLocaleString('en-US')}</td></tr></tfoot></table>`;
   openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, [{ label:'Close', primary:true, onClick: close => close() }]);
+}
+// Floating word-count tool: a small pill on a chapter reading view showing this unit's count; click opens the
+// full panel. Appended INSIDE #read, so ANY view that replaces read.innerHTML (home, settings, reviewers,
+// outline, whole-doc, history) auto-removes it — no per-view hide bookkeeping to get wrong.
+function renderWordCountFab(){
+  if (!read || !current || current === '__whole__') return;
+  const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count — click for the full breakdown';
+  fab.onclick = openWordCountPanel;
+  fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:flex;align-items:center;gap:7px;'
+    + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'
+    + 'font:inherit;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.12)';
+  const wc = COUNTS[current];
+  fab.innerHTML = `<i class="ti ti-abacus" style="font-size:14px;color:var(--accent)"></i>${formatCount(wc ? wc.words : totalWords(COUNTS))}`;
+  read.appendChild(fab);
 }
 function openMoreMenu(){
   document.getElementById('moremenu')?.remove();
