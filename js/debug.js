@@ -77,9 +77,10 @@ export function buildSnapshot(state) {
   return L.join('\n');
 }
 
-import { resolveProject } from './config.js?v=dev';
+import { resolveProject, loadConfig, loadProjects } from './config.js?v=dev';
 import { isActiveComment } from './model.js?v=dev';
 import { fetchWithTimeout } from './nethelpers.js?v=dev';
+import { formatBuildTime } from './buildinfo.js?v=dev';
 
 const API = 'https://api.github.com';
 const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
@@ -159,3 +160,99 @@ export async function collectAll(token, appCfg, projects, fetchImpl) {
   }
   return out;
 }
+
+// Build/GitHub/pipeline signals that don't belong to a single project. `projects[0]` is treated as the
+// primary project for the mode + job-queue readout (jobs/mode are per Review-repo).
+export async function collectGlobal(token, appCfg, projects, fetchImpl) {
+  const f = fetchImpl || fetch;
+  const g = { login: null, tokenValid: false, scopes: null, rateRemaining: null, net: 'ok' };
+  const who = await dbgGet(token, `${API}/user`, fetchImpl);
+  g.tokenValid = who.ok; g.login = who.json?.login || null;
+  g.scopes = parseScopes(who.headers?.get ? who.headers.get('x-oauth-scopes') : null);
+  const rl = await dbgGet(token, `${API}/rate_limit`, fetchImpl);
+  g.rateRemaining = rl.json?.rate?.remaining ?? null;
+  let build = { deployedSha: '', deployedTime: '', pageStale: false };
+  try { const b = await (await f('build.json?t=' + Date.now(), { cache: 'no-store' })).json();
+    build.deployedSha = b.sha || ''; build.deployedTime = formatBuildTime(b.time || ''); } catch {}
+  // pipeline (mode + job queue) for the primary project, if any
+  let mode = 'local', queue = { count: 0, oldest: null }, pipelineProject = null;
+  const primary = (projects || [])[0];
+  if (primary) {
+    try {
+      const cfg = resolveProject(appCfg, projects, primary.id);
+      mode = cfg.processingMode || 'local';
+      pipelineProject = primary.id;
+      const jobsRaw = await _contentJson(token, cfg.dataRepo, `${cfg.dataPrefix || ''}jobs.json`, fetchImpl);
+      queue = queueAge(Array.isArray(jobsRaw) ? jobsRaw : [], Date.now());
+    } catch {}
+  }
+  return { github: g, build, mode, queue, pipelineProject };
+}
+
+const _dot = st => ({ insync: 'ok', 'behind-untouched': 'warn', 'behind-touched': 'warn', nyr: 'bad', unknown: 'dim' }[st] || 'dim');
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+export function render(state, doc) {
+  const d = doc || document;
+  const root = d.getElementById('root');
+  if (!state.authenticated) { root.innerHTML = `<p style="color:var(--dim)">Not authenticated — open this page from the owner portal (Alt+click the build orb) so your token is available.</p>`; return; }
+  const g = state.github, b = state.build;
+  const card = (title, rows) => `<div style="border:1px solid var(--line);background:var(--card);border-radius:9px;padding:11px 13px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin-bottom:8px">${title}</div>${rows}</div>`;
+  const row = (k, v) => `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>${k}</span><span style="color:var(--dim)">${v}</span></div>`;
+  const q = state.queue || { count: 0, oldest: null };
+  const projHtml = (state.projects || []).map(p => {
+    const rl = p.rollup || { docCount: 0, behind: 0, open: 0, worst: 'insync' };
+    const table = (p.docs || []).map(x => `<tr>
+      <td style="padding:6px 10px;border-top:1px solid var(--line)">${esc(x.n)} · ${esc(x.title)}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--line)"><span style="color:var(--${_dot(x.state)})">●</span> ${esc(x.label || x.state)}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc((x.builtFrom || '—').slice(0, 7))}</td>
+      <td style="padding:6px 10px;border-top:1px solid var(--line)">${x.open || 0}</td></tr>`).join('');
+    return `<details style="border:1px solid var(--line);border-radius:9px;margin-bottom:8px" ${state.projects.length === 1 ? 'open' : ''}>
+      <summary style="padding:10px 13px;cursor:pointer"><span style="color:var(--${_dot(rl.worst)})">●</span>
+        <b>${esc(p.name || p.id)}</b> <span style="color:var(--dim);font-size:11.5px">${rl.docCount} docs · ${rl.behind} behind · ${rl.open} open${p.error ? ' · ERROR: ' + esc(p.error) : ''}</span></summary>
+      <table style="width:100%;border-collapse:collapse;font-size:12px">${table}</table></details>`;
+  }).join('');
+  root.innerHTML = `
+    <div style="display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px">
+      <h1 style="font-size:15px;margin:0">Footnote · Debug</h1>
+      <span style="font-size:11px;color:var(--dim)">deployed ${esc(b.deployedSha)} · this page ${b.pageStale ? 'STALE' : 'current'}</span>
+      <button id="dbg-copy" style="margin-left:auto;font:inherit;font-size:12px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--accent);cursor:pointer">Copy snapshot</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      ${card('GitHub connection', row('Token', g.tokenValid ? 'valid · ' + esc(g.login) : 'INVALID') + row('Scopes', g.scopes ? esc(g.scopes.join(', ')) : '(fine-grained)') + row('Rate limit', esc(g.rateRemaining ?? '?')) + row('Net', esc(g.net)))}
+      ${card('Pipeline', row('Mode', esc(state.mode)) + row('Queue', q.count ? `${q.count} pending${q.oldest ? ' · oldest ' + esc(q.oldest.type) : ''}` : 'idle') + row('Deployed', esc(b.deployedTime)))}
+    </div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin:0 2px 8px">Projects (${(state.projects || []).length})</div>
+    ${projHtml || '<p style="color:var(--dim)">No projects.</p>'}`;
+  const copyBtn = d.getElementById('dbg-copy');
+  if (copyBtn) copyBtn.onclick = async () => {
+    try { await navigator.clipboard.writeText(buildSnapshot(state.snapshot)); copyBtn.textContent = 'Copied ✓'; setTimeout(() => (copyBtn.textContent = 'Copy snapshot'), 1500); }
+    catch { copyBtn.textContent = 'Copy failed'; }
+  };
+}
+
+// Assemble the snapshot object render() hands to buildSnapshot on copy.
+function _snapshotOf(state, nowIso) {
+  const q = state.queue || { count: 0, oldest: null };
+  return { now: nowIso, build: state.build, github: state.github,
+    pipeline: { mode: state.mode, queueCount: q.count || 0, oldestType: q.oldest?.type || null,
+      oldestAgeMin: q.oldest?.ageMs != null ? Math.round(q.oldest.ageMs / 60000) : null },
+    projects: (state.projects || []).map(p => ({ id: p.id, docCount: p.rollup.docCount, behind: p.rollup.behind, open: p.rollup.open,
+      docs: (p.docs || []).map(dd => ({ id: dd.id, rendered: dd.rendered, builtFrom: (dd.builtFrom || '').slice(0, 7), state: dd.state, open: dd.open })) })) };
+}
+
+export async function boot() {
+  const token = (function () { try { return localStorage.getItem('ghpat'); } catch { return null; } })();
+  if (!token) { render({ authenticated: false }, document); return; }
+  const appCfg = await loadConfig();
+  const projects = await loadProjects(appCfg, token);
+  const global = await collectGlobal(token, appCfg, projects);
+  const deep = await collectAll(token, appCfg, projects);
+  const nowIso = new Date().toISOString();
+  const state = { authenticated: true, ...global, projects: deep };
+  state.snapshot = _snapshotOf(state, nowIso);
+  render(state, document);
+}
+
+if (typeof document !== 'undefined') boot();
