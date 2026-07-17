@@ -18,6 +18,7 @@ import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chap
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
+import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=1';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=621de9a';
@@ -172,6 +173,10 @@ const DATA_REPO = _CFG.dataRepo;
 // chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
 // "import your document" state. Re-fetched on reload after a token is added or a document imported.
 let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
+// Per-unit word/char counts, produced at render time (content/counts.json). One cheap fetch; absence is fine.
+let COUNTS = {};
+async function loadCounts(){ const t = tok(); if (!t) return; try { const r = await getJson(t, dpath('content/counts.json')); COUNTS = (r.json && typeof r.json === 'object') ? r.json : {}; } catch(e){ COUNTS = {}; } }
+await loadCounts();
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : id === '__whole__' ? { n:'·', title:'Whole document' } : { n:'?', title:id });
 // ---------- whole-document ("read the whole paper") view state ----------
 // WHOLE = the continuous view is active. _reviews holds EVERY chapter's review (per-chapter files stay
@@ -449,6 +454,9 @@ function renderDoc(fragment){
   loadAdvisorComments(current);
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
+  if (current && current !== '__whole__' && !previewing && COUNTS[current]?.words == null){
+    try { COUNTS[current] = countWords(read.querySelector('#doc')?.innerHTML || ''); } catch(e){}
+  }
 }
 // Attached-appendix rendering: after a chapter is painted, show each appendix HOMED here inline
 // (collapsible, expanded by default) and a link card for appendices this chapter cites but that are
@@ -1525,6 +1533,7 @@ async function loadWholeDoc(){
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+  if (totalWords(COUNTS)){ const _d = read.querySelector('#doc'); if (_d){ const _t = document.createElement('div'); _t.style.cssText = 'color:var(--text-3);font-size:12px;margin:0 0 14px'; _t.textContent = formatCount(totalWords(COUNTS)); _d.prepend(_t); } }
 }
 // Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
 // of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
@@ -2835,7 +2844,7 @@ function importDocument(){
       // Generate the Proposed outline from the same source (nested structure + source-derived synopses).
       try { const outline = parseLatexOutline(_entryText, _resolveInc); if (outline.chapters.length) await saveOutline(outline, t); } catch (e) { console.warn('outline gen:', e.message); }
       flash(`Imported ${merged.length} ${UNIT}s`); close();
-      CHAPTERS = await loadChapters(t); enterHome();
+      CHAPTERS = await loadChapters(t); await loadCounts(); enterHome();
     }
     catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
   };
@@ -2935,7 +2944,7 @@ function homeHtml(){
         <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
-        <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
+        <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${status}</span><span style="margin-left:auto">${right}</span>${COUNTS[c.id]?.words != null ? `<span style="color:var(--text-3)">${formatCount(COUNTS[c.id].words)}</span>` : ''}</div></div>`;
   }).join('');
   const appUnits = CHAPTERS.filter(c => c.kind === 'appendix');
   const appOpen = localStorage.getItem('home:appendicesOpen') !== '0';
@@ -2945,7 +2954,7 @@ function homeHtml(){
     return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
         <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
-        <div style="font-size:11px;color:var(--text-2)">${escapeHtml(sub)}</div></div>`;
+        <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${escapeHtml(sub)}</span>${COUNTS[a.id]?.words != null ? `<span style="margin-left:auto;color:var(--text-3)">${formatCount(COUNTS[a.id].words)}</span>` : ''}</div></div>`;
   };
   const appendixSection = appUnits.length
     ? `<div id="appx-home" style="margin-top:26px">
@@ -2970,7 +2979,7 @@ function homeHtml(){
          <span style="display:block;font-size:11.5px;color:var(--text-3)">Every ${escapeHtml(UNIT)} as one continuous read — comment anywhere</span></span></button>`
     : '';
   const allCh = CHAPTERS.length
-    ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+    ? `<div class="home-allch" style="display:flex;align-items:baseline;gap:8px;margin-bottom:13px">ALL ${UNIT.toUpperCase()}S${totalWords(COUNTS) ? `<span style="font-weight:400;font-size:11px;color:var(--text-3)">${formatCount(totalWords(COUNTS))} total</span>` : ''}</div>
        ${wholeBtn}
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>
        ${appendixSection}`
@@ -3133,6 +3142,25 @@ function toggleHelp(){
   ov.querySelector('#help-x').onclick = () => ov.remove();
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
 }
+// Word-style count panel (⋯ → Word count): per-unit words/chars (rendered prose, refs/footnotes/equations
+// excluded — see wordcount.js) plus a Total row. Reuses the shared openModal dialog chrome.
+function openWordCountPanel(){
+  const rows = CHAPTERS.map(c => { const wc = COUNTS[c.id] || { words:0, chars:0 };
+    return `<tr><td style="padding:4px 0">${escapeHtml(unitLabel(c, UNIT))} · ${escapeHtml(shortTitle(c.title))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${(wc.words||0).toLocaleString('en-US')}</td>
+      <td style="text-align:right;color:var(--text-3);font-variant-numeric:tabular-nums">${(wc.chars||0).toLocaleString('en-US')}</td></tr>`; }).join('');
+  const box = document.createElement('div');
+  box.innerHTML = `
+    <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px">Rendered prose — references, footnotes, and equations excluded.</div>
+    <table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="color:var(--text-3)">
+      <th style="text-align:left;font-weight:500">${escapeHtml(UNITC)}</th><th style="text-align:right;font-weight:500">Words</th><th style="text-align:right;font-weight:500">Chars</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="border-top:.5px solid var(--border);font-weight:600">
+        <td style="padding-top:6px">Total</td>
+        <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalWords(COUNTS).toLocaleString('en-US')}</td>
+        <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalChars(COUNTS).toLocaleString('en-US')}</td></tr></tfoot></table>`;
+  openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, [{ label:'Close', primary:true, onClick: close => close() }]);
+}
 function openMoreMenu(){
   document.getElementById('moremenu')?.remove();
   const menu = document.createElement('div'); menu.id = 'moremenu';
@@ -3143,6 +3171,7 @@ function openMoreMenu(){
   menu.innerHTML = `
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
     ${olLinked ? `<div class="mmi" data-act="overleaf"><i class="ti ti-refresh"></i>Refresh from Overleaf</div>` : ''}
+    <div class="mmi" data-act="wordcount"><i class="ti ti-abacus"></i>Word count</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Owner key${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
@@ -3151,7 +3180,7 @@ function openMoreMenu(){
     <div class="mmi" data-act="assistant"><i class="ti ti-settings"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
+  const acts = { release: openReleasePanel, wordcount: openWordCountPanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
     // Both the access token and the AI master switch now live on the dedicated Settings page.
