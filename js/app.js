@@ -454,7 +454,7 @@ function renderDoc(fragment){
   loadAdvisorComments(current);
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
-  if (current && current !== '__whole__' && COUNTS[current]?.words == null){
+  if (current && current !== '__whole__' && !previewing && COUNTS[current]?.words == null){
     try { COUNTS[current] = countWords(read.querySelector('#doc')?.innerHTML || ''); } catch(e){}
   }
 }
@@ -2954,7 +2954,7 @@ function homeHtml(){
     return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
         <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
-        <div style="font-size:11px;color:var(--text-2)">${escapeHtml(sub)}</div></div>`;
+        <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${escapeHtml(sub)}</span>${COUNTS[a.id]?.words != null ? `<span style="margin-left:auto;color:var(--text-3)">${formatCount(COUNTS[a.id].words)}</span>` : ''}</div></div>`;
   };
   const appendixSection = appUnits.length
     ? `<div id="appx-home" style="margin-top:26px">

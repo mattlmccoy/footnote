@@ -26,5 +26,5 @@ export function countWords(html) {
   let s = String(html || '');
   s = s.replace(REF, ' ').replace(REF_C, ' ').replace(FN, ' ').replace(MATH, ' ').replace(TAG, ' ').replace(ENT, ' ');
   const words = s.split(/\s+/).filter(Boolean);
-  return { words: words.length, chars: words.reduce((n, w) => n + w.length, 0) };
+  return { words: words.length, chars: words.reduce((n, w) => n + [...w].length, 0) };
 }
