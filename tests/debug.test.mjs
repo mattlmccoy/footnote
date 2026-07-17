@@ -5,6 +5,7 @@ import { classifySync } from '../js/debug.js';
 import { rollupProject } from '../js/debug.js';
 import { parseScopes, diffScopes, REQUIRED_SCOPES } from '../js/debug.js';
 import { queueAge } from '../js/debug.js';
+import { buildSnapshot } from '../js/debug.js';
 
 // job ids encode the ms timestamp in base36: 'j_' + Date.now().toString(36)
 const jid = ms => 'j_' + ms.toString(36);
@@ -94,4 +95,34 @@ test('queueAge: picks the oldest by id timestamp', () => {
 
 test('queueAge: job whose id has no parseable ts still counts, age null', () => {
   assert.deepEqual(queueAge([{ id: 'weird', type: 'export' }], 5000), { count: 1, oldest: { type: 'export', ageMs: null } });
+});
+
+const SAMPLE = {
+  now: '2026-07-16T14:22:00Z',
+  build: { deployedSha: 'e17f1b2', deployedTime: 'Jul 15, 2026 8:27 PM', pageStale: false },
+  github: { login: 'mattlmccoy', tokenValid: true, scopes: ['repo', 'workflow'], rateRemaining: 4731, net: 'ok' },
+  pipeline: { mode: 'local', queueCount: 1, oldestType: 'apply-edits', oldestAgeMin: 4 },
+  projects: [{
+    id: 'rfam-dissertation', docCount: 9, behind: 1, open: 3,
+    docs: [{ id: 'ch_introduction', rendered: true, builtFrom: 'a1b2c3d', state: 'insync', open: 0 }],
+  }],
+  // secrets present by NAME only — values must never be handed to buildSnapshot
+  secretNames: ['SMTP_USER', 'ADVISOR_KEY'],
+};
+
+test('buildSnapshot: includes build, github, pipeline, and per-doc lines', () => {
+  const s = buildSnapshot(SAMPLE);
+  assert.match(s, /deployed e17f1b2/);
+  assert.match(s, /mattlmccoy/);
+  assert.match(s, /repo, workflow/);
+  assert.match(s, /rfam-dissertation/);
+  assert.match(s, /ch_introduction/);
+  assert.match(s, /in sync|insync/);
+});
+
+test('buildSnapshot: NEVER leaks the token or any secret value', () => {
+  const withToken = { ...SAMPLE, github: { ...SAMPLE.github, token: 'ghp_SECRETVALUE123' } };
+  const s = buildSnapshot(withToken);
+  assert.doesNotMatch(s, /ghp_SECRETVALUE123/, 'token value must be redacted');
+  assert.doesNotMatch(s, /ghp_/, 'no token prefix may appear');
 });

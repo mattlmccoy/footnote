@@ -54,3 +54,25 @@ export function queueAge(jobs, now) {
   }
   return { count: list.length, oldest: { type: oldest.type || 'job', ageMs: oldestTs == null ? null : now - oldestTs } };
 }
+
+// Plain-text (Markdown) snapshot for the clipboard. Reads ONLY non-secret fields off `state`; the token
+// and any secret VALUES are never referenced here, so they can't leak into the copied text.
+export function buildSnapshot(state) {
+  const s = state || {};
+  const b = s.build || {}, g = s.github || {}, p = s.pipeline || {};
+  const L = [];
+  L.push(`# Footnote debug snapshot — ${s.now || ''}`);
+  L.push('');
+  L.push(`build: deployed ${b.deployedSha || '?'} (${b.deployedTime || '?'}) · this page ${b.pageStale ? 'STALE' : 'current'}`);
+  L.push(`github: ${g.login || '?'} · token ${g.tokenValid ? 'valid' : 'INVALID'} · scopes ${(g.scopes || []).join(', ') || '(fine-grained)'} · rate ${g.rateRemaining ?? '?'} · net ${g.net || '?'}`);
+  if (s.secretNames) L.push(`secrets present: ${s.secretNames.join(', ')}`);
+  L.push(`pipeline: mode ${p.mode || '?'} · ${p.queueCount || 0} pending${p.oldestType ? ` · oldest ${p.oldestType} ${p.oldestAgeMin ?? '?'}m` : ''}`);
+  L.push('');
+  for (const pr of s.projects || []) {
+    L.push(`## ${pr.id} — ${pr.docCount} docs · ${pr.behind} behind · ${pr.open} open`);
+    for (const d of pr.docs || []) {
+      L.push(`- ${d.id} · ${d.rendered ? 'rendered' : 'NOT rendered'} · built ${d.builtFrom || '—'} · ${d.state} · open ${d.open}`);
+    }
+  }
+  return L.join('\n');
+}
