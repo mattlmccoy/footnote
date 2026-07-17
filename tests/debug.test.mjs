@@ -6,6 +6,7 @@ import { rollupProject } from '../js/debug.js';
 import { parseScopes, diffScopes, REQUIRED_SCOPES } from '../js/debug.js';
 import { queueAge } from '../js/debug.js';
 import { buildSnapshot } from '../js/debug.js';
+import { collectProject } from '../js/debug.js';
 
 // job ids encode the ms timestamp in base36: 'j_' + Date.now().toString(36)
 const jid = ms => 'j_' + ms.toString(36);
@@ -125,4 +126,37 @@ test('buildSnapshot: NEVER leaks the token or any secret value', () => {
   const s = buildSnapshot(withToken);
   assert.doesNotMatch(s, /ghp_SECRETVALUE123/, 'token value must be redacted');
   assert.doesNotMatch(s, /ghp_/, 'no token prefix may appear');
+});
+
+// Minimal fake GitHub: routes by URL substring. Content endpoints return base64 JSON like the real API.
+function fakeFetch(routes) {
+  return async (url) => {
+    for (const [needle, resp] of routes) {
+      if (url.includes(needle)) return { ok: true, status: 200, headers: { get: () => null }, json: async () => resp };
+    }
+    return { ok: false, status: 404, headers: { get: () => null }, json: async () => ({}) };
+  };
+}
+const b64 = obj => Buffer.from(JSON.stringify(obj), 'utf8').toString('base64');
+
+test('collectProject: assembles per-doc verdicts (in-sync + behind-touched)', async () => {
+  const project = { id: 'p1', name: 'P1', dataRepo: 'me/data', sourceRepo: 'me/src', dataPrefix: '', srcPrefix: '' };
+  const chapters = [{ id: 'ch1', n: 1, title: 'One', sourceFile: 'ch1.tex' },
+                    { id: 'ch2', n: 2, title: 'Two', sourceFile: 'ch2.tex' }];
+  const routes = [
+    ['contents/chapters.json', { content: b64(chapters) }],
+    ['git/trees/main', { tree: [{ type: 'blob', path: 'content/ch1.html' }, { type: 'blob', path: 'content/ch2.html' }] }],
+    ['contents/reviews/ch1.json', { content: b64({ built_from_commit: 'MAINSHA', comments: [] }) }],
+    ['contents/reviews/ch2.json', { content: b64({ built_from_commit: 'OLD', comments: [{ status: 'submitted' }] }) }],
+    ['commits/main', { sha: 'MAINSHA' }],
+    ['compare/OLD...MAINSHA', { ahead_by: 3, files: [{ filename: 'ch2.tex' }] }],
+    ['branches', [{ name: 'main' }]],
+  ];
+  const out = await collectProject('tok', { owner: 'me', dataRepo: 'me/hub', hubRepo: 'me/hub' }, [project], 'p1', fakeFetch(routes));
+  assert.equal(out.id, 'p1');
+  const d1 = out.docs.find(d => d.id === 'ch1'), d2 = out.docs.find(d => d.id === 'ch2');
+  assert.equal(d1.state, 'insync');
+  assert.equal(d2.state, 'behind-touched');
+  assert.equal(d2.open, 1);
+  assert.equal(out.rollup.behind, 1);
 });

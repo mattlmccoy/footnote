@@ -76,3 +76,76 @@ export function buildSnapshot(state) {
   }
   return L.join('\n');
 }
+
+import { resolveProject } from './config.js?v=dev';
+import { isActiveComment } from './model.js?v=dev';
+
+const API = 'https://api.github.com';
+const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
+
+// One authenticated GET. Returns { ok, status, headers, json } — json is null on a non-ok/parse failure.
+export async function dbgGet(token, url, fetchImpl) {
+  const f = fetchImpl || fetch;
+  try {
+    const r = await f(`${url}${url.includes('?') ? '&' : '?'}t=${'' + Math.floor(1e6 * (url.length % 7 + 1))}`, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store',
+    });
+    let json = null; try { json = await r.json(); } catch {}
+    return { ok: r.ok, status: r.status, headers: r.headers, json };
+  } catch { return { ok: false, status: 0, headers: { get: () => null }, json: null }; }
+}
+
+async function _contentJson(token, repo, path, fetchImpl) {
+  const r = await dbgGet(token, `${API}/repos/${repo}/contents/${path}`, fetchImpl);
+  if (!r.ok || !r.json || typeof r.json.content !== 'string') return null;
+  try { return _b64json(r.json); } catch { return null; }
+}
+
+// Collect one project's per-document sync verdicts + rollup.
+export async function collectProject(token, appCfg, projects, projectId, fetchImpl) {
+  const cfg = resolveProject(appCfg, projects, projectId);
+  const dataRepo = cfg.dataRepo, sourceRepo = cfg.sourceRepo;
+  const dpfx = cfg.dataPrefix || '';
+  const chapters = (await _contentJson(token, dataRepo, `${dpfx}chapters.json`, fetchImpl)) || [];
+  const chapterList = Array.isArray(chapters) ? chapters : (chapters.chapters || []);
+  // rendered set: content/<id>.html present in the data-repo tree
+  const treeR = await dbgGet(token, `${API}/repos/${dataRepo}/git/trees/main?recursive=1`, fetchImpl);
+  const rendered = new Set((treeR.json?.tree || []).filter(x => x.type === 'blob')
+    .map(x => x.path).filter(p => p.startsWith(`${dpfx}content/`) && p.endsWith('.html'))
+    .map(p => p.slice((dpfx + 'content/').length, -'.html'.length)));
+  // source main HEAD (once per project)
+  const mainR = sourceRepo ? await dbgGet(token, `${API}/repos/${sourceRepo}/commits/main`, fetchImpl) : { json: null };
+  const mainSha = mainR.json?.sha || '';
+  const compareCache = new Map();
+  const docs = [];
+  let open = 0;
+  for (const ch of chapterList) {
+    const review = await _contentJson(token, dataRepo, `${dpfx}reviews/${ch.id}.json`, fetchImpl);
+    const builtFrom = review?.built_from_commit || '';
+    const openN = (review?.comments || []).filter(isActiveComment).length;
+    open += openN;
+    let ahead = null, fileTouched = null;
+    if (builtFrom && mainSha && builtFrom !== mainSha && sourceRepo) {
+      if (!compareCache.has(builtFrom)) {
+        const cmp = await dbgGet(token, `${API}/repos/${sourceRepo}/compare/${builtFrom}...${mainSha}`, fetchImpl);
+        compareCache.set(builtFrom, cmp.json || { ahead_by: null, files: [] });
+      }
+      const cmp = compareCache.get(builtFrom);
+      ahead = typeof cmp.ahead_by === 'number' ? cmp.ahead_by : null;
+      fileTouched = !!(cmp.files || []).some(fl => fl.filename === ch.sourceFile);
+    }
+    const verdict = classifySync({ rendered: rendered.has(ch.id), builtFrom, mainSha, ahead, fileTouched });
+    docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: rendered.has(ch.id), builtFrom, open: openN, ...verdict });
+  }
+  return { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
+}
+
+// Collect every project (sequential to stay gentle on the rate limit).
+export async function collectAll(token, appCfg, projects, fetchImpl) {
+  const out = [];
+  for (const p of projects || []) {
+    try { out.push(await collectProject(token, appCfg, projects, p.id, fetchImpl)); }
+    catch (e) { out.push({ id: p.id, name: p.name, error: String(e && e.message || e), docs: [], rollup: rollupProject([], 0) }); }
+  }
+  return out;
+}
