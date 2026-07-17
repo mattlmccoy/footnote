@@ -21,8 +21,8 @@ import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, ren
 import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=f896539';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
-import { settingsSections, resolveSection } from './settings.js?v=621de9a';
-import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=d59d97d';
+import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
+import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=1fb5404';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
