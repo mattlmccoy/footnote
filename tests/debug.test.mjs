@@ -4,6 +4,10 @@ import assert from 'node:assert/strict';
 import { classifySync } from '../js/debug.js';
 import { rollupProject } from '../js/debug.js';
 import { parseScopes, diffScopes, REQUIRED_SCOPES } from '../js/debug.js';
+import { queueAge } from '../js/debug.js';
+
+// job ids encode the ms timestamp in base36: 'j_' + Date.now().toString(36)
+const jid = ms => 'j_' + ms.toString(36);
 
 test('classifySync: not rendered → nyr', () => {
   assert.deepEqual(classifySync({ rendered: false, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }),
@@ -76,4 +80,18 @@ test('diffScopes: all present → ok; missing flagged', () => {
 
 test('diffScopes: unknown scopes (fine-grained token, null) → indeterminate', () => {
   assert.deepEqual(diffScopes(null, REQUIRED_SCOPES), { ok: null, missing: [] });
+});
+
+test('queueAge: empty queue', () => {
+  assert.deepEqual(queueAge([], 1000), { count: 0, oldest: null });
+});
+
+test('queueAge: picks the oldest by id timestamp', () => {
+  const now = 10_000;
+  const jobs = [{ id: jid(9000), type: 'render' }, { id: jid(6000), type: 'apply-edits' }];
+  assert.deepEqual(queueAge(jobs, now), { count: 2, oldest: { type: 'apply-edits', ageMs: 4000 } });
+});
+
+test('queueAge: job whose id has no parseable ts still counts, age null', () => {
+  assert.deepEqual(queueAge([{ id: 'weird', type: 'export' }], 5000), { count: 1, oldest: { type: 'export', ageMs: null } });
 });

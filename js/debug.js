@@ -36,3 +36,21 @@ export function diffScopes(present, required) {
   const missing = (required || []).filter(s => !present.includes(s));
   return { ok: missing.length === 0, missing };
 }
+
+// Parse the ms timestamp base36-encoded in a job id ('j_<base36>'); null if unparseable.
+function _jobTs(id) {
+  const m = /^j_([a-z0-9]+)$/i.exec(id || '');
+  if (!m) return null;
+  const n = parseInt(m[1], 36);
+  return Number.isFinite(n) ? n : null;
+}
+export function queueAge(jobs, now) {
+  const list = jobs || [];
+  if (!list.length) return { count: 0, oldest: null };
+  let oldest = list[0], oldestTs = _jobTs(list[0].id);
+  for (const j of list) {
+    const ts = _jobTs(j.id);
+    if (ts != null && (oldestTs == null || ts < oldestTs)) { oldest = j; oldestTs = ts; }
+  }
+  return { count: list.length, oldest: { type: oldest.type || 'job', ageMs: oldestTs == null ? null : now - oldestTs } };
+}
