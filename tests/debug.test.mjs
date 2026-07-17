@@ -34,3 +34,7 @@ test('classifySync: behind but the doc file was untouched → behind-untouched',
 test('classifySync: main HEAD unknown → unknown', () => {
   assert.equal(classifySync({ rendered: true, builtFrom: 'aaa', mainSha: '', ahead: null, fileTouched: null }).state, 'unknown');
 });
+
+test('classifySync: rendered + behind but ahead uncomputed (compare failed) → unknown', () => {
+  assert.equal(classifySync({ rendered: true, builtFrom: 'aaa', mainSha: 'bbb', ahead: null, fileTouched: null }).state, 'unknown');
+});
