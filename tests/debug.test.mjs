@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifySync } from '../js/debug.js';
 import { rollupProject } from '../js/debug.js';
+import { parseScopes, diffScopes, REQUIRED_SCOPES } from '../js/debug.js';
 
 test('classifySync: not rendered → nyr', () => {
   assert.deepEqual(classifySync({ rendered: false, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }),
@@ -56,4 +57,23 @@ test('rollupProject: all in sync → worst is insync, behind 0', () => {
 
 test('rollupProject: no docs → empty rollup', () => {
   assert.deepEqual(rollupProject([], 0), { docCount: 0, behind: 0, open: 0, worst: 'insync' });
+});
+
+test('parseScopes: comma list → trimmed array; empty → []; null → null', () => {
+  assert.deepEqual(parseScopes('repo, workflow'), ['repo', 'workflow']);
+  assert.deepEqual(parseScopes(''), []);
+  assert.equal(parseScopes(null), null);
+});
+
+test('REQUIRED_SCOPES is the classic owner-login set', () => {
+  assert.deepEqual(REQUIRED_SCOPES, ['repo', 'workflow']);
+});
+
+test('diffScopes: all present → ok; missing flagged', () => {
+  assert.deepEqual(diffScopes(['repo', 'workflow'], REQUIRED_SCOPES), { ok: true, missing: [] });
+  assert.deepEqual(diffScopes(['repo'], REQUIRED_SCOPES), { ok: false, missing: ['workflow'] });
+});
+
+test('diffScopes: unknown scopes (fine-grained token, null) → indeterminate', () => {
+  assert.deepEqual(diffScopes(null, REQUIRED_SCOPES), { ok: null, missing: [] });
 });

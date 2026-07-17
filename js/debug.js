@@ -24,3 +24,15 @@ export function rollupProject(docVerdicts, openCount) {
   for (const d of docs) if (_SEV.indexOf(d.state) < _SEV.indexOf(worst)) worst = d.state;
   return { docCount: docs.length, behind, open: openCount || 0, worst };
 }
+
+// The classic owner-login token needs these scopes (fine-grained tokens report no scope header → null).
+export const REQUIRED_SCOPES = ['repo', 'workflow'];
+export function parseScopes(headerVal) {
+  if (headerVal == null) return null;
+  return headerVal.split(',').map(s => s.trim()).filter(Boolean);
+}
+export function diffScopes(present, required) {
+  if (present == null) return { ok: null, missing: [] };   // fine-grained token → can't assert from a header
+  const missing = (required || []).filter(s => !present.includes(s));
+  return { ok: missing.length === 0, missing };
+}
