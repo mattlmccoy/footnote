@@ -77,10 +77,10 @@ export function buildSnapshot(state) {
   return L.join('\n');
 }
 
-import { resolveProject, loadConfig, loadProjects } from './config.js?v=dev';
-import { isActiveComment } from './model.js?v=dev';
-import { fetchWithTimeout } from './nethelpers.js?v=dev';
-import { formatBuildTime } from './buildinfo.js?v=dev';
+import { resolveProject, loadConfig, loadProjects } from './config.js?v=f58d6b0';
+import { isActiveComment } from './model.js?v=c284b81';
+import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
+import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
 
 const API = 'https://api.github.com';
 const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));

@@ -13,7 +13,7 @@ import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNew
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=c61fbc8';
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
-import { showBuildTag } from './buildinfo.js?v=bb62768';
+import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)
 import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
 startNetWatch();
