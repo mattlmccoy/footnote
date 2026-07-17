@@ -269,16 +269,35 @@ def build_label_map(read_tex, rows, entry):
 # ---------------------------------------------------------------------------
 
 def expand_gls(t, acr):
+    """Expand glossary macros, mirroring LaTeX glossaries FIRST-USE behavior: the first
+    \\gls of a key renders "long form (SHORT)", every later use renders "SHORT". First-use
+    is scoped to this call — expand_gls runs once per reading unit, so each rendered chapter
+    defines its own acronyms on their first appearance (a reader may open any chapter).
+    A single left-to-right scan drives the shared first-use flag across all \\gls variants."""
     def short(k): return acr.get(k, (k, k))[0]
     def long(k):  return acr.get(k, (k, k))[1]
-    t = re.sub(r"\\acrfull\{([^}]+)\}",  lambda m: f"{long(m.group(1))} ({short(m.group(1))})", t)
-    t = re.sub(r"\\acrlong\{([^}]+)\}",  lambda m: long(m.group(1)), t)
-    t = re.sub(r"\\acrshort\{([^}]+)\}", lambda m: short(m.group(1)), t)
-    t = re.sub(r"\\Glspl\{([^}]+)\}", lambda m: short(m.group(1)).capitalize() + "s", t)
-    t = re.sub(r"\\glspl\{([^}]+)\}", lambda m: short(m.group(1)) + "s", t)
-    t = re.sub(r"\\Gls\{([^}]+)\}",   lambda m: (lambda s: s[:1].upper() + s[1:])(short(m.group(1))), t)
-    t = re.sub(r"\\gls\{([^}]+)\}",   lambda m: short(m.group(1)), t)
-    return t
+    def cap(s):   return s[:1].upper() + s[1:]
+
+    seen = set()
+
+    def repl(m):
+        cmd, key = m.group(1), m.group(2).strip()
+        s, l = short(key), long(key)
+        # explicit forms are not first-use sensitive
+        if cmd == "acrshort": return s
+        if cmd == "acrlong":  return l
+        if cmd == "acrfull":  seen.add(key); return f"{l} ({s})" if l != s else s
+        # \gls-family: long form (SHORT) on first use, short thereafter. When long == short
+        # (undefined key, or an acronym whose forms coincide) skip the "x (x)" parenthetical.
+        first = key not in seen
+        seen.add(key)
+        if cmd == "gls":   return (f"{l} ({s})" if l != s else s) if first else s
+        if cmd == "Gls":   return (f"{cap(l)} ({s})" if l != s else cap(s)) if first else cap(s)
+        if cmd == "glspl": return (f"{l}s ({s}s)" if l != s else f"{s}s") if first else f"{s}s"
+        if cmd == "Glspl": return (f"{cap(l)}s ({s}s)" if l != s else f"{cap(s)}s") if first else f"{cap(s)}s"
+        return m.group(0)
+
+    return re.sub(r"\\(Glspl|glspl|Gls|gls|acrfull|acrlong|acrshort)\{([^}]+)\}", repl, t)
 
 
 # ---------------------------------------------------------------------------
