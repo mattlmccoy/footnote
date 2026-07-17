@@ -18,6 +18,7 @@ import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chap
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
+import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=1';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=621de9a';
@@ -172,6 +173,10 @@ const DATA_REPO = _CFG.dataRepo;
 // chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
 // "import your document" state. Re-fetched on reload after a token is added or a document imported.
 let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
+// Per-unit word/char counts, produced at render time (content/counts.json). One cheap fetch; absence is fine.
+let COUNTS = {};
+async function loadCounts(){ const t = tok(); if (!t) return; try { const r = await getJson(t, dpath('content/counts.json')); COUNTS = (r.json && typeof r.json === 'object') ? r.json : {}; } catch(e){ COUNTS = {}; } }
+await loadCounts();
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : id === '__whole__' ? { n:'·', title:'Whole document' } : { n:'?', title:id });
 // ---------- whole-document ("read the whole paper") view state ----------
 // WHOLE = the continuous view is active. _reviews holds EVERY chapter's review (per-chapter files stay
@@ -2835,7 +2840,7 @@ function importDocument(){
       // Generate the Proposed outline from the same source (nested structure + source-derived synopses).
       try { const outline = parseLatexOutline(_entryText, _resolveInc); if (outline.chapters.length) await saveOutline(outline, t); } catch (e) { console.warn('outline gen:', e.message); }
       flash(`Imported ${merged.length} ${UNIT}s`); close();
-      CHAPTERS = await loadChapters(t); enterHome();
+      CHAPTERS = await loadChapters(t); await loadCounts(); enterHome();
     }
     catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
   };
@@ -2935,7 +2940,7 @@ function homeHtml(){
         <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
         <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
-        <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span><span style="margin-left:auto">${right}</span></div></div>`;
+        <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${status}</span><span style="margin-left:auto">${right}</span>${COUNTS[c.id]?.words != null ? `<span style="color:var(--text-3)">${formatCount(COUNTS[c.id].words)}</span>` : ''}</div></div>`;
   }).join('');
   const appUnits = CHAPTERS.filter(c => c.kind === 'appendix');
   const appOpen = localStorage.getItem('home:appendicesOpen') !== '0';
