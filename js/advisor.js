@@ -9,6 +9,7 @@ import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices fol
 import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
+import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=d59d97d';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
@@ -320,6 +321,7 @@ const localKey = ch => `adv:${effId()}:${ch}`;
 const loadLocal = ch => JSON.parse(localStorage.getItem(localKey(ch)) || 'null') || newReview(ch, '');
 const save = () => localStorage.setItem(localKey(current), JSON.stringify(review));
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
+initAccent();   // apply the reviewer's own accent (ac-<id> class; the palette CSS handles light/dark)
 
 // ---------- sync (this reviewer's own comment file only) ----------
 let reviewSha = null, syncTimer = null;
@@ -1360,7 +1362,7 @@ function enterHome(){
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">${UNIT.toUpperCase()}S FOR REVIEW</div>
       ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty" style="margin:6vh auto"><i class="ti ti-mail-fast" style="font-size:26px;color:var(--text-3)"></i>
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div></div>`;
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div><div id="adv-appearance"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg=>tg.onclick=()=>{
     const grid=tg.parentElement.querySelector('.appx-home-grid');
@@ -1372,6 +1374,19 @@ function enterHome(){
   document.getElementById('outline-card')?.addEventListener('click', loadOutline);   // absent when the doc has no outline (e.g. a journal article)
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
   renderAdvisorDownloads();
+  renderAdvAppearance();
+}
+// Reviewer accent picker (same per-viewer mechanism as the owner). A small swatch row on the home view.
+function renderAdvAppearance(){
+  const box=document.getElementById('adv-appearance'); if(!box) return;
+  const draw=()=>{
+    box.innerHTML=`<div style="margin-top:26px;border-top:.5px solid var(--border);padding-top:16px">
+      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:11px">APPEARANCE</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:10px">Accent color — saved in this browser.</div>
+      ${swatchesHtml(storedAccent(localStorage))}</div>`;
+    box.querySelectorAll('.ac-swatch').forEach(b=>b.onclick=()=>{ const id=b.dataset.accent; applyAccent(id,document); saveAccent(localStorage,id); draw(); });
+  };
+  draw();
 }
 // ---------- responses to your comments (read-only; gated by the owner's release toggle) ----------
 async function loadResponses(){

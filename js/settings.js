@@ -9,6 +9,7 @@ export function settingsSections(cfg, state) {
     { id: 'document', label: 'Document',            glyph: state.hasTitle ? 'ok' : null,          muted: false },
     { id: 'email',  label: 'Email & notifications', glyph: state.emailConfigured ? 'ok' : 'warn', muted: false },
     { id: 'access', label: 'Access & tokens',        glyph: state.hasToken ? 'ok' : 'warn',        muted: false },
+    { id: 'appearance', label: 'Appearance',         glyph: null,                                   muted: false },
   ];
   if (state.aiOn) {
     secs.push({ id: 'agents', label: 'Agents', glyph: agents.length ? 'ok' : null, muted: false });

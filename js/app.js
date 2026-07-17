@@ -22,6 +22,7 @@ import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=621de9a';
+import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=d59d97d';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { readProgress } from './cardstats.js?v=cfa6c99';
@@ -323,6 +324,7 @@ function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorag
 const selectChapter = enterChapter;
 function toggleTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); }
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
+initAccent();   // apply the per-viewer accent (adds an ac-<id> class; the palette CSS handles light/dark)
 
 // ---------- content (GitHub-pulled; localhost dev-fallback for UI work only) ----------
 async function loadChapter(ch){
@@ -3253,8 +3255,27 @@ function renderSettingsSection(id, t) {
   if (id === 'document') return renderSettingsDocument(pane, t);
   if (id === 'email')  return renderSettingsEmail(pane, t);
   if (id === 'access') return renderSettingsAccess(pane, t);
+  if (id === 'appearance') return renderSettingsAppearance(pane);
   if (id === 'agents') return renderSettingsAgents(pane, t);
   if (id === 'ai')     return renderSettingsAI(pane, t);
+}
+// Appearance: an Apple-style accent-color picker. Per-viewer (localStorage), applied instantly by
+// swapping the ac-<id> class on <html>; the palette CSS handles light/dark. No network, no token.
+function renderSettingsAppearance(pane) {
+  const draw = () => {
+    const cur = storedAccent(localStorage);
+    pane.innerHTML = `<div class="set-card">
+      <h4>Accent color</h4>
+      <div style="font-size:11.5px;color:var(--text-3);margin:0 0 12px">Pick an accent. It's saved in this browser and applies to your view. “Default” follows this instance's brand color.</div>
+      ${swatchesHtml(cur)}
+    </div>`;
+    pane.querySelectorAll('.ac-swatch').forEach(b => b.onclick = () => {
+      const id = b.dataset.accent;
+      applyAccent(id, document); saveAccent(localStorage, id);
+      draw();   // re-render so the selected ring moves
+    });
+  };
+  draw();
 }
 // Document section: the title reviewers see. Auto-captured from the LaTeX \title at import; the owner can
 // override it here. titleManual stops a later import from clobbering the manual value. Persists to
