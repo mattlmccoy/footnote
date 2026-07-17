@@ -3142,6 +3142,25 @@ function toggleHelp(){
   ov.querySelector('#help-x').onclick = () => ov.remove();
   ov.onclick = e => { if (e.target === ov) ov.remove(); };
 }
+// Word-style count panel (⋯ → Word count): per-unit words/chars (rendered prose, refs/footnotes/equations
+// excluded — see wordcount.js) plus a Total row. Reuses the shared openModal dialog chrome.
+function openWordCountPanel(){
+  const rows = CHAPTERS.map(c => { const wc = COUNTS[c.id] || { words:0, chars:0 };
+    return `<tr><td style="padding:4px 0">${escapeHtml(unitLabel(c, UNIT))} · ${escapeHtml(shortTitle(c.title))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums">${(wc.words||0).toLocaleString('en-US')}</td>
+      <td style="text-align:right;color:var(--text-3);font-variant-numeric:tabular-nums">${(wc.chars||0).toLocaleString('en-US')}</td></tr>`; }).join('');
+  const box = document.createElement('div');
+  box.innerHTML = `
+    <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px">Rendered prose — references, footnotes, and equations excluded.</div>
+    <table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="color:var(--text-3)">
+      <th style="text-align:left;font-weight:500">${escapeHtml(UNITC)}</th><th style="text-align:right;font-weight:500">Words</th><th style="text-align:right;font-weight:500">Chars</th></tr></thead>
+      <tbody>${rows}</tbody>
+      <tfoot><tr style="border-top:.5px solid var(--border);font-weight:600">
+        <td style="padding-top:6px">Total</td>
+        <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalWords(COUNTS).toLocaleString('en-US')}</td>
+        <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalChars(COUNTS).toLocaleString('en-US')}</td></tr></tfoot></table>`;
+  openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, [{ label:'Close', primary:true, onClick: close => close() }]);
+}
 function openMoreMenu(){
   document.getElementById('moremenu')?.remove();
   const menu = document.createElement('div'); menu.id = 'moremenu';
@@ -3152,6 +3171,7 @@ function openMoreMenu(){
   menu.innerHTML = `
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
     ${olLinked ? `<div class="mmi" data-act="overleaf"><i class="ti ti-refresh"></i>Refresh from Overleaf</div>` : ''}
+    <div class="mmi" data-act="wordcount"><i class="ti ti-abacus"></i>Word count</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Owner key${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
     <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
@@ -3160,7 +3180,7 @@ function openMoreMenu(){
     <div class="mmi" data-act="assistant"><i class="ti ti-settings"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
+  const acts = { release: openReleasePanel, wordcount: openWordCountPanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
     tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
       else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
     // Both the access token and the AI master switch now live on the dedicated Settings page.
