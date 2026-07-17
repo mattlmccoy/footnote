@@ -16,6 +16,15 @@ export function unitLabel(unit, unitNoun = 'chapter') {
   return `${noun.charAt(0).toUpperCase()}${noun.slice(1)} ${u.n}`;
 }
 
+// COMPACT form for narrow number columns (chapter dropdown, export picker): a chapter is its number,
+// an appendix is its LETTER. Use this anywhere the full "Appendix A" won't fit — never a raw `.n`, which
+// makes appendices restart at 1 alongside the chapters.
+export function unitTag(unit) {
+  const u = unit || {};
+  if (u.kind === 'appendix') return appendixLetter(u.n);
+  return u.n == null ? '' : String(u.n);
+}
+
 export function unitLabelWithTitle(unit, unitNoun = 'chapter') {
   const t = unit && unit.title ? ' · ' + unit.title : '';
   return unitLabel(unit, unitNoun) + t;

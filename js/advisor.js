@@ -14,7 +14,7 @@ import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraft
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { parseLatexTitle } from './docparse.js?v=534763c';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
+import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2b788e9';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
@@ -1158,7 +1158,7 @@ function buildWholeCard(chapterId, c){
   if(editingId===c.id){ card.appendChild(editCard(c, (body,tag)=>{ _wholeCommitEdit(chapterId, updateComment(_reviews[chapterId], c.id, {body,tag})); editingId=null; })); return card; }
   const resolved=c.status==='resolved'; card.style.cursor='pointer';
   card.innerHTML=`<div class="row">
-      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(UNITC)} ${m.n}</span>
+      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(unitLabel(m, UNIT))}</span>
       <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>
       <span class="cactions" style="margin-left:auto;display:none;gap:1px">
         <button class="icbtn cact" data-act="resolve" title="${resolved?'Reopen':'Resolve'}" style="width:25px;height:25px;font-size:14px"><i class="ti ti-${resolved?'rotate-clockwise':'check'}"></i></button>
@@ -1242,7 +1242,7 @@ function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old)
   menu.style.cssText='position:absolute;top:50px;left:16px;z-index:40;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 34px rgba(0,0,0,.16);padding:6px;min-width:330px';
   const list=CHAPTERS.filter(c=>released.includes(c.id));
   const wholeRow=list.length?`<div data-ch="__whole__" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500${current==='__whole__'?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px"><i class="ti ti-book"></i></span>Whole ${escapeHtml(DOC)}</div><div style="height:1px;background:var(--border);margin:5px 8px"></div>`:'';
-  menu.innerHTML=wholeRow+(list.map(c=>`<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('')||`<div style="padding:10px;color:var(--text-3);font-size:12.5px">No chapters released yet.</div>`);
+  menu.innerHTML=wholeRow+(list.map(c=>`<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${unitTag(c)}</span>${shortTitle(c.title)}</div>`).join('')||`<div style="padding:10px;color:var(--text-3);font-size:12.5px">No chapters released yet.</div>`);
   menu.querySelectorAll('[data-ch]').forEach(d=>{ d.onclick=()=>{ menu.remove(); loadChapter(d.dataset.ch); }; });
   document.body.appendChild(menu);
   setTimeout(()=>document.addEventListener('click',function h(e){ if(!menu.contains(e.target)&&e.target.id!=='chsel'){ menu.remove(); document.removeEventListener('click',h); } }),0);
@@ -1310,7 +1310,11 @@ function enterHome(){
     read.querySelector('#connect').onclick=askKey; return;
   }
   const list=CHAPTERS.filter(c=>released.includes(c.id));
-  const cards=list.map(c=>{ const r=JSON.parse(localStorage.getItem(localKey(c.id))||'null'); const n=r?.comments?.length||0;
+  // Mirror the author's home: chapter cards only in the main grid; appendices live in their own
+  // collapsible section below, each noting the chapter it's attached to.
+  const chOnly=list.filter(c=>c.kind!=='appendix');
+  const appUnits=list.filter(c=>c.kind==='appendix');
+  const cards=chOnly.map(c=>{ const r=JSON.parse(localStorage.getItem(localKey(c.id))||'null'); const n=r?.comments?.length||0;
     const p=readProgress(r); const pct=p.done?100:Math.round(p.frac*100); const bar=p.done?'var(--success)':'var(--accent)';
     const progress=p.secN?`<div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${pct}%;height:100%;background:${bar}"></div></div>`:'';
     const status=p.secN?(p.done?`<span style="color:var(--success)">reviewed</span>`:`${p.doneN}/${p.secN} read`):'open to review';
@@ -1319,6 +1323,18 @@ function enterHome(){
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
       ${progress}
       <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; }).join('');
+  const appOpen=localStorage.getItem('home:appendicesOpen')!=='0';
+  const appCard=a=>{ const r=JSON.parse(localStorage.getItem(localKey(a.id))||'null'); const n=r?.comments?.length||0;
+    const homeMeta=a.home?chMeta(a.home):null;
+    const sub=homeMeta?`attached to ${unitLabel(homeMeta, UNIT)}`:'open to review';
+    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
+      <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
+      <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
+      <div style="font-size:11px;color:var(--text-2);display:flex"><span>${escapeHtml(sub)}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; };
+  const appendixSection=appUnits.length?`<div id="appx-home" style="margin-top:26px">
+      <div class="appx-toggle" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px;cursor:pointer;user-select:none"><span class="appx-caret">${appOpen?'▾':'▸'}</span> APPENDICES <span style="color:var(--text-3)">· ${appUnits.length}</span></div>
+      <div class="appx-home-grid" style="display:${appOpen?'grid':'none'};grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${appUnits.map(appCard).join('')}</div>
+    </div>`:'';
   const oc=JSON.parse(localStorage.getItem(localKey('__outline__'))||'null'); const ocn=oc?.comments?.length||0;
   read.innerHTML=`<div style="max-width:900px;margin:0 auto;padding:28px 24px 90px">
       ${reviewHeaderHtml(list.length)}
@@ -1341,8 +1357,15 @@ function enterHome(){
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">${UNIT.toUpperCase()}S FOR REVIEW</div>
       ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty" style="margin:6vh auto"><i class="ti ti-mail-fast" style="font-size:26px;color:var(--text-3)"></i>
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}<div id="adv-downloads"></div></div>`;
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
+  read.querySelectorAll('#appx-home .appx-toggle').forEach(tg=>tg.onclick=()=>{
+    const grid=tg.parentElement.querySelector('.appx-home-grid');
+    const open=grid.style.display==='none';
+    grid.style.display=open?'grid':'none';
+    tg.querySelector('.appx-caret').textContent=open?'▾':'▸';
+    localStorage.setItem('home:appendicesOpen', open?'1':'0');
+  });
   document.getElementById('outline-card')?.addEventListener('click', loadOutline);   // absent when the doc has no outline (e.g. a journal article)
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
   renderAdvisorDownloads();
@@ -1634,7 +1657,7 @@ async function listExports(){
 function exportPick(anchorBtn){
   document.getElementById('exppick')?.remove();
   const list=(released||[]).filter(id=>id!=='__outline__');
-  const items=list.map(id=>{ const m=chMeta(id); return `<div data-ch="${id}" class="exppick-it" style="padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px"><span style="color:var(--text-3);min-width:18px;display:inline-block">${m.n}</span> ${shortTitle(m.title)}</div>`; }).join('')||`<div style="padding:10px;color:var(--text-3);font-size:12.5px">No chapters released yet.</div>`;
+  const items=list.map(id=>{ const m=chMeta(id); return `<div data-ch="${id}" class="exppick-it" style="padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px"><span style="color:var(--text-3);min-width:18px;display:inline-block">${unitTag(m)}</span> ${shortTitle(m.title)}</div>`; }).join('')||`<div style="padding:10px;color:var(--text-3);font-size:12.5px">No chapters released yet.</div>`;
   const pop=document.createElement('div'); pop.id='exppick';
   pop.style.cssText='position:fixed;z-index:85;background:var(--bg);border:.5px solid var(--border-2);border-radius:10px;box-shadow:0 12px 32px rgba(0,0,0,.18);padding:6px;min-width:252px;max-height:60vh;overflow:auto';
   const r=anchorBtn.getBoundingClientRect(); pop.style.top=(r.bottom+6)+'px'; pop.style.left=Math.max(8,Math.min(r.left,window.innerWidth-264))+'px';

@@ -1,6 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { unitLabel, unitLabelWithTitle } from '../js/unitlabel.js';
+import { unitLabel, unitLabelWithTitle, unitTag } from '../js/unitlabel.js';
+
+// unitTag: the COMPACT form for narrow number columns (dropdowns, pickers) — a chapter is its number,
+// an appendix is its letter. Without this, those sites fall back to raw .n and appendices restart at 1.
+test('unitTag: chapter → its number, appendix → its letter', () => {
+  assert.equal(unitTag({ n: 3 }), '3');
+  assert.equal(unitTag({ kind: 'appendix', n: 1 }), 'A');
+  assert.equal(unitTag({ kind: 'appendix', n: 5 }), 'E');
+  assert.equal(unitTag({ kind: 'appendix', n: 27 }), 'AA');
+});
+test('unitTag: tolerates missing/odd units', () => {
+  assert.equal(unitTag({ n: '·' }), '·');
+  assert.equal(unitTag(), '');
+});
 
 test('a normal chapter is "Chapter N"', () => {
   assert.equal(unitLabel({ n: 3, title: 'Methods' }, 'chapter'), 'Chapter 3');
