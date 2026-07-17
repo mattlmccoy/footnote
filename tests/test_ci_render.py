@@ -157,3 +157,17 @@ def test_render_project_survives_a_failed_source_clone(tmp_path, monkeypatch):
     # must return 0 (skipped) rather than raising — a 403 on an external source can't take down render
     n = R.render_project("", "owner/data", "ro-token", tmp_path / "wd")
     assert n == 0
+
+
+# ---------------- counts.json: word/char counts written for the home grid ----------------
+
+def test_write_counts_json_from_content(tmp_path, monkeypatch):
+    import ci_render, json
+    (tmp_path / "content").mkdir()
+    (tmp_path / "content" / "ch_a.html").write_text("<p>one two three</p>")
+    (tmp_path / "content" / "ch_b.html").write_text("<p>alpha beta</p><section id='refs'>ignored ignored</section>")
+    rows = [{"id": "ch_a"}, {"id": "ch_b"}]
+    monkeypatch.chdir(tmp_path)
+    ci_render.write_counts("", rows)
+    got = json.loads((tmp_path / "content" / "counts.json").read_text())
+    assert got == {"ch_a": {"words": 3, "chars": 11}, "ch_b": {"words": 2, "chars": 9}}

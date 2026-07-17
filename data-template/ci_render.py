@@ -29,6 +29,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_notify_common as C  # noqa: E402
 import ci_review_common as R  # noqa: E402
+from wordcount import word_count  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 CHAPTER_HTML = HERE / "export" / "chapter-html.sh"
@@ -96,6 +97,24 @@ def content_out(prefix, unit_id):
 def srcmap_out(prefix, unit_id):
     """The source map sits beside the HTML: <prefix>content/<unit>.srcmap.json."""
     return f"{prefix}content/{unit_id}.srcmap.json"
+
+
+def write_counts(prefix, rows):
+    """Write <prefix>content/counts.json = {unitId: {words, chars}} from each unit's rendered HTML.
+    Reads whatever content/<id>.html exists (rebuilt this run OR kept from a prior run) so the file
+    always reflects every unit. Cheap: the home grid reads this one file instead of every chapter."""
+    counts = {}
+    for r in rows:
+        uid = r.get("id")
+        if not uid:
+            continue
+        p = Path(content_out(prefix, uid))
+        if p.exists():
+            counts[uid] = word_count(p.read_text(encoding="utf-8", errors="replace"))
+    out = Path(f"{prefix}content/counts.json")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(counts), encoding="utf-8")
+    return counts
 
 
 def load_units(prefix):
@@ -204,6 +223,7 @@ def render_project(prefix, this_repo, token, workdir):
                    BUILD_DIR=str((workdir / "build" / (prefix.rstrip("/") or "root")).resolve()))
         if build_guarded(uid, out, env, workdir, "content"):
             built += 1
+    write_counts(prefix, rows)
     print(f"[render] {prefix or '(root)'}: built {built}/{len(rows)} units")
     return built
 
