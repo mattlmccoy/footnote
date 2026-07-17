@@ -454,6 +454,9 @@ function renderDoc(fragment){
   loadAdvisorComments(current);
   startOwnerLiveSync();
   if (!previewing) loadSrcmapPencils(current);
+  if (current && current !== '__whole__' && COUNTS[current]?.words == null){
+    try { COUNTS[current] = countWords(read.querySelector('#doc')?.innerHTML || ''); } catch(e){}
+  }
 }
 // Attached-appendix rendering: after a chapter is painted, show each appendix HOMED here inline
 // (collapsible, expanded by default) and a link card for appendices this chapter cites but that are
@@ -1530,6 +1533,7 @@ async function loadWholeDoc(){
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc);
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
+  if (totalWords(COUNTS)){ const _d = read.querySelector('#doc'); if (_d){ const _t = document.createElement('div'); _t.style.cssText = 'color:var(--text-3);font-size:12px;margin:0 0 14px'; _t.textContent = formatCount(totalWords(COUNTS)); _d.prepend(_t); } }
 }
 // Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
 // of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
@@ -2975,7 +2979,7 @@ function homeHtml(){
          <span style="display:block;font-size:11.5px;color:var(--text-3)">Every ${escapeHtml(UNIT)} as one continuous read — comment anywhere</span></span></button>`
     : '';
   const allCh = CHAPTERS.length
-    ? `<div class="home-allch" style="margin-bottom:13px">ALL ${UNIT.toUpperCase()}S</div>
+    ? `<div class="home-allch" style="display:flex;align-items:baseline;gap:8px;margin-bottom:13px">ALL ${UNIT.toUpperCase()}S${totalWords(COUNTS) ? `<span style="font-weight:400;font-size:11px;color:var(--text-3)">${formatCount(totalWords(COUNTS))} total</span>` : ''}</div>
        ${wholeBtn}
        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>
        ${appendixSection}`
