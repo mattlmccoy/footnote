@@ -67,6 +67,16 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .read{flex:1;min-width:0;overflow:auto;position:relative}
 #doc{max-width:720px;margin:0 auto;padding:34px 28px 160px;font-size:16.5px;line-height:1.78;color:var(--text)}
 #doc h1{font-size:26px;font-weight:600;letter-spacing:-.01em;margin:0 0 20px}
+/* attached appendices (shared by both portals) — inline collapsible under the home chapter + link card */
+.appx-attached{margin-top:34px;border-top:2px solid var(--accent);padding-top:6px}
+.appx-block{margin:14px 0;border:.5px solid var(--border);border-radius:var(--r-lg);overflow:hidden}
+.appx-sum{cursor:pointer;font-weight:600;color:var(--accent);padding:11px 14px;list-style:none}
+.appx-sum::-webkit-details-marker{display:none}
+.appx-sum::before{content:'▾ ';font-size:11px}
+.appx-block:not([open]) .appx-sum::before{content:'▸ '}
+.appx-body{padding:0 16px 16px}
+.appx-card{display:flex;align-items:center;gap:8px;width:100%;text-align:left;margin:12px 0;padding:11px 14px;border:1px solid var(--accent);border-radius:var(--r-lg);background:none;cursor:pointer;color:var(--accent);font:inherit;font-weight:600}
+.appx-arrow{margin-left:auto}
 #doc h2{font-size:21px;font-weight:600;letter-spacing:-.005em;margin:36px 0 12px}
 #doc h3{font-size:17px;font-weight:600;margin:26px 0 8px;color:var(--text)}
 #doc p{margin:0 0 16px} #doc strong{font-weight:600}

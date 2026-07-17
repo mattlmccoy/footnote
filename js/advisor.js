@@ -6,6 +6,7 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { wordDiff } from './textdiff.js?v=112b6a1';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=f58d6b0';   // instance config + chapter manifest; assistant-free by construction
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release (one rule, both portals)
+import { attachmentsView } from './appattach.js?v=1';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
@@ -456,9 +457,9 @@ async function loadChapter(ch){
   document.getElementById('nav').style.display=''; document.getElementById('comments').style.display='';
   renderTopbar(); renderComments();
   const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
-  if (dev){ try { const r=await fetch(`./chapters/${ch}.html`); if(r.ok){ renderDoc(await r.text()); return; } } catch(e){} }
+  if (dev){ try { const r=await fetch(`./chapters/${ch}.html`); if(r.ok){ renderDoc(await r.text()); renderChapterAppendices(ch); return; } } catch(e){} }
   const t = tok(); if (!t){ renderConnect(); return; }
-  try { renderDoc(await _rawText(t, `content/${ch}.html`)); }
+  try { renderDoc(await _rawText(t, `content/${ch}.html`)); renderChapterAppendices(ch); }
   catch(e){ if (is401(e)) return showKeyExpired();
     const c = classifyGitHubError(e);
     if (c.status === 404){                       // the rendered HTML isn't in the data repo yet — reading view not built
@@ -492,6 +493,51 @@ function renderDoc(fragment){
     const tick=()=>{ const el=(document.getElementById('doc')?locateAnchor({anchor:{quote:q}}):null);
       if(el){ scrollFlash(el); return; } if(tries-->0) setTimeout(tick,280); };
     tick(); }
+}
+// After a chapter is painted, show each appendix HOMED here inline (collapsible, expanded) and a link card
+// for appendices this chapter cites but that are homed elsewhere. Only RELEASED appendices appear (release
+// coupling puts an appendix into `released` with its home chapter). Rendered like a chapter (math/figures/
+// citations/cross-refs). Fetched inside the #doc reading column so widths match.
+async function renderChapterAppendices(ch){
+  const meta = chMeta(ch);
+  if (!meta || meta.kind === 'appendix') return;                 // an appendix opened on its own doesn't recurse
+  const view = attachmentsView(CHAPTERS);
+  const cites = (view.byChapter[ch] || []).filter(id => released.includes(id));   // reviewer sees only released units
+  if (!cites.length) return;
+  const dev = location.hostname==='localhost'||location.hostname==='127.0.0.1';
+  const t = tok();
+  if (!dev && !t) return;
+  const fetchAppendix = async (appId) => {
+    if (dev){ try { const r = await fetch(`./chapters/${appId}.html`); if (r.ok) return await r.text(); } catch(e){} }
+    if (!t) return null;
+    try { return await _rawText(t, `content/${appId}.html`); } catch(e){ return null; }
+  };
+  const homed = cites.filter(appId => view.homeOf[appId] === ch);
+  const htmlById = {};
+  await Promise.all(homed.map(async appId => { htmlById[appId] = await fetchAppendix(appId); }));
+  if (current !== ch) return;                                     // reviewer switched units mid-fetch
+  const wrap = document.createElement('div');
+  wrap.className = 'appx-attached';
+  for (const appId of cites){
+    const am = chMeta(appId);
+    const label = `${unitLabel(am, UNIT)} · ${escapeHtml(shortTitle(am.title))}`;
+    if (view.homeOf[appId] === ch){
+      const block = document.createElement('details');
+      block.className = 'appx-block'; block.open = true;
+      const html = htmlById[appId];
+      const body = html != null ? html : `<div class="empty" style="font-size:12px">This appendix’s reading view is still being prepared.</div>`;
+      block.innerHTML = `<summary class="appx-sum">${label}</summary><div class="appx-body">${body}</div>`;
+      wrap.appendChild(block);
+      if (html != null){ const bodyEl = block.querySelector('.appx-body'); fixFootnotes(bodyEl); runKatex(bodyEl); wireFigures(bodyEl); wireCitations(bodyEl); linkCrossRefs(bodyEl); }
+    } else {
+      const card = document.createElement('button');
+      card.className = 'appx-card'; card.dataset.ch = appId;
+      card.innerHTML = `<span>${label}</span><span class="appx-arrow">→</span>`;
+      card.onclick = () => loadChapter(appId);
+      wrap.appendChild(card);
+    }
+  }
+  (read.querySelector('#doc') || read).appendChild(wrap);
 }
 // "what changed since you last looked": per-section content fingerprint, compared to the last visit
 function _hash(s){ let h = 0; for (let i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) | 0; return h; }
