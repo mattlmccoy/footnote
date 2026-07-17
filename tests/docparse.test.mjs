@@ -1,6 +1,59 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLatexOutline } from '../js/docparse.js';
+import { parseLatexOutline, mergeChapters } from '../js/docparse.js';
+
+test('mergeChapters preserves existing ids on sourceFile match and adds new (appendix) units', () => {
+  const existing = [
+    { id: 'ch_introduction', title: 'Introduction', sourceFile: 'chapters/ch_introduction.tex', n: 1 },
+    { id: 'ch_conclusions', title: 'Conclusions', sourceFile: 'chapters/ch_conclusions.tex', n: 2 },
+  ];
+  const parsed = [
+    { id: 'ch-introduction', title: 'Introduction (edited)', sourceFile: 'chapters/ch_introduction.tex', n: 1 },
+    { id: 'ch-conclusions', title: 'Conclusions', sourceFile: 'chapters/ch_conclusions.tex', n: 2 },
+    { id: 'appb-metrology', title: 'Metrology', sourceFile: 'appendices/appB.tex', kind: 'appendix', n: 1 },
+  ];
+  const merged = mergeChapters(existing, parsed);
+  assert.deepEqual(merged.map(u => u.id), ['ch_introduction', 'ch_conclusions', 'appb-metrology']);
+  assert.equal(merged[0].title, 'Introduction (edited)');   // title refreshed from source
+  assert.equal(merged[2].kind, 'appendix');                 // appendix added with its parsed id
+});
+test('mergeChapters: single-file doc (every unit sourceFile "main.tex") matches POSITIONALLY, no collapse', () => {
+  const existing = [
+    { id: 'ch_intro', title: 'Intro', sourceFile: 'main.tex', n: 1 },
+    { id: 'ch_methods', title: 'Methods', sourceFile: 'main.tex', n: 2 },
+    { id: 'ch_results', title: 'Results', sourceFile: 'main.tex', n: 3 },
+  ];
+  const parsed = [
+    { id: 'ch-intro', title: 'Intro', sourceFile: 'main.tex', n: 1 },
+    { id: 'ch-methods', title: 'Methods', sourceFile: 'main.tex', n: 2 },
+    { id: 'ch-results', title: 'Results', sourceFile: 'main.tex', n: 3 },
+  ];
+  assert.deepEqual(mergeChapters(existing, parsed).map(u => u.id), ['ch_intro', 'ch_methods', 'ch_results']);
+});
+test('mergeChapters: .docx doc (sourceFile null) matches positionally, no collapse', () => {
+  const existing = [
+    { id: 'ch_a', title: 'A', sourceFile: null, n: 1 },
+    { id: 'ch_b', title: 'B', sourceFile: null, n: 2 },
+  ];
+  const parsed = [
+    { id: 'ch-a', title: 'A', sourceFile: null, n: 1 },
+    { id: 'ch-b', title: 'B', sourceFile: null, n: 2 },
+  ];
+  assert.deepEqual(mergeChapters(existing, parsed).map(u => u.id), ['ch_a', 'ch_b']);
+});
+test('mergeChapters: no duplicate ids in the merged output (kept-existing vs new collision)', () => {
+  const existing = [{ id: 'appx', title: 'Old Appendix', sourceFile: 'appendices/old.tex', n: 1 }];
+  const parsed = [{ id: 'appx', title: 'New Appendix', sourceFile: 'appendices/new.tex', kind: 'appendix', n: 1 }];
+  const ids = mergeChapters(existing, parsed).map(u => u.id);
+  assert.equal(new Set(ids).size, ids.length, 'ids must be unique');
+});
+test('mergeChapters keeps an existing unit the parse no longer matches (never orphan comments)', () => {
+  const existing = [{ id: 'ch_gone', title: 'Removed', sourceFile: 'chapters/ch_gone.tex', n: 1 }];
+  const parsed = [{ id: 'ch-new', title: 'New', sourceFile: 'chapters/ch_new.tex', n: 1 }];
+  const merged = mergeChapters(existing, parsed);
+  assert.ok(merged.some(u => u.id === 'ch_gone'), 'kept the un-matched existing unit');
+  assert.ok(merged.some(u => u.id === 'ch-new'), 'added the new unit');
+});
 
 test('parseLatexOutline excludes appendices (\\begin{theappendices} boundary)', () => {
   const tex = '\\chapter{Real One}\nText here now.\n\\chapter{Real Two}\nMore text now.\n\\begin{theappendices}\n\\chapter{Appendix A}\nApp text.\n\\end{theappendices}';

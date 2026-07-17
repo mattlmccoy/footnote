@@ -268,6 +268,40 @@ function finalizeChapters(raw) {
   });
 }
 
+// Re-scan safety: merge a freshly-parsed unit list onto the EXISTING chapters.json manifest, PRESERVING
+// existing unit ids so comments (reviews/<id>.json) and rendered content (content/<id>.html) stay mapped.
+// slugifyId hyphenates (ch-introduction) while stored ids may be underscored (ch_introduction), so a naive
+// re-scan that just saves the fresh parse would orphan every comment. Match by sourceFile: on a match, keep
+// the existing id but take the fresh unit's other fields (title/kind/n refreshed from source); a new unit
+// (e.g. a newly-added appendix) is added with its parsed id; an existing unit the parse no longer matches is
+// KEPT (never orphan its comments). Pure — inputs are not mutated.
+export function mergeChapters(existing, parsed) {
+  const exList = existing || [], pList = parsed || [];
+  // Match by a composite key: sourceFile + its occurrence-ordinal. A distinct sourceFile (dissertation, one
+  // file per unit) matches by that file regardless of order; units that SHARE a sourceFile ('main.tex' for a
+  // single-file doc) or have none (.docx → null) match POSITIONALLY, so they don't collapse under one key.
+  const keyer = () => { const seen = new Map();
+    return (u, i) => { const sf = (u && u.sourceFile) || ` @${i}`; const n = seen.get(sf) || 0; seen.set(sf, n + 1); return `${sf}#${n}`; }; };
+  const exKey = keyer(); const byKey = new Map();
+  exList.forEach((e, i) => { if (e) byKey.set(exKey(e, i), e); });
+  const pKey = keyer();
+  const usedIds = new Set();
+  const out = pList.map((p, i) => {
+    const e = p ? byKey.get(pKey(p, i)) : null;
+    if (e) { usedIds.add(e.id); return { ...p, id: e.id }; }
+    return { ...p };
+  });
+  for (const e of exList) if (e && !usedIds.has(e.id)) out.push(e);   // keep unmatched existing (never orphan)
+  // Guarantee unique ids: first occurrence keeps its id (preserved ids come first), later collisions suffix.
+  const seenId = new Set();
+  return out.map((u) => {
+    let id = u.id, k = 2;
+    while (seenId.has(id)) id = `${u.id}-${k++}`;
+    seenId.add(id);
+    return id === u.id ? u : { ...u, id };
+  });
+}
+
 // Parse chapters from the WordprocessingML `document.xml` (already unzipped from the .docx). Every
 // paragraph styled Heading 1 (any casing / "Heading 1" / "Heading1") becomes a chapter; its text is the
 // concatenation of its runs. The unzip (bytes → xml) is done by the caller (import UI). sourceFile is null
