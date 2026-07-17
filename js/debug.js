@@ -79,17 +79,20 @@ export function buildSnapshot(state) {
 
 import { resolveProject } from './config.js?v=dev';
 import { isActiveComment } from './model.js?v=dev';
+import { fetchWithTimeout } from './nethelpers.js?v=dev';
 
 const API = 'https://api.github.com';
 const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
 
-// One authenticated GET. Returns { ok, status, headers, json } — json is null on a non-ok/parse failure.
+// One authenticated GET, bounded by the repo's shared timeout+retry. Returns { ok, status, headers, json };
+// json is null on a non-ok/parse failure. Never throws (a transport failure → { ok:false, status:0 }).
 export async function dbgGet(token, url, fetchImpl) {
-  const f = fetchImpl || fetch;
   try {
-    const r = await f(`${url}${url.includes('?') ? '&' : '?'}t=${'' + Math.floor(1e6 * (url.length % 7 + 1))}`, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store',
-    });
+    const r = await fetchWithTimeout(
+      `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`,
+      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' },
+      { fetchImpl },
+    );
     let json = null; try { json = await r.json(); } catch {}
     return { ok: r.ok, status: r.status, headers: r.headers, json };
   } catch { return { ok: false, status: 0, headers: { get: () => null }, json: null }; }
@@ -106,8 +109,12 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
   const cfg = resolveProject(appCfg, projects, projectId);
   const dataRepo = cfg.dataRepo, sourceRepo = cfg.sourceRepo;
   const dpfx = cfg.dataPrefix || '';
-  const chapters = (await _contentJson(token, dataRepo, `${dpfx}chapters.json`, fetchImpl)) || [];
-  const chapterList = Array.isArray(chapters) ? chapters : (chapters.chapters || []);
+  const chR = await dbgGet(token, `${API}/repos/${dataRepo}/contents/${dpfx}chapters.json`, fetchImpl);
+  // A transport/auth failure (NOT a real 404) means we can't trust an empty result → surface it, don't render green.
+  const chaptersFetchFailed = !chR.ok && chR.status !== 404;
+  let chaptersRaw = null;
+  if (chR.ok && chR.json && typeof chR.json.content === 'string') { try { chaptersRaw = _b64json(chR.json); } catch { chaptersRaw = null; } }
+  const chapterList = Array.isArray(chaptersRaw) ? chaptersRaw : (chaptersRaw && chaptersRaw.chapters) || [];
   // rendered set: content/<id>.html present in the data-repo tree
   const treeR = await dbgGet(token, `${API}/repos/${dataRepo}/git/trees/main?recursive=1`, fetchImpl);
   const rendered = new Set((treeR.json?.tree || []).filter(x => x.type === 'blob')
@@ -120,6 +127,7 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
   const docs = [];
   let open = 0;
   for (const ch of chapterList) {
+    const isRendered = rendered.has(ch.id);
     const review = await _contentJson(token, dataRepo, `${dpfx}reviews/${ch.id}.json`, fetchImpl);
     const builtFrom = review?.built_from_commit || '';
     const openN = (review?.comments || []).filter(isActiveComment).length;
@@ -134,10 +142,12 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
       ahead = typeof cmp.ahead_by === 'number' ? cmp.ahead_by : null;
       fileTouched = !!(cmp.files || []).some(fl => fl.filename === ch.sourceFile);
     }
-    const verdict = classifySync({ rendered: rendered.has(ch.id), builtFrom, mainSha, ahead, fileTouched });
-    docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: rendered.has(ch.id), builtFrom, open: openN, ...verdict });
+    const verdict = classifySync({ rendered: isRendered, builtFrom, mainSha, ahead, fileTouched });
+    docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: isRendered, builtFrom, open: openN, ...verdict });
   }
-  return { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
+  const result = { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
+  if (chaptersFetchFailed) result.error = `could not read chapters.json (status ${chR.status})`;
+  return result;
 }
 
 // Collect every project (sequential to stay gentle on the rate limit).

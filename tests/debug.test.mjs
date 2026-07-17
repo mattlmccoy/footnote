@@ -160,3 +160,19 @@ test('collectProject: assembles per-doc verdicts (in-sync + behind-touched)', as
   assert.equal(d2.open, 1);
   assert.equal(out.rollup.behind, 1);
 });
+
+test('collectProject: a failed chapters fetch surfaces an error (not false-healthy)', async () => {
+  const project = { id: 'p1', name: 'P1', dataRepo: 'me/data', sourceRepo: 'me/src', dataPrefix: '' };
+  const failFetch = async () => ({ ok: false, status: 401, headers: { get: () => null }, json: async () => ({}) });
+  const out = await collectProject('badtok', { owner: 'me', dataRepo: 'me/hub', hubRepo: 'me/hub' }, [project], 'p1', failFetch);
+  assert.ok(out.error, 'a non-404 chapters failure must surface as a project error');
+  assert.equal(out.docs.length, 0);
+});
+
+test('collectProject: a genuine 404 chapters (no chapters yet) is NOT an error', async () => {
+  const project = { id: 'p1', name: 'P1', dataRepo: 'me/data', sourceRepo: 'me/src', dataPrefix: '' };
+  const notFound = async () => ({ ok: false, status: 404, headers: { get: () => null }, json: async () => ({}) });
+  const out = await collectProject('tok', { owner: 'me', dataRepo: 'me/hub', hubRepo: 'me/hub' }, [project], 'p1', notFound);
+  assert.equal(out.error, undefined);
+  assert.equal(out.docs.length, 0);
+});
