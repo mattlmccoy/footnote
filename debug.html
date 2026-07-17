@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Footnote · Debug</title>
+<style>
+  :root{ --bg:#fff; --fg:#1a1a1a; --dim:#6b7280; --line:#e5e7eb; --card:#fafafa; --accent:#3b6ef6;
+    --ok:#16a34a; --warn:#d97706; --bad:#dc2626; --okbg:#dcfce7; --warnbg:#fef3c7; --badbg:#fee2e2; }
+  @media (prefers-color-scheme:dark){ :root{ --bg:#141414; --fg:#e5e7eb; --dim:#9ca3af; --line:#2a2a2a;
+    --card:#1c1c1c; --okbg:#14311d; --warnbg:#3a2c0a; --badbg:#3a1414; } }
+  html,body{ background:var(--bg); color:var(--fg); margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:13px; line-height:1.5; }
+  #root{ max-width:820px; margin:0 auto; padding:20px 16px 60px; }
+  .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
+</style>
+</head>
+<body>
+  <h1 class="sr-only">Footnote owner debug page</h1>
+  <div id="root"><p style="color:var(--dim)">Loading diagnostics…</p></div>
+  <script type="module" src="./js/debug.js?v=dev"></script>
+</body>
+</html>
