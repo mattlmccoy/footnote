@@ -23,3 +23,9 @@ test('countWords mirrors the engine: prose minus refs/footnotes/math', () => {
   assert.equal(countWords("<p>e <span class='math inline'>\\(x\\)</span> m</p>").words, 2);
   assert.equal(countWords('').words, 0);
 });
+
+test('countWords: nested reference divs stripped whole + chars with spaces (engine parity)', () => {
+  const html = '<p>real prose words here</p><div id="refs" class="references csl-bib-body"><div class="csl-entry">Smith 2020 one entry text</div><div class="csl-entry">Jones 2019 two entry text</div></div>';
+  assert.equal(countWords(html).words, 4);                                   // only "real prose words here"
+  assert.equal(countWords('<p>Hello brave new world</p>').chars, 'Hello brave new world'.length);   // WITH spaces
+});

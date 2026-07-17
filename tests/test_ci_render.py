@@ -170,4 +170,4 @@ def test_write_counts_json_from_content(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     ci_render.write_counts("", rows)
     got = json.loads((tmp_path / "content" / "counts.json").read_text())
-    assert got == {"ch_a": {"words": 3, "chars": 11}, "ch_b": {"words": 2, "chars": 9}}
+    assert got == {"ch_a": {"words": 3, "chars": 13}, "ch_b": {"words": 2, "chars": 10}}   # chars WITH spaces

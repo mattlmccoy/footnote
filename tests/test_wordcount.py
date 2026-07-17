@@ -7,7 +7,18 @@ from wordcount import word_count
 def test_counts_plain_prose():
     r = word_count("<p>Hello brave new world</p>")
     assert r["words"] == 4
-    assert r["chars"] == len("Hellobravenewworld")   # non-space chars
+    assert r["chars"] == len("Hello brave new world")   # characters WITH spaces (Word's default)
+
+
+def test_excludes_nested_reference_divs():
+    # citeproc: <div id="refs"> wraps NESTED <div class="csl-entry"> — a non-greedy regex stops at the first
+    # inner </div> and leaks the rest. Balanced stripping must drop the WHOLE block.
+    html = ('<p>real prose words here</p>'
+            '<div id="refs" class="references csl-bib-body">'
+            '<div class="csl-entry">Smith 2020 first reference entry text</div>'
+            '<div class="csl-entry">Jones 2019 second reference entry text</div>'
+            '</div>')
+    assert word_count(html)["words"] == 4   # only "real prose words here"
 
 
 def test_includes_headings_and_captions():

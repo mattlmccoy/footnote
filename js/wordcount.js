@@ -13,18 +13,34 @@ export function totalChars(counts = {}) {
   return Object.values(counts || {}).reduce((s, c) => s + (c && c.chars ? c.chars : 0), 0);
 }
 
-// Fallback: same rules as the engine (refs / footnotes / math excluded). Quote-tolerant so it matches the
-// Python engine and both attribute styles. Regex-based so it runs in node tests too.
-const REF = /<section\b[^>]*\bid=["']refs["'][^>]*>[\s\S]*?<\/section>/gi;
-const REF_C = /<(section|div)\b[^>]*\bclass=["'][^"']*\breferences\b[^"']*["'][^>]*>[\s\S]*?<\/\1>/gi;
-const FN = /<section\b[^>]*\bclass=["'][^"']*\bfootnotes\b[^"']*["'][^>]*>[\s\S]*?<\/section>/gi;
-const MATH = /<span\b[^>]*\bclass=["'][^"']*\bmath\b[^"']*["'][^>]*>[\s\S]*?<\/span>/gi;
+// Fallback: same rules as the engine (refs / footnotes / math excluded), quote-tolerant. Reference and
+// footnote blocks are stripped by BALANCED tag depth (citeproc's <div id="refs"> nests same-name divs, so a
+// non-greedy regex would stop at the first inner </div> and leak the rest). Openers keep group 1 = tag name.
+const REF_OPEN = '<(div|section)\\b[^>]*\\bid=["\']refs["\'][^>]*>';
+const REFCLASS_OPEN = '<(div|section)\\b[^>]*\\bclass=["\'][^"\']*\\breferences\\b[^"\']*["\'][^>]*>';
+const FN_OPEN = '<(section|div|aside)\\b[^>]*\\bclass=["\'][^"\']*\\bfootnotes\\b[^"\']*["\'][^>]*>';
+const MATH = /<span\b[^>]*\bclass=["'][^"']*\bmath\b[^"']*["'][^>]*>[\s\S]*?<\/span>/gi;   // leaf, no nesting
 const TAG = /<[^>]+>/g;
 const ENT = /&[a-zA-Z]+;|&#\d+;/g;
 
+function stripBalanced(s, openerSrc) {
+  for (;;) {
+    const m = new RegExp(openerSrc, 'i').exec(s);
+    if (!m) return s;
+    const close = new RegExp('<(/?)' + m[1] + '\\b[^>]*>', 'gi');
+    close.lastIndex = m.index + m[0].length;
+    let depth = 1, end = -1, t;
+    while ((t = close.exec(s))) { depth += t[1] ? -1 : 1; if (depth === 0) { end = close.lastIndex; break; } }
+    s = s.slice(0, m.index) + ' ' + (end >= 0 ? s.slice(end) : '');
+  }
+}
+
 export function countWords(html) {
   let s = String(html || '');
-  s = s.replace(REF, ' ').replace(REF_C, ' ').replace(FN, ' ').replace(MATH, ' ').replace(TAG, ' ').replace(ENT, ' ');
+  s = stripBalanced(s, REF_OPEN);
+  s = stripBalanced(s, REFCLASS_OPEN);
+  s = stripBalanced(s, FN_OPEN);
+  s = s.replace(MATH, ' ').replace(TAG, ' ').replace(ENT, ' ');
   const words = s.split(/\s+/).filter(Boolean);
-  return { words: words.length, chars: words.reduce((n, w) => n + [...w].length, 0) };
+  return { words: words.length, chars: [...words.join(' ')].length };   // chars WITH spaces (codepoint-accurate)
 }
