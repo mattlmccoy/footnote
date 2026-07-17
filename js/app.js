@@ -314,8 +314,7 @@ function openExportMenu(){
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && !e.target.closest('#btn-export-menu')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
 }
 function doRefresh(){ try{ sessionStorage.setItem('_resume', current||''); }catch(e){} const u = new URL(location.href); u.searchParams.set('_r', Date.now()); location.replace(u.toString()); }   // reload for a fresh deploy, keeping your place
-function enterChapter(ch){ hideWordCountFab();   // hide on any nav; renderDoc re-shows it for a real chapter
-  if (ch === '__outline__'){ WHOLE = false; localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
+function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorage.setItem('lastChapter', ch); loadOwnerOutline(); return; }   // the outline isn't a real chapter — don't try to fetch it
   if (ch === '__whole__'){ localStorage.setItem('lastChapter', ch); loadWholeDoc(); return; }   // the whole-document view assembles every unit; it isn't a single fetch
   WHOLE = false;
   current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
@@ -2354,7 +2353,6 @@ function chapterStats(ch){
 }
 function enterHome(){
   stopOwnerLiveSync();
-  hideWordCountFab();
   document.getElementById('nav').style.display = 'none';
   document.getElementById('comments').style.display = 'none';
   document.getElementById('topbar').innerHTML =
@@ -3166,22 +3164,19 @@ function openWordCountPanel(){
   openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, [{ label:'Close', primary:true, onClick: close => close() }]);
 }
 // Floating word-count tool: a small pill on a chapter reading view showing this unit's count; click opens the
-// full panel. Created once, reused. Shown by renderDoc (chapter painted), hidden on any other view.
+// full panel. Appended INSIDE #read, so ANY view that replaces read.innerHTML (home, settings, reviewers,
+// outline, whole-doc, history) auto-removes it — no per-view hide bookkeeping to get wrong.
 function renderWordCountFab(){
-  let fab = document.getElementById('wc-fab');
-  if (!fab){
-    fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count — click for the full breakdown';
-    fab.onclick = openWordCountPanel;
-    fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:none;align-items:center;gap:7px;'
-      + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'
-      + 'font:inherit;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.12)';
-    document.body.appendChild(fab);
-  }
-  const wc = (current && current !== '__whole__') ? COUNTS[current] : null;
+  if (!read || !current || current === '__whole__') return;
+  const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count — click for the full breakdown';
+  fab.onclick = openWordCountPanel;
+  fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:flex;align-items:center;gap:7px;'
+    + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'
+    + 'font:inherit;font-size:12px;font-weight:500;cursor:pointer;box-shadow:0 2px 12px rgba(0,0,0,.12)';
+  const wc = COUNTS[current];
   fab.innerHTML = `<i class="ti ti-abacus" style="font-size:14px;color:var(--accent)"></i>${formatCount(wc ? wc.words : totalWords(COUNTS))}`;
-  fab.style.display = 'flex';
+  read.appendChild(fab);
 }
-function hideWordCountFab(){ const f = document.getElementById('wc-fab'); if (f) f.style.display = 'none'; }
 function openMoreMenu(){
   document.getElementById('moremenu')?.remove();
   const menu = document.createElement('div'); menu.id = 'moremenu';
