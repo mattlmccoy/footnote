@@ -14,7 +14,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml } from './docparse.js?v=534763c';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=534763c';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
@@ -2660,8 +2660,9 @@ async function detectFromRepo(src, entry, t){
     if (key) sourceByFile[key] = flat;
     if (u.sourceFile) sourceByFile[u.sourceFile] = flat;
   }));
-  annotateAttachments(chapters, sourceByFile);
-  return { chapters, level: detectUnitLevel(main, resolve) };
+  // Attachment (home/citedBy) is computed at SAVE time on the MERGED units, so it references the final
+  // id-preserved unit ids after a re-scan — return the flattened per-unit source for that step.
+  return { chapters, sourceByFile, level: detectUnitLevel(main, resolve) };
 }
 async function saveChapters(chs, t){
   let sha = null; try { const cur = await getJson(t, 'chapters.json'); sha = cur.sha; } catch {}
@@ -2677,6 +2678,7 @@ function importDocument(){
   const t = localStorage.getItem('ghpat'); if (!t){ openSettingsPage('access'); return; }
   const src = _CFG.sourceRepo;
   let detected = [];
+  let detectSource = null;  // { sourceFile: flattened-source } from a repo detect — lets save re-annotate attachment on the merged (final-id) units
   let detectedLevel = null; // 'chapter' | 'section' from the parsed LaTeX; null for Word/no-parse (keeps current noun)
   let pendingTex = null;    // { name, text } — a single .tex we'll commit as main.tex
   let pendingFiles = null;  // [{ path, isText, text?, base64? }] — a whole project folder
@@ -2718,7 +2720,7 @@ function importDocument(){
     pendingTex = null; pendingFiles = null; $('#imp-srcwrap').style.display = 'none';   // detecting from the repo: nothing to commit
     const entry = prompt('Entry .tex file in the source repo:', 'main.tex'); if (!entry) return;
     status(`Reading ${entry} from ${src}…`);
-    try { const r = await detectFromRepo(src, entry.trim(), t); detectedLevel = r.level; preview(r.chapters); status(''); }
+    try { const r = await detectFromRepo(src, entry.trim(), t); detectedLevel = r.level; detectSource = r.sourceByFile; preview(r.chapters); status(''); }
     catch (e){ status('Could not read the source: ' + e.message); }
   };
   $('#imp-file').onchange = async e => {
@@ -2819,10 +2821,15 @@ function importDocument(){
         if (_projectId && _CFG.hubRepo) { try { await writeProjectPatch(_CFG, _projectId, { doc: _CFG.doc }, t); } catch (e) { console.warn('doc persist:', e.message); } }
       }
       status('Saving…');
-      await saveChapters(detected, t);
+      // Re-scan safety: merge onto the EXISTING manifest so unit ids (and their comments/content) survive —
+      // a plain save would re-slug ids (ch_introduction → ch-introduction) and orphan every comment. Then
+      // (re)compute attachment on the MERGED units so home/citedBy reference the final, preserved ids.
+      const merged = CHAPTERS.length ? mergeChapters(CHAPTERS, detected) : detected;
+      if (detectSource) annotateAttachments(merged, detectSource);
+      await saveChapters(merged, t);
       // Generate the Proposed outline from the same source (nested structure + source-derived synopses).
       try { const outline = parseLatexOutline(_entryText, _resolveInc); if (outline.chapters.length) await saveOutline(outline, t); } catch (e) { console.warn('outline gen:', e.message); }
-      flash(`Imported ${detected.length} ${UNIT}s`); close();
+      flash(`Imported ${merged.length} ${UNIT}s`); close();
       CHAPTERS = await loadChapters(t); enterHome();
     }
     catch (e){ status('Save failed: ' + e.message); $('#imp-save').disabled = false; }
