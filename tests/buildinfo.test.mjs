@@ -137,3 +137,21 @@ test('orbClickAction: Alt+click navigates, plain click toggles', () => {
 test('DEBUG_URL points at the hidden page', () => {
   assert.equal(DEBUG_URL, 'debug.html');
 });
+
+test('showBuildTag: Alt+click orb navigates to debug page, plain click does not', () => {
+  const w = fakeWin();
+  let navigated = null;
+  w.location.assign = (u) => { navigated = u; };
+  showBuildTag('https://x/js/app.js?v=deadbee', w);
+  const tag = w.document.getElementById('fn-build');
+  const orb = tag._kids.find(k => k.attrs && k.attrs['data-role'] === 'orb');
+  assert.ok(orb && typeof orb.onclick === 'function', 'orb is present and clickable');
+
+  orb.onclick({ altKey: true });                        // Alt+click → hidden debug page
+  assert.equal(navigated, 'debug.html');
+
+  navigated = null;
+  orb.onclick({ altKey: false });                       // plain click → toggle, no navigation
+  assert.equal(navigated, null);
+  assert.equal(tag.attrs['data-open'], '1');            // toggled open instead
+});

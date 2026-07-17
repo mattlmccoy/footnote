@@ -117,7 +117,7 @@ export function showBuildTag(metaUrl, win) {
   };
 
   orb.onclick = (e) => {
-    if (orbClickAction(e) === 'navigate') { (w.location).assign(DEBUG_URL); return; }
+    if (orbClickAction(e) === 'navigate') { w.location.assign(DEBUG_URL); return; }
     pinned = !pinned; apply();                                 // touch / click-to-pin
   };
   el.onmouseenter = () => { hovered = true; apply(); };        // desktop hover-expand
