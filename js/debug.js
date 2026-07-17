@@ -14,3 +14,13 @@ export function classifySync({ rendered, builtFrom, mainSha, ahead, fileTouched 
   }
   return { state: 'unknown', label: 'unknown', fill: 0 };
 }
+
+// Worst-first severity order for a project's overall dot.
+const _SEV = ['nyr', 'unknown', 'behind-touched', 'behind-untouched', 'insync'];
+export function rollupProject(docVerdicts, openCount) {
+  const docs = docVerdicts || [];
+  const behind = docs.filter(d => d.state === 'behind-touched' || d.state === 'behind-untouched').length;
+  let worst = 'insync';
+  for (const d of docs) if (_SEV.indexOf(d.state) < _SEV.indexOf(worst)) worst = d.state;
+  return { docCount: docs.length, behind, open: openCount || 0, worst };
+}

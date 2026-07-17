@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { classifySync } from '../js/debug.js';
+import { rollupProject } from '../js/debug.js';
 
 test('classifySync: not rendered → nyr', () => {
   assert.deepEqual(classifySync({ rendered: false, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }),
@@ -37,4 +38,22 @@ test('classifySync: main HEAD unknown → unknown', () => {
 
 test('classifySync: rendered + behind but ahead uncomputed (compare failed) → unknown', () => {
   assert.equal(classifySync({ rendered: true, builtFrom: 'aaa', mainSha: 'bbb', ahead: null, fileTouched: null }).state, 'unknown');
+});
+
+test('rollupProject: counts docs, behind, open; worst status wins', () => {
+  const docs = [{ state: 'insync' }, { state: 'behind-untouched' }, { state: 'behind-touched' }];
+  assert.deepEqual(rollupProject(docs, 4), { docCount: 3, behind: 2, open: 4, worst: 'behind-touched' });
+});
+
+test('rollupProject: a missing/nyr doc is the worst', () => {
+  assert.equal(rollupProject([{ state: 'insync' }, { state: 'nyr' }], 0).worst, 'nyr');
+});
+
+test('rollupProject: all in sync → worst is insync, behind 0', () => {
+  assert.deepEqual(rollupProject([{ state: 'insync' }, { state: 'insync' }], 0),
+    { docCount: 2, behind: 0, open: 0, worst: 'insync' });
+});
+
+test('rollupProject: no docs → empty rollup', () => {
+  assert.deepEqual(rollupProject([], 0), { docCount: 0, behind: 0, open: 0, worst: 'insync' });
 });
