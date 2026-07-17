@@ -3,7 +3,7 @@
 // \appendix labels consistently everywhere. AI-term-free (advisor.js imports it).
 
 // 1 -> A, 26 -> Z, 27 -> AA (spreadsheet-column style) so appendices past Z still get a unique letter.
-function appendixLetter(n) {
+export function appendixLetter(n) {
   let x = Number(n) || 1, s = '';
   while (x > 0) { x--; s = String.fromCharCode(65 + (x % 26)) + s; x = Math.floor(x / 26); }
   return s || 'A';

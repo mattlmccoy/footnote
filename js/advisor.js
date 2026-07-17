@@ -641,19 +641,22 @@ function wireFigures(doc){ doc.querySelectorAll('figure, img').forEach(el=>{ con
       else { const num=(el.querySelector('.tag, .eqn-num')?.textContent||'').replace(/[()]/g,'').trim(); label=num?`Equation (${num})`:'Equation'; quote=(el.textContent||'').replace(/\s+/g,' ').trim().slice(0,120)||'Equation'; }
       const rr=read.getBoundingClientRect(), fr=el.getBoundingClientRect(); const rects=[{x:fr.x-rr.x,y:fr.y-rr.y+read.scrollTop,w:fr.width,h:fr.height}];
       pending={ quote: label?`${label}: ${quote}`:quote, kind:'figure', figure:label, section:headingFor(el), confirmed:true, rects:[], chapterId: WHOLE?chapterIdOfNode(el):null }; showPopover(pending,rects,'figure'); }); }); }
-const chapterByNum = n => CHAPTERS.find(c=>c.n===n);
-function sectionNumberMap(doc){ const n=chMeta(current).n; const map={}; let h2=0,h3=0; doc.querySelectorAll('h2, h3').forEach(h=>{ if(h.tagName==='H2'){h2++;h3=0;map[`${n}.${h2}`]=h;} else {h3++;map[`${n}.${h2}.${h3}`]=h;} }); return map; }
+// Key by the unit's TAG, not its raw .n: a chapter is unchanged ("3.1"), an appendix keys "A.1" rather than
+// colliding with chapter 1's sections. (Inert for appendices until linkCrossRefs matches letter refs.)
+function sectionNumberMap(doc){ const n=unitTag(chMeta(current)); const map={}; let h2=0,h3=0; doc.querySelectorAll('h2, h3').forEach(h=>{ if(h.tagName==='H2'){h2++;h3=0;map[`${n}.${h2}`]=h;} else {h3++;map[`${n}.${h2}.${h3}`]=h;} }); return map; }
 function figTableMaps(doc){ const fig={},tab={}; doc.querySelectorAll('figure').forEach(f=>{ const m=(f.querySelector(':scope > figcaption')?.textContent||'').match(/^\s*Figure\s+(\d+(?:\.\d+)*)\./); if(m) fig[m[1]]=f; });
   doc.querySelectorAll('table caption, figcaption').forEach(c=>{ const m=c.textContent.match(/^\s*Table\s+(\d+(?:\.\d+)*)\./); if(m) tab[m[1]]=c.closest('figure')||c.closest('table')||c; }); return {fig,tab}; }
 function linkCrossRefs(doc){
-  const secMap=sectionNumberMap(doc), ftMap=figTableMaps(doc), curN=chMeta(current).n;
+  // curTag, not raw .n: in an appendix (n=1..5) a digit ref like "Section 1.2" means CHAPTER 1, never this
+  // appendix's own section — comparing tags ("A" vs "1") stops that false self-match.
+  const secMap=sectionNumberMap(doc), ftMap=figTableMaps(doc), curTag=unitTag(chMeta(current));
   const re=/\b(Figures?|Fig\.?|Tables?|Sections?|Chapters?)\s+(\d+(?:\.\d+)*)/gi, reTest=/\b(Figures?|Fig\.?|Tables?|Sections?|Chapters?)\s+\d/i;
   const walker=document.createTreeWalker(doc,NodeFilter.SHOW_TEXT,{ acceptNode:t=>{ if(!t.nodeValue.trim()||!reTest.test(t.nodeValue)) return NodeFilter.FILTER_REJECT; const bad=t.parentElement?.closest('a, h1, h2, h3, figcaption, .math, .katex, #footnotes, script, style'); return bad?NodeFilter.FILTER_REJECT:NodeFilter.FILTER_ACCEPT; } });
   const todo=[]; let node; while((node=walker.nextNode())) todo.push(node);
   todo.forEach(text=>{ const frag=document.createDocumentFragment(); let last=0; const s=text.nodeValue; re.lastIndex=0; let m;
-    while((m=re.exec(s))){ const kw=m[1], num=m[2], lead=parseInt(num,10); const isFig=/^Fig/i.test(kw), isTab=/^Tab/i.test(kw), isChap=/^Chap/i.test(kw); let handler=null;
-      if(isFig||isTab){ if(lead===curN){ const t=(isFig?ftMap.fig:ftMap.tab)[num]; if(t) handler=()=>scrollFlash(t); } }
-      else if(!isChap){ if(lead===curN){ const h=secMap[num]; if(h) handler=()=>scrollFlash(h); } }
+    while((m=re.exec(s))){ const kw=m[1], num=m[2], head=num.split('.')[0]; const isFig=/^Fig/i.test(kw), isTab=/^Tab/i.test(kw), isChap=/^Chap/i.test(kw); const self=head===curTag; let handler=null;
+      if(isFig||isTab){ if(self){ const t=(isFig?ftMap.fig:ftMap.tab)[num]; if(t) handler=()=>scrollFlash(t); } }
+      else if(!isChap){ if(self){ const h=secMap[num]; if(h) handler=()=>scrollFlash(h); } }
       if(last<m.index) frag.appendChild(document.createTextNode(s.slice(last,m.index)));
       if(handler){ const a=document.createElement('a'); a.className='xref'; a.textContent=m[0]; a.href='javascript:void 0'; a.onclick=e=>{ e.preventDefault(); e.stopPropagation(); handler(); }; frag.appendChild(a); }
       else frag.appendChild(document.createTextNode(m[0]));

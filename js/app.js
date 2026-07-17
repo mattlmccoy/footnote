@@ -14,6 +14,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2378016';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
+import { refTargetUnit } from './unitref.js?v=1';   // "Section 3.1"/"Chapter 3" → the CHAPTER (never an appendix that shares the number)
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
@@ -661,9 +662,10 @@ function stopOwnerLiveSync(){ if (ownerPollTimer){ clearInterval(ownerPollTimer)
 document.addEventListener('visibilitychange', () => { if (!document.hidden) ownerLivePoll(); });
 let advNotesState = { notes:{}, sha:null };   // owner-private notes, shared by the rail + panel
 // ---------- clickable cross-references (Figure / Table / Section / Chapter N.M) ----------
-const chapterByNum = n => CHAPTERS.find(c => c.n === n);
 function sectionNumberMap(doc){
-  const n = chMeta(current).n; const map = {}; let h2 = 0, h3 = 0;
+  // Key by the unit's TAG, not its raw .n: a chapter is unchanged ("3.1"), an appendix keys "A.1" rather
+  // than colliding with chapter 1's sections. (Inert for appendices until linkCrossRefs matches letter refs.)
+  const n = unitTag(chMeta(current)); const map = {}; let h2 = 0, h3 = 0;
   doc.querySelectorAll('h2, h3').forEach(h => { if (h.tagName==='H2'){ h2++; h3 = 0; map[`${n}.${h2}`] = h; } else { h3++; map[`${n}.${h2}.${h3}`] = h; } });
   return map;
 }
@@ -680,7 +682,9 @@ function figTableMaps(doc){   // read the real number from the numbered caption 
   return { fig, tab };
 }
 function linkCrossRefs(doc){
-  const secMap = sectionNumberMap(doc), ftMap = figTableMaps(doc), curN = chMeta(current).n;
+  // curTag, not raw .n: in an appendix (n=1..5) a digit ref like "Section 1.2" means CHAPTER 1, never this
+  // appendix's own section — comparing tags ("A" vs "1") stops that false self-match.
+  const secMap = sectionNumberMap(doc), ftMap = figTableMaps(doc), curTag = unitTag(chMeta(current));
   const re = /\b(Figures?|Fig\.?|Tables?|Sections?|Chapters?)\s+(\d+(?:\.\d+)*)/gi;
   const reTest = /\b(Figures?|Fig\.?|Tables?|Sections?|Chapters?)\s+\d/i;   // non-global: stateless .test()
   const walker = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT, {
@@ -691,16 +695,17 @@ function linkCrossRefs(doc){
   todo.forEach(text => {
     const frag = document.createDocumentFragment(); let last = 0; const s = text.nodeValue; re.lastIndex = 0; let m;
     while ((m = re.exec(s))){
-      const kindWord = m[1], num = m[2], lead = parseInt(num, 10);
+      const kindWord = m[1], num = m[2], head = num.split('.')[0];
       const isFig = /^Fig/i.test(kindWord), isTab = /^Tab/i.test(kindWord), isChap = /^Chap/i.test(kindWord);
+      const self = head === curTag;                      // a ref to THIS unit's own float/section
       let handler = null;
       if (isFig || isTab){
-        if (lead === curN){ const t = (isFig ? ftMap.fig : ftMap.tab)[num]; if (t) handler = () => scrollFlash(t); }
-        else { const ch = chapterByNum(lead); if (ch) handler = () => enterChapter(ch.id); } }
-      else if (isChap){ const ch = chapterByNum(lead); if (ch && ch.id !== current) handler = () => enterChapter(ch.id); }
+        if (self){ const t = (isFig ? ftMap.fig : ftMap.tab)[num]; if (t) handler = () => scrollFlash(t); }
+        else { const u = refTargetUnit(CHAPTERS, num); if (u) handler = () => enterChapter(u.id); } }
+      else if (isChap){ const u = refTargetUnit(CHAPTERS, num); if (u && u.id !== current) handler = () => enterChapter(u.id); }
       else { // Section
-        if (lead === curN){ const h = secMap[num]; if (h) handler = () => scrollFlash(h); }
-        else { const ch = chapterByNum(lead); if (ch) handler = () => enterChapter(ch.id); } }
+        if (self){ const h = secMap[num]; if (h) handler = () => scrollFlash(h); }
+        else { const u = refTargetUnit(CHAPTERS, num); if (u) handler = () => enterChapter(u.id); } }
       if (last < m.index) frag.appendChild(document.createTextNode(s.slice(last, m.index)));
       if (handler){ const a = document.createElement('a'); a.className = 'xref'; a.textContent = m[0]; a.href = 'javascript:void 0';
         a.onclick = e => { e.preventDefault(); e.stopPropagation(); handler(); }; frag.appendChild(a); }
