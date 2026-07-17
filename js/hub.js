@@ -10,8 +10,8 @@ import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './se
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=d47929c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=5e5b959';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=534763c';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=c61fbc8';
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=bb62768';
 import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)

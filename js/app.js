@@ -13,9 +13,9 @@ import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usag
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=2122f4d';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2b788e9';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
-import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=534763c';
-import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
+import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2378016';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
+import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
+import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
