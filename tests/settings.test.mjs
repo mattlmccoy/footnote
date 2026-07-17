@@ -20,7 +20,7 @@ test('Access section is labelled "Access & tokens" (lists every credential)', ()
 
 test('AI off: sections are document, email, access, ai(last, muted); NO agents', () => {
   const s = settingsSections(cfg, { aiOn:false, claudeConnected:false, emailConfigured:false, hasToken:false });
-  assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'ai']);
+  assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'appearance', 'ai']);
   const ai = s.find(x => x.id === 'ai');
   assert.equal(ai.muted, true);
   assert.equal(ai.glyph, null);
@@ -29,7 +29,7 @@ test('AI off: sections are document, email, access, ai(last, muted); NO agents',
 
 test('AI on: agents appears before ai; ai not muted', () => {
   const s = settingsSections(cfg, { aiOn:true, claudeConnected:true, emailConfigured:true, hasToken:true });
-  assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'agents', 'ai']);
+  assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'appearance', 'agents', 'ai']);
   assert.equal(s.find(x => x.id === 'ai').muted, false);
   assert.equal(s.find(x => x.id === 'ai').label, 'Claude / AI');
 });
@@ -46,6 +46,13 @@ test('agents glyph is ok only when agents configured', () => {
   assert.equal(on.find(x => x.id === 'agents').glyph, 'ok');
   const off = settingsSections({ reviewAgents:[] }, { aiOn:true, claudeConnected:true, emailConfigured:true, hasToken:true });
   assert.equal(off.find(x => x.id === 'agents').glyph, null);
+});
+
+test('Appearance section is always present (accent picker), after Access, never muted', () => {
+  const s = settingsSections(cfg, { aiOn:false });
+  const ap = s.find(x => x.id === 'appearance');
+  assert.ok(ap && ap.label === 'Appearance' && ap.muted === false);
+  assert.equal(s.findIndex(x => x.id === 'appearance'), s.findIndex(x => x.id === 'access') + 1);
 });
 
 test('resolveSection keeps a valid request, else falls back to first', () => {
