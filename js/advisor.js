@@ -14,7 +14,7 @@ import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraft
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { parseLatexTitle } from './docparse.js?v=c61fbc8';   // authoritative doc title = the LaTeX \title in the uploaded source
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2378016';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
+import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=7d58e97';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';

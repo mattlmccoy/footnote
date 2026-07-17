@@ -5,7 +5,7 @@
 // appendices — an appendix numbered n=3 could answer a "Chapter 3" reference purely by array order. A DIGIT
 // ref always means a chapter; a LETTER ref always means an appendix.
 
-import { appendixLetter } from './unitlabel.js';   // single source of truth for appendix lettering (no drift)
+import { appendixLetter } from './unitlabel.js?v=7d58e97';   // single source of truth for appendix lettering (no drift)
 
 const isAppendix = u => u && u.kind === 'appendix';
 

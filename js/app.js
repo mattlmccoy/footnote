@@ -13,8 +13,8 @@ import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usag
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=2122f4d';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2378016';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
-import { refTargetUnit } from './unitref.js?v=1';   // "Section 3.1"/"Chapter 3" → the CHAPTER (never an appendix that shares the number)
+import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=7d58e97';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
+import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chapter 3" → the CHAPTER (never an appendix that shares the number)
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
