@@ -1,0 +1,6 @@
+[
+  {"id": "ch_intro",   "n": 1, "title": "Introduction", "sourceFile": "chapters/ch_intro.tex"},
+  {"id": "ch_methods", "n": 2, "title": "Methods",      "sourceFile": "chapters/ch_methods.tex"},
+  {"id": "app_deriv",  "n": 1, "title": "Derivations",  "sourceFile": "chapters/app_deriv.tex", "kind": "appendix"},
+  {"id": "app_data",   "n": 2, "title": "Data Tables",  "sourceFile": "chapters/app_data.tex", "kind": "appendix"}
+]
