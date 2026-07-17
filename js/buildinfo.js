@@ -2,6 +2,13 @@
 // The SHA comes for free from each entry module's own import.meta.url (?v=<sha>), which the
 // cache-bust bot bumps on every deploy. AI-term-free on purpose so advisor.js stays grep-clean.
 
+// Hidden owner-debug entry: Alt+click the build orb opens the debug page. AI-term-free on purpose
+// (advisor.js imports this module); the page itself is token-gated, so a reviewer clicking it sees nothing.
+export const DEBUG_URL = 'debug.html';
+export function orbClickAction(e) {
+  return e && e.altKey ? 'navigate' : 'toggle';
+}
+
 // Parse the cache-bust SHA out of a module URL. Returns 'dev' when absent/blank/malformed.
 export function buildSha(metaUrl) {
   try {
@@ -109,7 +116,10 @@ export function showBuildTag(metaUrl, win) {
     el.setAttribute('data-open', open ? '1' : '0');
   };
 
-  orb.onclick = () => { pinned = !pinned; apply(); };          // touch / click-to-pin
+  orb.onclick = (e) => {
+    if (orbClickAction(e) === 'navigate') { (w.location).assign(DEBUG_URL); return; }
+    pinned = !pinned; apply();                                 // touch / click-to-pin
+  };
   el.onmouseenter = () => { hovered = true; apply(); };        // desktop hover-expand
   el.onmouseleave = () => { hovered = false; apply(); };
 

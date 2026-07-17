@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildSha, showBuildTag, moduleName, formatBuildTime, collapsedLabel, detailLine } from '../js/buildinfo.js';
+import { orbClickAction, DEBUG_URL } from '../js/buildinfo.js';
 
 // Minimal fake window/document so the DOM injection can be exercised without a browser.
 function fakeWin() {
@@ -125,4 +126,14 @@ test('showBuildTag starts collapsed as an orb that toggles open on click', () =>
   assert.ok(label, 'build label present');
   orb.onclick();                                        // click pins it open (touch affordance)
   assert.equal(tag.attrs['data-open'], '1');
+});
+
+test('orbClickAction: Alt+click navigates, plain click toggles', () => {
+  assert.equal(orbClickAction({ altKey: true }), 'navigate');
+  assert.equal(orbClickAction({ altKey: false }), 'toggle');
+  assert.equal(orbClickAction(null), 'toggle');
+});
+
+test('DEBUG_URL points at the hidden page', () => {
+  assert.equal(DEBUG_URL, 'debug.html');
 });
