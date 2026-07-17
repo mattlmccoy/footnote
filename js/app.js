@@ -13,7 +13,7 @@ import { parseEvents, groupByComment, groupStream, isTerminal, summaryLine, usag
 import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog, buildAuthorJob, approveAuthored, deleteAuthored, editAuthored, writeAgentsJson, splitAgentsForCloud } from './agentcatalog.js?v=2122f4d';
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
-import { unitLabel, unitLabelWithTitle } from './unitlabel.js?v=2b788e9';   // "Chapter 3" / "Appendix A" — one label rule for both portals
+import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=2b788e9';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=534763c';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=14b7d2d';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
@@ -281,7 +281,7 @@ function openChapterMenu(){
   const menu = document.createElement('div'); menu.id = 'chmenu';
   menu.style.cssText = 'position:absolute;top:50px;left:16px;z-index:40;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 34px rgba(0,0,0,.16);padding:6px;min-width:330px';
   const wholeRow = CHAPTERS.length ? `<div data-ch="__whole__" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px;font-weight:500${current==='__whole__'?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px"><i class="ti ti-book"></i></span>Whole ${escapeHtml(DOC)}</div><div style="height:1px;background:var(--border);margin:5px 8px"></div>` : '';
-  menu.innerHTML = wholeRow + CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${c.n}</span>${shortTitle(c.title)}</div>`).join('');
+  menu.innerHTML = wholeRow + CHAPTERS.map(c => `<div data-ch="${c.id}" style="display:flex;gap:8px;padding:8px 10px;border-radius:7px;cursor:pointer;font-size:13px${c.id===current?';background:var(--accent-bg);color:var(--accent)':''}"><span style="color:var(--text-3);min-width:20px">${unitTag(c)}</span>${shortTitle(c.title)}</div>`).join('');
   menu.querySelectorAll('[data-ch]').forEach(d => { d.onmouseenter = () => { if (d.dataset.ch!==current) d.style.background='var(--bg-3)'; };
     d.onmouseleave = () => { if (d.dataset.ch!==current) d.style.background='transparent'; };
     d.onclick = () => { menu.remove(); selectChapter(d.dataset.ch); }; });
@@ -321,7 +321,7 @@ if (localStorage.getItem('theme') === 'dark') document.documentElement.classList
 // ---------- content (GitHub-pulled; localhost dev-fallback for UI work only) ----------
 async function loadChapter(ch){
   previewing = false;
-  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading chapter ${chMeta(ch).n}…</div></div>`;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Loading ${escapeHtml(unitLabel(chMeta(ch), UNIT))}…</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   if (dev){ try { const r = await fetch(`./chapters/${ch}.html`); if (r.ok){ renderDoc(await r.text()); renderChapterAppendices(ch); return; } } catch(e){} }
   const t = tok();
@@ -342,7 +342,7 @@ async function loadChapter(ch){
     if (/\b404\b/.test(e.message)){   // source imported but this unit's reading HTML isn't built — build it automatically
       autoBuildReadingView(ch);
       return; }
-    read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(UNIT)} ${chMeta(ch).n} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
+    read.innerHTML = `<div class="empty">Couldn't pull ${escapeHtml(unitLabel(chMeta(ch), UNIT))} from your private repo (${e.message}). Check the access token in <b>⋯ → Settings</b>.</div>`; }
 }
 function renderConnect(){
   read.innerHTML = `<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -1594,7 +1594,7 @@ function buildWholeCard(chapterId, c){
   const m = chMeta(chapterId);
   const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;
   card.innerHTML = `<div class="row">
-      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(UNITC)} ${m.n}</span>
+      <span class="chip" style="background:var(--bg-3);color:var(--text-2)">${escapeHtml(unitLabel(m, UNIT))}</span>
       <span class="chip" style="background:var(--${c.tag}-bg);color:var(--${c.tag})">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:11px;vertical-align:-1px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>
       ${c.status && c.status !== 'open' ? `<span class="status" style="margin-left:auto">${escapeHtml(c.status)}</span>` : ''}</div>
     <div class="snip">"${escapeHtml((c.anchor.quote||'').slice(0,52))}"${c.created_ts?`<span class="cmeta"> · ${fmtDate(c.created_ts)}</span>`:''}</div>
@@ -2708,7 +2708,7 @@ function importDocument(){
     detected = list;
     $('#imp-preview').innerHTML = list.length
       ? `<div style="font-size:11px;color:var(--text-3);margin:4px 0 6px">Detected ${list.length} ${escapeHtml(UNIT)}${list.length!==1?'s':''}:</div>` +
-        list.map(c => `<div style="font-size:12.5px;padding:4px 0;border-bottom:.5px solid var(--border)"><b>${c.n}.</b> ${escapeHtml(c.title)} <span style="color:var(--text-3)">· ${escapeHtml(c.id)}${c.sourceFile?` · ${escapeHtml(c.sourceFile)}`:''}</span></div>`).join('')
+        list.map(c => `<div style="font-size:12.5px;padding:4px 0;border-bottom:.5px solid var(--border)"><b>${unitTag(c)}.</b> ${escapeHtml(c.title)} <span style="color:var(--text-3)">· ${escapeHtml(c.id)}${c.sourceFile?` · ${escapeHtml(c.sourceFile)}`:''}</span></div>`).join('')
       : `<div style="font-size:12.5px;color:var(--warn)">No ${escapeHtml(UNIT)}s found. For a multi-file LaTeX project, use "Detect from source repo" so \\include'd files resolve.</div>`;
     $('#imp-save').disabled = !list.length;
   };
@@ -3083,7 +3083,7 @@ function showSearchResults(q, hits){
   p.style.cssText = 'position:absolute;top:52px;left:50%;transform:translateX(-50%);z-index:50;width:min(640px,92%);max-height:72vh;overflow:auto;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-lg);box-shadow:0 14px 44px rgba(0,0,0,.18);padding:8px';
   p.innerHTML = `<div style="font-size:11px;color:var(--text-3);padding:6px 10px">${hits.length} result${hits.length!==1?'s':''} across the ${DOC} for "${escapeHtml(q)}"</div>` +
     (hits.length ? hits.map(h => `<div class="sres" data-ch="${h.ch}" data-h="${escapeHtml(h.h)}" style="padding:9px 10px;border-radius:8px;cursor:pointer">
-        <div style="font-size:12px;font-weight:500">${chMeta(h.ch).n}. ${escapeHtml(shortTitle(chMeta(h.ch).title))} <span style="color:var(--text-3)">· ${escapeHtml(h.h).slice(0,42)}</span></div>
+        <div style="font-size:12px;font-weight:500">${escapeHtml(unitTag(chMeta(h.ch)))}. ${escapeHtml(shortTitle(chMeta(h.ch).title))} <span style="color:var(--text-3)">· ${escapeHtml(h.h).slice(0,42)}</span></div>
         <div style="font-size:11.5px;color:var(--text-2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(h.snip).slice(0,120)}</div></div>`).join('') : `<div style="padding:10px;color:var(--text-3)">No matches.</div>`);
   document.body.appendChild(p);
   p.querySelectorAll('.sres').forEach(el => el.onclick = () => { p.remove(); const h = el.dataset.h; enterChapter(el.dataset.ch);
@@ -3773,7 +3773,7 @@ async function openReleasePanel(opts){
   const cmtRow = (a, chapter, c) => `<div class="rel-row${c.read?' is-read':''}" data-a="${a}" data-ch="${chapter}" data-cid="${c.id}" data-q="${escapeHtml((c.anchor?.quote||'').slice(0,60))}">
       <label class="rel-read"><input type="checkbox" class="rel-readbox" ${c.read?'checked':''}></label>
       <div class="rel-row-main">
-        <div class="rel-row-h">${escapeHtml(chMeta(chapter).n+'')}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')}${c.created_ts?` · ${fmtDate(c.created_ts)}`:''}${c.sent?'<span class="chip" style="background:var(--info-bg);color:var(--info)">sent</span>':c.resolution?'<span class="chip" style="background:var(--success-bg);color:var(--success)">resolved</span>':c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success)">submitted</span>':''}${c.reopened?'<span class="chip" style="background:var(--warn-bg);color:var(--warn)">re-opened</span>':''}</div>
+        <div class="rel-row-h">${escapeHtml(unitTag(chMeta(chapter)))}. ${escapeHtml(shortTitle(chMeta(chapter).title))} · ${escapeHtml(c.anchor?.section||'')}${c.created_ts?` · ${fmtDate(c.created_ts)}`:''}${c.sent?'<span class="chip" style="background:var(--info-bg);color:var(--info)">sent</span>':c.resolution?'<span class="chip" style="background:var(--success-bg);color:var(--success)">resolved</span>':c.status==='submitted'?'<span class="chip" style="background:var(--success-bg);color:var(--success)">submitted</span>':''}${c.reopened?'<span class="chip" style="background:var(--warn-bg);color:var(--warn)">re-opened</span>':''}</div>
         <div class="rel-row-q">"${escapeHtml((c.anchor?.quote||'').slice(0,64))}" — ${escapeHtml((c.body||'').slice(0,64))}</div>
       </div>
       <button class="btn rel-open"><i class="ti ti-arrow-right"></i>Open in context</button></div>`;
