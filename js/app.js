@@ -173,6 +173,7 @@ const DATA_REPO = _CFG.dataRepo;
 // chapters.json — never hardcoded. Empty (no token / nothing imported yet) → the home shows the
 // "import your document" state. Re-fetched on reload after a token is added or a document imported.
 let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
+const tok = () => localStorage.getItem('ghpat');   // MUST be defined before loadCounts() runs at boot (line below) — a later const here = temporal-dead-zone crash that blanks the whole app
 // Per-unit word/char counts, produced at render time (content/counts.json). One cheap fetch; absence is fine.
 let COUNTS = {};
 async function loadCounts(){ const t = tok(); if (!t) return; try { const r = await getJson(t, dpath('content/counts.json')); COUNTS = (r.json && typeof r.json === 'object') ? r.json : {}; } catch(e){ COUNTS = {}; } }
@@ -202,7 +203,6 @@ let review = loadLocalReview(current);
 
 function loadLocalReview(ch){ return JSON.parse(localStorage.getItem('review:'+ch) || 'null') || newReview(ch, ''); }
 const save = () => localStorage.setItem('review:'+current, JSON.stringify(review));
-const tok = () => localStorage.getItem('ghpat');
 
 // ---------- GitHub review sync (private data repo) ----------
 let reviewSha = null, syncTimer = null, scrollSaveT = null;
