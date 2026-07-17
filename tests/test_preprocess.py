@@ -129,8 +129,51 @@ def test_expand_gls_falls_back_to_key_when_no_acronyms():
 
 
 def test_expand_gls_uses_defined_acronym():
+    # NOTE: \gls{rf} is the FIRST use here, so it expands to the long form (SHORT); the
+    # explicit \acrlong stays the long form. (Updated for first-use expansion.)
     acr = {"rf": ("RF", "radio frequency")}
-    assert P.expand_gls("\\gls{rf} and \\acrlong{rf}", acr) == "RF and radio frequency"
+    assert P.expand_gls("\\gls{rf} and \\acrlong{rf}", acr) == \
+        "radio frequency (RF) and radio frequency"
+
+
+# ---- first-use expansion: mirror LaTeX glossaries (first \gls -> "long (SHORT)", then SHORT) ----
+
+def test_expand_gls_first_use_expands_long_then_short():
+    acr = {"sls": ("SLS", "selective laser sintering")}
+    assert P.expand_gls("\\gls{sls} fuses powder; \\gls{sls} again", acr) == \
+        "selective laser sintering (SLS) fuses powder; SLS again"
+
+
+def test_expand_gls_Gls_first_use_capitalizes_long_form():
+    acr = {"am": ("AM", "additive manufacturing")}
+    assert P.expand_gls("\\Gls{am} grows. \\gls{am} matures.", acr) == \
+        "Additive manufacturing (AM) grows. AM matures."
+
+
+def test_expand_gls_first_use_shares_one_flag_across_variants():
+    # \Gls is the first use (expands); the later \gls is already-seen -> short
+    acr = {"rfam": ("RFAM", "radio frequency additive manufacturing")}
+    assert P.expand_gls("\\Gls{rfam}: \\gls{rfam}", acr) == \
+        "Radio frequency additive manufacturing (RFAM): RFAM"
+
+
+def test_expand_gls_first_use_is_per_call_so_each_chapter_redefines():
+    # per-chapter scope: expand_gls runs once per reading unit, so each call re-expands
+    acr = {"rf": ("RF", "radio frequency")}
+    assert P.expand_gls("\\gls{rf}", acr) == "radio frequency (RF)"
+    assert P.expand_gls("\\gls{rf}", acr) == "radio frequency (RF)"
+
+
+def test_expand_gls_undefined_key_has_no_parenthetical():
+    # unknown key (short == long == key): no "x (x)" noise, just the key
+    assert P.expand_gls("\\gls{foo} bar", {}) == "foo bar"
+
+
+def test_expand_gls_plural_first_use_still_expands():
+    acr = {"gp": ("GP", "Gaussian process")}
+    out = P.expand_gls("\\glspl{gp} and \\glspl{gp}", acr)
+    assert out.startswith("Gaussian process")   # first use expands the long form
+    assert out.endswith("GPs")                   # subsequent use is the short plural
 
 
 # ---------------- equation numbering (reader \tag), PDF-faithful ----------------
