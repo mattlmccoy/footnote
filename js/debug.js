@@ -242,10 +242,22 @@ function _snapshotOf(state, nowIso) {
       docs: (p.docs || []).map(dd => ({ id: dd.id, rendered: dd.rendered, builtFrom: (dd.builtFrom || '').slice(0, 7), state: dd.state, open: dd.open })) })) };
 }
 
+// The launcher (js/hub.js) resolves the hub repo as localStorage['footnote:hub'] || cfg.hubRepo ||
+// '<owner>/footnote-projects', and the shipped config's `owner` is a placeholder replaced at runtime by the
+// /user login. The debug page must mirror this or loadProjects (which needs appCfg.hubRepo) returns [].
+export function effectiveHubCfg(appCfg, login, localHub) {
+  const owner = login || (appCfg && appCfg.owner) || '';
+  const hubRepo = localHub || (appCfg && appCfg.hubRepo) || (owner ? `${owner}/footnote-projects` : '');
+  return { ...appCfg, owner, hubRepo, workspaceRepo: hubRepo };
+}
+
 export async function boot() {
   const token = (function () { try { return localStorage.getItem('ghpat'); } catch { return null; } })();
   if (!token) { render({ authenticated: false }, document); return; }
-  const appCfg = await loadConfig();
+  const rawCfg = await loadConfig();
+  let login = ''; try { const who = await dbgGet(token, `${API}/user`); login = who.json?.login || ''; } catch {}
+  let localHub = ''; try { localHub = localStorage.getItem('footnote:hub') || ''; } catch {}
+  const appCfg = effectiveHubCfg(rawCfg, login, localHub);
   const projects = await loadProjects(appCfg, token);
   const global = await collectGlobal(token, appCfg, projects);
   const deep = await collectAll(token, appCfg, projects);

@@ -176,3 +176,28 @@ test('collectProject: a genuine 404 chapters (no chapters yet) is NOT an error',
   assert.equal(out.error, undefined);
   assert.equal(out.docs.length, 0);
 });
+
+import { effectiveHubCfg } from '../js/debug.js';
+
+test('effectiveHubCfg: localStorage hub wins; owner from login; workspaceRepo mirrors hub', () => {
+  const out = effectiveHubCfg({ owner: 'your-github-username' }, 'mattlmccoy', 'mattlmccoy/footnote-projects');
+  assert.equal(out.owner, 'mattlmccoy');
+  assert.equal(out.hubRepo, 'mattlmccoy/footnote-projects');
+  assert.equal(out.workspaceRepo, 'mattlmccoy/footnote-projects');
+});
+
+test('effectiveHubCfg: no localStorage hub → cfg.hubRepo if present', () => {
+  const out = effectiveHubCfg({ owner: 'x', hubRepo: 'x/hub' }, 'me', '');
+  assert.equal(out.hubRepo, 'x/hub');
+});
+
+test('effectiveHubCfg: neither → default <owner>/footnote-projects from the login', () => {
+  const out = effectiveHubCfg({ owner: 'your-github-username' }, 'mattlmccoy', '');
+  assert.equal(out.hubRepo, 'mattlmccoy/footnote-projects');
+});
+
+test('effectiveHubCfg: empty login falls back to cfg.owner', () => {
+  const out = effectiveHubCfg({ owner: 'realowner' }, '', '');
+  assert.equal(out.owner, 'realowner');
+  assert.equal(out.hubRepo, 'realowner/footnote-projects');
+});
