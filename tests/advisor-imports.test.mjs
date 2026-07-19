@@ -21,8 +21,11 @@ const NET_HELPERS = ['fetchWithTimeout', 'classifyGitHubError', 'retryAfterMs', 
 // Same guard for the conditional-request readers (condfetch.js). Dropping this import while the calls
 // remain would ReferenceError every reviewer read — comments, outline and rendered content alike.
 const COND_HELPERS = ['condJson', 'condRaw', 'condInvalidate'];
+// And for the shared polling-cadence + budget-guard helpers: dropping these would ReferenceError the
+// reviewer's poll scheduler on every tick.
+const PACING_HELPERS = ['livePollDelay', 'budgetLevel', 'budgetFactor', 'budgetSnapshot'];
 
-for (const name of [...WHOLEDOC_HELPERS, ...NET_HELPERS, ...COND_HELPERS]) {
+for (const name of [...WHOLEDOC_HELPERS, ...NET_HELPERS, ...COND_HELPERS, ...PACING_HELPERS]) {
   test(`advisor.js imports '${name}' if it uses it (guards a bad-merge import drop)`, () => {
     const usedInBody = new RegExp(`\\b${name}\\b`).test(body);
     if (!usedInBody) return;   // not used → nothing to import

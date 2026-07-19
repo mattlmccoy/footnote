@@ -7,18 +7,25 @@
 
 // Live comment sync. Stays at the base cadence while anything is happening; each poll that sees no
 // change widens the gap, and any change (or the tab regaining focus) resets the caller's idle counter.
-export function livePollDelay({ idlePolls = 0, base = 20000, max = 60000, rateLimitedUntil = 0, now = Date.now() } = {}){
+// `factor` comes from ratebudget.js: 1 normally, higher as the shared hourly budget runs low, so heavy
+// use degrades into slower polling instead of hitting a wall of failed requests. Hard ceilings keep even
+// a wild factor from parking the loop forever.
+const LIVE_CEILING = 300000, JOB_CEILING = 60000;
+const _factor = f => (Number.isFinite(f) && f >= 1 ? f : 1);
+
+export function livePollDelay({ idlePolls = 0, base = 20000, max = 60000, factor = 1, rateLimitedUntil = 0, now = Date.now() } = {}){
   if (rateLimitedUntil > now) return Math.max(5000, rateLimitedUntil - now);   // wait out the limit, re-check near reset
   const ramp = [1, 1.5, 2.25, 3];                                             // 20s → 30s → 45s → 60s
-  return Math.min(max, Math.round(base * ramp[Math.min(idlePolls, ramp.length - 1)]));
+  const normal = Math.min(max, Math.round(base * ramp[Math.min(idlePolls, ramp.length - 1)]));
+  return Math.min(LIVE_CEILING, Math.round(normal * _factor(factor)));
 }
 
 // Cloud job progress. A job takes minutes but the user only stares at the first few seconds, so keep the
 // fast cadence for a ~30s window, then ramp. A hidden tab drops straight to the slowest cadence — it keeps
 // polling (so a finished job still resolves the panel) but stops burning quota on a view nobody is reading.
 const SNAPPY_POLLS = 12;                                                       // 12 × 2.5s ≈ 30s
-export function jobPollDelay({ polls = 0, hidden = false, base = 2500, max = 15000 } = {}){
-  if (hidden) return max;
+export function jobPollDelay({ polls = 0, hidden = false, base = 2500, max = 15000, factor = 1 } = {}){
   const over = Math.max(0, polls - SNAPPY_POLLS);
-  return Math.min(max, Math.round(base * Math.pow(1.5, over)));
+  const normal = hidden ? max : Math.min(max, Math.round(base * Math.pow(1.5, over)));
+  return Math.min(JOB_CEILING, Math.round(normal * _factor(factor)));
 }

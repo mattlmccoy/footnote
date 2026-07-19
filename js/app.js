@@ -18,7 +18,8 @@ import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chap
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=bb27716';
-import { livePollDelay, jobPollDelay } from './polldelay.js';   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
+import { livePollDelay, jobPollDelay } from './polldelay.js';
+import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=068da19';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
@@ -682,7 +683,7 @@ function _scheduleOwnerPoll(){
   ownerPollTimer = setTimeout(async () => {
     try { await ownerLivePoll(); } catch(e){}
     _scheduleOwnerPoll();
-  }, livePollDelay({ idlePolls: _ownerIdle }));
+  }, livePollDelay({ idlePolls: _ownerIdle, factor: budgetFactor(budgetLevel(budgetSnapshot())) }));
 }
 function startOwnerLiveSync(){ stopOwnerLiveSync(); _ownerLiveOn = true; _ownerIdle = 0; _scheduleOwnerPoll(); }
 function stopOwnerLiveSync(){ _ownerLiveOn = false; if (ownerPollTimer){ clearTimeout(ownerPollTimer); ownerPollTimer = null; } }
@@ -2116,7 +2117,7 @@ function openCloudActivity(jobId){
       }
     } catch(e){}
     _polls++;
-    if (!stop) setTimeout(poll, jobPollDelay({ polls: _polls, hidden: document.hidden }));
+    if (!stop) setTimeout(poll, jobPollDelay({ polls: _polls, hidden: document.hidden, factor: budgetFactor(budgetLevel(budgetSnapshot())) }));
   }
   // coming back to the tab should feel instant: reset the ramp and read once now. Self-removing, so a
   // session that opens many job panels doesn't accumulate a listener per finished job.
