@@ -229,3 +229,24 @@ test('classifySync: rendered but no source file to compare → unknown, not "not
   assert.equal(v.state, 'unknown');
   assert.equal(v.label, 'no source ref');
 });
+
+// jobs.json is an append-only LOG of completed work, not a pending queue. The engine's own
+// definition of outstanding work (data-template/ci_apply.py) is `status != "done"` — mirror it,
+// or a healthy history of 57 done jobs reads as "57 pending" (a false alarm).
+test('queueAge: done jobs are history, not pending', () => {
+  const jobs = [{ id: jid(1000), type: 'apply-edits', status: 'done' },
+                { id: jid(2000), type: 'merge', status: 'done' }];
+  assert.deepEqual(queueAge(jobs, 9000), { count: 0, oldest: null });
+});
+
+test('queueAge: counts only the not-done jobs', () => {
+  const jobs = [{ id: jid(1000), type: 'apply-edits', status: 'done' },
+                { id: jid(5000), type: 'merge', status: 'queued' }];
+  assert.deepEqual(queueAge(jobs, 9000), { count: 1, oldest: { type: 'merge', ageMs: 4000 } });
+});
+
+test('queueAge: prefers the requested_ts field over decoding the id', () => {
+  const jobs = [{ id: 'exp_ch_introduction', type: 'export', requested_ts: '2026-06-26T02:13:43.003Z' }];
+  const now = Date.parse('2026-06-26T02:14:43.003Z');
+  assert.deepEqual(queueAge(jobs, now), { count: 1, oldest: { type: 'export', ageMs: 60000 } });
+});

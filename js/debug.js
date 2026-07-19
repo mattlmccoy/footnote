@@ -50,19 +50,25 @@ export function diffScopes(present, required) {
   return { ok: missing.length === 0, missing };
 }
 
-// Parse the ms timestamp base36-encoded in a job id ('j_<base36>'); null if unparseable.
-function _jobTs(id) {
-  const m = /^j_([a-z0-9]+)$/i.exec(id || '');
+// When a job was requested, in ms. Prefers the explicit `requested_ts` field (ISO) and falls back to the
+// ms timestamp base36-encoded in a 'j_<base36>' id. null when neither is parseable.
+function _jobTs(job) {
+  const j = job || {};
+  if (j.requested_ts) { const t = Date.parse(j.requested_ts); if (Number.isFinite(t)) return t; }
+  const m = /^j_([a-z0-9]+)$/i.exec(j.id || '');
   if (!m) return null;
   const n = parseInt(m[1], 36);
   return Number.isFinite(n) ? n : null;
 }
+// jobs.json is an append-only LOG, not a queue: finished work stays in it forever. Outstanding work is
+// `status != 'done'` — the same filter the engine uses to build its todo list (data-template/ci_apply.py).
+// Counting every entry made a healthy 57-job history read as "57 pending".
 export function queueAge(jobs, now) {
-  const list = jobs || [];
+  const list = (jobs || []).filter(j => j && j.status !== 'done');
   if (!list.length) return { count: 0, oldest: null };
-  let oldest = list[0], oldestTs = _jobTs(list[0].id);
+  let oldest = list[0], oldestTs = _jobTs(list[0]);
   for (const j of list) {
-    const ts = _jobTs(j.id);
+    const ts = _jobTs(j);
     if (ts != null && (oldestTs == null || ts < oldestTs)) { oldest = j; oldestTs = ts; }
   }
   return { count: list.length, oldest: { type: oldest.type || 'job', ageMs: oldestTs == null ? null : now - oldestTs } };
