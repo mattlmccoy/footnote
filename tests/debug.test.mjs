@@ -1,5 +1,6 @@
 // tests/debug.test.mjs
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { classifySync } from '../js/debug.js';
 import { rollupProject } from '../js/debug.js';
@@ -269,8 +270,30 @@ test('humanAge: min / h / d, null passthrough', () => {
   assert.equal(humanAge(null), null);
 });
 
+const NOW = 1_700_000_000_000;
+const RESET = NOW + 28 * 60_000;   // 28 minutes out
+
+test('fmtRate: says LEFT vs USED so the number cannot be misread as consumption', () => {
+  // the bare "4,731 / 5,000" form was ambiguous — it never said which direction it counted
+  assert.equal(fmtRate(4731, 5000, RESET, NOW), '4,731 left of 5,000 · 269 used · resets in 28 min');
+});
+
+test('fmtRate: omits the reset clause when the reset time is unknown', () => {
+  assert.equal(fmtRate(4731, 5000, null, NOW), '4,731 left of 5,000 · 269 used');
+});
+
+test('fmtRate: an imminent or elapsed reset reads sensibly, never as a negative wait', () => {
+  assert.match(fmtRate(12, 5000, NOW + 20_000, NOW), /resets in <1 min$/);
+  assert.match(fmtRate(12, 5000, NOW - 60_000, NOW), /resets now$/);
+});
+
+test('fmtRate: an unmeasured budget stays "?" and is never rendered as healthy', () => {
+  assert.equal(fmtRate(null, 5000, RESET, NOW), '?');
+  assert.equal(fmtRate(undefined, 5000, RESET, NOW), '?');
+});
+
 test('fmtRate: thousands separators with a denominator', () => {
-  assert.equal(fmtRate(4731, 5000), '4,731 / 5,000');
+  assert.equal(fmtRate(4731, 5000), '4,731 left of 5,000 · 269 used');
   assert.equal(fmtRate(4731, null), '4,731');
   assert.equal(fmtRate(null, 5000), '?');
 });
@@ -319,4 +342,45 @@ test('mapLimit: empty input → empty output', async () => {
 test('mapLimit: a rejecting item does not lose the others (null in its slot)', async () => {
   const out = await mapLimit([1, 2, 3], 2, async (n) => { if (n === 2) throw new Error('boom'); return n; });
   assert.deepEqual(out, [1, null, 3]);
+});
+
+// ---- the budget shown comes from real response headers, not the lagging /rate_limit endpoint ----
+import { collectGitHub } from '../js/debug.js';
+// debug.js imports ratebudget through a cache-busted specifier ('./ratebudget.js?v=<hash>'), which is a
+// DISTINCT module instance from an unstamped import — and ratebudget holds STATE. Resolve the exact
+// specifier debug.js uses so this test resets the same singleton debug.js reads.
+const _dbgSrc = readFileSync(new URL('../js/debug.js', import.meta.url), 'utf8');
+const { resetBudget } = await import('../js/' + _dbgSrc.match(/from '\.\/(ratebudget\.js[^']*)'/)[1]);
+
+const ghRes = (body, headers = {}) => ({
+  ok: true, status: 200,
+  headers: { get: k => headers[String(k).toLowerCase()] ?? null },
+  json: async () => body,
+});
+
+test('collectGitHub reads the budget from response headers (authoritative + free)', async () => {
+  resetBudget();
+  const seen = [];
+  const fake = async (url) => {
+    seen.push(url);
+    return ghRes({ login: 'matt' }, {
+      'x-oauth-scopes': 'repo, workflow',
+      'x-ratelimit-limit': '5000', 'x-ratelimit-remaining': '4321',
+      'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 900),
+    });
+  };
+  const g = await collectGitHub('tok', fake);
+  assert.equal(g.rateRemaining, 4321, 'must use the header value the request actually saw');
+  assert.equal(g.rateLimit, 5000);
+  assert.ok(g.rateReset > Date.now());
+  // /rate_limit lags behind the headers by ~100 requests, so it must not be consulted at all
+  assert.ok(!seen.some(u => /\/rate_limit\b/.test(u)), 'should not call the lagging /rate_limit endpoint');
+});
+
+test('collectGitHub reports an unmeasured budget as null, never a healthy-looking number', async () => {
+  resetBudget();
+  const fake = async () => ghRes({ login: 'matt' }, {});          // no rate headers at all
+  const g = await collectGitHub('tok', fake);
+  assert.equal(g.rateRemaining, null);
+  assert.equal(g.rateLimit, null);
 });
