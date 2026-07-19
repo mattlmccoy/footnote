@@ -10,7 +10,8 @@ import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix 
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=1fb5404';   // per-viewer accent color (theme-only; no assistant)
-import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';   // stale-bundle refresh nudge
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
+import { condJson, condRaw, condInvalidate } from './condfetch.js';   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { parseLatexTitle } from './docparse.js?v=c61fbc8';   // authoritative doc title = the LaTeX \title in the uploaded source
@@ -121,11 +122,14 @@ const _hdr = t => ({ Authorization:`Bearer ${t}`, Accept:'application/vnd.github
 // classify a 403 rate limit (F2/F3).
 const _gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
 const _ghErr = (r, ctx) => { const e = new Error((ctx||'GitHub')+' '+r.status); e.status = r.status; e.headers = r.headers; return e; };
-async function getJson(t, path){ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(r.status===404) return {json:null,sha:null}; if(!r.ok) throw _ghErr(r); const d=await r.json(); if(typeof d.content!=='string'||!d.content.trim()) throw new Error('empty content'); return {json:JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))))),sha:d.sha}; }
-async function putJson(t, path, obj, sha, msg, autoRetry=true){ const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw _ghErr(r,'put failed:'); return (await r.json()).content.sha; }
+// Stable URL (no ?t= buster) so an ETag can key it; condJson revalidates on every read and replays the
+// cached bytes only when GitHub answers 304, so liveness is unchanged and an unchanged poll is free.
+const _curl = path => `${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`;
+async function getJson(t, path){ return condJson(_curl(path), { headers:_hdr(t), token:t, fetchImpl:_gfetch }); }
+async function putJson(t, path, obj, sha, msg, autoRetry=true){ condInvalidate(_curl(path)); const content=btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2)))); const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content,sha:s||undefined})}); let r=await put(sha); if(r.status===409&&autoRetry){ try{ const cur=await getJson(t,path); r=await put(cur.sha); }catch(e){} } if(!r.ok) throw _ghErr(r,'put failed:'); condInvalidate(_curl(path)); return (await r.json()).content.sha; }
 // binary file I/O (PNG markups) — self-contained, mirrors the JSON helpers above
 async function _getSha(t, path){ try{ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) return null; return (await r.json()).sha; }catch(e){ return null; } }
-async function putFile(t, path, base64, msg){ const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw _ghErr(r,'put file failed:'); return (await r.json()).content.sha; }
+async function putFile(t, path, base64, msg){ condInvalidate(_curl(path)); const put=s=>_gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}`,{method:'PUT',headers:_hdr(t),body:JSON.stringify({message:msg,content:base64,sha:s||undefined})}); const r=await put(await _getSha(t,path)); if(!r.ok) throw _ghErr(r,'put file failed:'); return (await r.json()).content.sha; }
 async function getDataUrl(t, path, mime='image/png'){ const r=await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{headers:_hdr(t),cache:'no-store'}); if(!r.ok) throw _ghErr(r); const d=await r.json(); return `data:${mime};base64,`+(d.content||'').replace(/\s/g,''); }
 // Request thrift (Model-A scale fix): rendered reading-view HTML (content/<id>.html) is immutable until
 // the author re-renders, yet it's the most-refetched file — single-chapter open, then whole-doc re-reads
@@ -134,9 +138,10 @@ async function getDataUrl(t, path, mime='image/png'){ const r=await _gfetch(`${_
 const _rawCache = new TTLCache(60000);   // 60s: long enough to collapse a refresh burst, short enough to see a fresh render
 async function _rawText(t, path){
   const cached = _rawCache.get(path); if (cached !== undefined) return cached;
-  const r = await _gfetch(`${_API}/repos/${_OWNER}/${_REPO}/contents/${_PREFIX}${path}?t=${Date.now()}`,{ headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
-  if (!r.ok) throw _ghErr(r);
-  const txt = await r.text(); _rawCache.set(path, txt); return txt;
+  // past the TTL we still ASK GitHub (so a re-render is picked up), but conditionally: unchanged = free
+  const g = await condRaw(_curl(path), { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, token:t, fetchImpl:_gfetch });
+  if (!g.ok) throw _ghErr({ status:g.status });
+  _rawCache.set(path, g.text); return g.text;
 }
 // merge two reviews of the SAME reviewer file without losing anything: union comments by id;
 // remote wins owner-authoritative fields, local wins reviewer-authoritative fields; thread merged by (author,ts).
