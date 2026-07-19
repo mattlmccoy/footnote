@@ -1,7 +1,7 @@
 // Shared conditional readers used by the reviewer portal (and available to the owner portal).
 // A 304 must be indistinguishable from a 200 to callers, and errors must stay classifiable.
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { condJson, condRaw, condInvalidate } from '../js/condfetch.js';
+import { condJson, condRaw, condApi, condInvalidate } from '../js/condfetch.js';
 import { condReset } from '../js/condcache.js';
 import { classifyGitHubError } from '../js/nethelpers.js';
 
@@ -99,4 +99,42 @@ test('condInvalidate forces the next read to be unconditional (used after a writ
   const after = await condJson(U, { token: 't', fetchImpl: f });
   assert.equal(sentMatch(1), undefined);
   assert.equal(after.sha, 's2');
+});
+
+// ---------------- condApi: generic conditional JSON (diagnostics collector) ----------------
+
+test('condApi: 200 returns parsed json; a 304 replays it without a body', async () => {
+  condReset();
+  const f = stub(res(200, { login: 'me' }, { etag: 'W/"u1"' }), res(304, null));
+  const a = await condApi(U, { token: 't', fetchImpl: f });
+  const b = await condApi(U, { token: 't', fetchImpl: f });
+  assert.deepEqual([a.ok, a.json], [true, { login: 'me' }]);
+  assert.deepEqual([b.ok, b.json], [true, { login: 'me' }]);
+  assert.equal(sentMatch(1), 'W/"u1"');
+});
+
+test('condApi: exposes headers and status so callers can still read scopes / classify failures', async () => {
+  condReset();
+  const f = stub(res(200, { login: 'me' }, { etag: 'W/"u1"', 'x-oauth-scopes': 'repo, workflow' }));
+  const a = await condApi(U, { token: 't', fetchImpl: f });
+  assert.equal(a.status, 200);
+  assert.equal(a.headers.get('x-oauth-scopes'), 'repo, workflow');
+});
+
+test('condApi: noCache never sends a validator — the live meter must not be frozen by a 304', async () => {
+  condReset();
+  const f = stub(res(200, { rate: { remaining: 4900 } }, { etag: 'W/"r1"' }),
+                 res(200, { rate: { remaining: 4880 } }, { etag: 'W/"r2"' }));
+  const a = await condApi(U, { token: 't', fetchImpl: f, noCache: true });
+  const b = await condApi(U, { token: 't', fetchImpl: f, noCache: true });
+  assert.equal(sentMatch(1), undefined, 'a cached rate reading would report a stale budget');
+  assert.equal(a.json.rate.remaining, 4900);
+  assert.equal(b.json.rate.remaining, 4880);
+});
+
+test('condApi: a failure reports ok:false with the status rather than throwing', async () => {
+  condReset();
+  const f = stub(res(404, {}));
+  const r = await condApi(U, { token: 't', fetchImpl: f });
+  assert.equal(r.ok, false); assert.equal(r.status, 404);
 });

@@ -57,5 +57,29 @@ export async function condRaw(url, { headers = {}, token, fetchImpl, _retried } 
   return { ok: true, status: r.status, text, fromCache: false };
 }
 
+// Generic conditional JSON read for arbitrary API endpoints (the diagnostics collector). Unlike condJson
+// this does NOT decode a base64 contents wrapper — it returns the endpoint's own JSON body.
+// `noCache` opts a URL out of validators entirely: /rate_limit reports the live budget, and serving that
+// from a 304 would freeze the very number the page exists to show.
+export async function condApi(url, { headers = {}, token, fetchImpl, noCache = false, _retried } = {}){
+  condScope(token);
+  const h = noCache ? { ...headers } : condHeaders(url, headers);
+  const r = await _f(fetchImpl)(url, { headers: h, cache: 'no-store' });
+  observeBudget(r.headers);
+  if (r.status === 304 && !noCache){
+    const hit = condGet(url);
+    if (hit) return { ok: true, status: 200, headers: r.headers, json: JSON.parse(hit.payload), fromCache: true };
+    condDrop(url);
+    if (!_retried) return condApi(url, { headers, token, fetchImpl, noCache, _retried: true });
+    return { ok: false, status: 304, headers: r.headers, json: null };
+  }
+  if (!r.ok) return { ok: false, status: r.status, headers: r.headers, json: null };
+  let json = null;
+  try { json = await r.json(); } catch { json = null; }
+  // cached as a STRING and re-parsed per hit, so a caller mutating one result can't corrupt the next
+  if (!noCache && json !== null) condPut(url, r.headers.get('etag'), JSON.stringify(json));
+  return { ok: true, status: r.status, headers: r.headers, json, fromCache: false };
+}
+
 // After a write, drop the entry so the next read refetches rather than revalidating a known-stale token.
 export { condDrop as condInvalidate };

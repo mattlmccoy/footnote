@@ -48,10 +48,19 @@ export function humanAge(ms) {
 }
 
 // "4,731 / 5,000" — the denominator matters (a bare number hides how close to the ceiling you are).
-export function fmtRate(remaining, limit) {
-  if (remaining == null) return '?';
+// "4,731 / 5,000" never said WHICH WAY it counted, so it read equally well as usage. Spell it out, and
+// include the reset — "low" means something very different 2 minutes before a refill than 50 minutes.
+export function fmtRate(remaining, limit, reset = null, now = Date.now()) {
+  if (remaining == null) return '?';                     // unmeasured is not healthy: never fill in a number
   const r = Number(remaining).toLocaleString('en-US');
-  return limit == null ? r : `${r} / ${Number(limit).toLocaleString('en-US')}`;
+  if (limit == null) return r;
+  const used = Math.max(0, Number(limit) - Number(remaining));
+  let out = `${r} left of ${Number(limit).toLocaleString('en-US')} · ${used.toLocaleString('en-US')} used`;
+  if (reset != null) {
+    const ms = Number(reset) - now;
+    out += ms <= 0 ? ' · resets now' : ms < 60_000 ? ' · resets in <1 min' : ` · resets in ${Math.round(ms / 60_000)} min`;
+  }
+  return out;
 }
 
 // content/built.json (ci_render write_build_manifest) = {unitId: {sha, ts}} — which source commit a
@@ -151,6 +160,8 @@ export function buildSnapshot(state) {
 import { resolveProject, loadConfig, loadProjects } from './config.js?v=f58d6b0';
 import { isActiveComment } from './model.js?v=c284b81';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
+import { condApi } from './condfetch.js?v=aa80181';   // conditional reads: an unchanged diagnostic costs no rate limit
+import { budgetSnapshot } from './ratebudget.js?v=dbe477a';   // budget observed from real response headers
 import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 
@@ -160,15 +171,17 @@ const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content
 
 // One authenticated GET, bounded by the repo's shared timeout+retry. Returns { ok, status, headers, json };
 // json is null on a non-ok/parse failure. Never throws (a transport failure → { ok:false, status:0 }).
+// Conditional by default: this page re-reads the same diagnostics on every load, and an unchanged read
+// answered 304 costs no rate limit — which matters here more than anywhere, because the collector fans
+// out per project and per document. /rate_limit is exempt (see condApi's noCache): it must stay live.
 export async function dbgGet(token, url, fetchImpl) {
   try {
-    const r = await fetchWithTimeout(
-      `${url}${url.includes('?') ? '&' : '?'}t=${Date.now()}`,
-      { headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' }, cache: 'no-store' },
-      { fetchImpl },
-    );
-    let json = null; try { json = await r.json(); } catch {}
-    return { ok: r.ok, status: r.status, headers: r.headers, json };
+    const r = await condApi(url, {
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' },
+      token, noCache: /\/rate_limit\b/.test(url),
+      fetchImpl: (u, o) => fetchWithTimeout(u, o, { fetchImpl }),
+    });
+    return { ok: r.ok, status: r.status, headers: r.headers || { get: () => null }, json: r.json };
   } catch { return { ok: false, status: 0, headers: { get: () => null }, json: null }; }
 }
 
@@ -285,17 +298,26 @@ export async function collectAll(token, appCfg, projects, fetchImpl) {
 
 // Build/GitHub/pipeline signals that don't belong to a single project. `projects[0]` is treated as the
 // primary project for the mode + job-queue readout (jobs/mode are per Review-repo).
-export async function collectGlobal(token, appCfg, projects, fetchImpl) {
-  const f = fetchImpl || fetch;
-  const g = { login: null, tokenValid: false, scopes: null, rateRemaining: null, rateLimit: null, latencyMs: null, net: 'ok' };
+// Identity + budget. The budget is taken from the RESPONSE HEADERS of the calls we already make, not
+// from GET /rate_limit: measured against the live API, that endpoint returns a lagging, eventually-
+// consistent aggregate — it read ~100 requests higher than the header on the very same token, and sat
+// still while real spending moved the header. The header is what our requests actually see, and reading
+// it costs nothing because it rides along on every response (ratebudget.js observes them all).
+export async function collectGitHub(token, fetchImpl) {
+  const g = { login: null, tokenValid: false, scopes: null, rateRemaining: null, rateLimit: null, rateReset: null, latencyMs: null, net: 'ok' };
   const t0 = Date.now();
   const who = await dbgGet(token, `${API}/user`, fetchImpl);
   g.latencyMs = Date.now() - t0;                       // real round-trip to api.github.com
   g.tokenValid = who.ok; g.login = who.json?.login || null;
   g.scopes = parseScopes(who.headers?.get ? who.headers.get('x-oauth-scopes') : null);
-  const rl = await dbgGet(token, `${API}/rate_limit`, fetchImpl);
-  g.rateRemaining = rl.json?.rate?.remaining ?? null;
-  g.rateLimit = rl.json?.rate?.limit ?? null;
+  const b = budgetSnapshot();                          // null fields until a real response has been seen
+  g.rateRemaining = b.remaining; g.rateLimit = b.limit; g.rateReset = b.reset;
+  return g;
+}
+
+export async function collectGlobal(token, appCfg, projects, fetchImpl) {
+  const f = fetchImpl || fetch;
+  const g = await collectGitHub(token, fetchImpl);
   let build = { deployedSha: '', deployedTime: '', pageStale: false };
   try { const b = await (await f('build.json?t=' + Date.now(), { cache: 'no-store' })).json();
     build.deployedSha = b.sha || ''; build.deployedTime = formatBuildTime(b.time || ''); } catch {}
@@ -383,7 +405,7 @@ export function render(state, doc) {
         row('Owner token', state.github ? (g.tokenValid ? `valid · ${esc(g.login)}` : '<span style="color:var(--bad)">INVALID</span>') : sk(96)) +
         row('Scopes', !state.github ? sk(120) : (g.scopes ? `<span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px">${esc(g.scopes.join(' · '))}</span>` : '(fine-grained)')) +
         row('Reachability', state.github ? `api.github.com${g.latencyMs != null ? ' · ' + g.latencyMs + ' ms' : ''}` : sk(104)) +
-        row('Rate limit', state.github ? esc(fmtRate(g.rateRemaining, g.rateLimit)) : sk(72)))}
+        row('Rate limit', state.github ? esc(fmtRate(g.rateRemaining, g.rateLimit, g.rateReset)) : sk(72)))}
       ${card('Pipeline',
         row('Processing mode', state.mode ? pill(esc(state.mode), state.mode === 'cloud' ? 'warn' : 'ok') : sk(48)) +
         row(`${dot(q.count ? 'warn' : 'ok')}Job queue`, state.github ? (q.count ? `${q.count} pending` : 'idle') : sk(40)) +
