@@ -126,7 +126,7 @@ import { resolveProject, loadConfig, loadProjects } from './config.js?v=f58d6b0'
 import { isActiveComment } from './model.js?v=c284b81';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
-import { parseVersion, latestFromHtml, isStale } from './version.js?v=dev';
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 
 const API = 'https://api.github.com';
 const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
