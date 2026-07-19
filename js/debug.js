@@ -54,8 +54,14 @@ export function fmtRate(remaining, limit, reset = null, now = Date.now()) {
   if (remaining == null) return '?';                     // unmeasured is not healthy: never fill in a number
   const r = Number(remaining).toLocaleString('en-US');
   if (limit == null) return r;
+  const lim = Number(limit).toLocaleString('en-US');
   const used = Math.max(0, Number(limit) - Number(remaining));
-  let out = `${r} left of ${Number(limit).toLocaleString('en-US')} · ${used.toLocaleString('en-US')} used`;
+  // An hourly window only ANCHORS when a request actually counts. Until then GitHub reports
+  // reset = now + the full window length, so a page that spends nothing (everything answered 304)
+  // shows a flat "resets in 60 min" forever — a countdown that never moves reads as a broken clock.
+  // Report the true state instead: nothing has been used, so there is nothing counting down.
+  if (used === 0) return `${r} of ${lim} · nothing used this hour`;
+  let out = `${r} left of ${lim} · ${used.toLocaleString('en-US')} used`;
   if (reset != null) {
     const ms = Number(reset) - now;
     out += ms <= 0 ? ' · resets now' : ms < 60_000 ? ' · resets in <1 min' : ` · resets in ${Math.round(ms / 60_000)} min`;
