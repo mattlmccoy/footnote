@@ -289,3 +289,34 @@ test('builtShaFor: unknown unit / missing manifest → empty (never a fake ref)'
   assert.equal(builtShaFor(null, 'ch_a'), '');
   assert.equal(builtShaFor({ ch_a: {} }, 'ch_a'), '');
 });
+
+// Bounded concurrency: the per-doc collection was sequential (14 docs ≈ 7.4s measured). Running it
+// concurrently is ~12x faster, but firing 60 requests at once risks GitHub's secondary rate limits,
+// so the fan-out is capped.
+import { mapLimit } from '../js/debug.js';
+
+test('mapLimit: preserves input order regardless of completion order', async () => {
+  const delays = [30, 5, 20, 1];
+  const out = await mapLimit(delays, 2, async (ms, i) => { await new Promise(r => setTimeout(r, ms)); return i; });
+  assert.deepEqual(out, [0, 1, 2, 3]);
+});
+
+test('mapLimit: never exceeds the concurrency cap', async () => {
+  let live = 0, peak = 0;
+  await mapLimit([1, 2, 3, 4, 5, 6, 7, 8], 3, async () => {
+    live++; peak = Math.max(peak, live);
+    await new Promise(r => setTimeout(r, 5));
+    live--;
+  });
+  assert.ok(peak <= 3, `peak concurrency ${peak} exceeded cap 3`);
+  assert.ok(peak > 1, 'should actually run concurrently');
+});
+
+test('mapLimit: empty input → empty output', async () => {
+  assert.deepEqual(await mapLimit([], 4, async x => x), []);
+});
+
+test('mapLimit: a rejecting item does not lose the others (null in its slot)', async () => {
+  const out = await mapLimit([1, 2, 3], 2, async (n) => { if (n === 2) throw new Error('boom'); return n; });
+  assert.deepEqual(out, [1, null, 3]);
+});
