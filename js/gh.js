@@ -1,6 +1,7 @@
 import { getConfig, dataRepoParts, dataPath } from './config.js?v=f58d6b0';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js?v=f5d7c87';
+import { observeBudget } from './ratebudget.js';   // every response reports the remaining hourly budget — 304s included
 // Every GitHub request is bounded (timeout + one transport retry) so a hung request can't hang the app,
 // and non-ok responses throw an error carrying .status + .headers so callers can classify rate limits.
 const gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
@@ -40,6 +41,7 @@ export async function ghTree(tok, _retried){
   condScope(tok);
   const url = treeUrl();
   const r = await gfetch(url, { headers: condHeaders(url, hdr(tok)), cache:'no-store' });
+  observeBudget(r.headers);
   const pfx = getConfig().dataPrefix || '';
   const shape = paths => paths.filter(p => p.startsWith(pfx)).map(p => p.slice(pfx.length));
   if (r.status===304){
@@ -59,6 +61,7 @@ export async function getJson(tok, path, _retried){
   condScope(tok);
   const url = contentUrl(path);
   const r = await gfetch(url, { headers: condHeaders(url, hdr(tok)), cache:'no-store' });
+  observeBudget(r.headers);
   if (r.status===304){
     const hit = condGet(url);
     // re-parse the cached TEXT so a caller that mutated an earlier result can't corrupt this one

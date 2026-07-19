@@ -45,3 +45,31 @@ test('jobPollDelay: a hidden tab drops to the slowest cadence immediately', () =
 test('jobPollDelay: never returns a value that would busy-loop', () => {
   for (const p of [0, 3, 13, 40]) assert.ok(jobPollDelay({ polls: p }) >= 2500);
 });
+
+// ---------------- budget pressure (assessment item #5) ----------------
+
+test('livePollDelay: a budget factor widens the interval beyond the normal cap', () => {
+  assert.equal(livePollDelay({ idlePolls: 0, factor: 1 }), 20000);
+  assert.equal(livePollDelay({ idlePolls: 0, factor: 3 }), 60000);
+  assert.equal(livePollDelay({ idlePolls: 3, factor: 3 }), 180000);   // past the normal 60s ceiling
+});
+
+test('livePollDelay: even critical pressure stays under a hard ceiling', () => {
+  assert.equal(livePollDelay({ idlePolls: 3, factor: 8 }), 300000);   // 5 min, not 8 minutes
+  assert.ok(livePollDelay({ idlePolls: 99, factor: 1000 }) <= 300000);
+});
+
+test('jobPollDelay: a budget factor widens it, under its own hard ceiling', () => {
+  assert.equal(jobPollDelay({ polls: 0, factor: 1 }), 2500);
+  assert.equal(jobPollDelay({ polls: 0, factor: 3 }), 7500);
+  assert.equal(jobPollDelay({ polls: 50, factor: 8 }), 60000);        // 1 min ceiling
+  assert.ok(jobPollDelay({ polls: 99, factor: 1000 }) <= 60000);
+});
+
+test('a missing or nonsense factor never produces NaN in a timer', () => {
+  for (const f of [undefined, null, 0, -5, NaN]) {
+    assert.ok(Number.isFinite(livePollDelay({ idlePolls: 1, factor: f })));
+    assert.ok(Number.isFinite(jobPollDelay({ polls: 1, factor: f })));
+    assert.ok(livePollDelay({ idlePolls: 1, factor: f }) >= 20000);
+  }
+});

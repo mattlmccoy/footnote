@@ -8,6 +8,7 @@
 // Term-neutral by construction, so the reviewer portal can import it without breaking its clean gate.
 
 import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js';
+import { observeBudget } from './ratebudget.js';   // every response reports the remaining hourly budget — 304s included
 
 const _f = impl => impl || fetch;
 // Errors must stay classifiable by nethelpers.classifyGitHubError and advisor's is401, which regex-matches
@@ -20,6 +21,7 @@ const _err = (r, ctx) => { const e = new Error((ctx || 'GitHub') + ' ' + r.statu
 export async function condJson(url, { headers = {}, token, fetchImpl, ctx, _retried } = {}){
   condScope(token);
   const r = await _f(fetchImpl)(url, { headers: condHeaders(url, headers), cache: 'no-store' });
+  observeBudget(r.headers);
   if (r.status === 304){
     const hit = condGet(url);
     if (hit) return { json: JSON.parse(hit.payload.text), sha: hit.payload.sha };
@@ -41,6 +43,7 @@ export async function condJson(url, { headers = {}, token, fetchImpl, ctx, _retr
 export async function condRaw(url, { headers = {}, token, fetchImpl, _retried } = {}){
   condScope(token);
   const r = await _f(fetchImpl)(url, { headers: condHeaders(url, headers), cache: 'no-store' });
+  observeBudget(r.headers);
   if (r.status === 304){
     const hit = condGet(url);
     if (hit) return { ok: true, status: 200, text: hit.payload, fromCache: true };
