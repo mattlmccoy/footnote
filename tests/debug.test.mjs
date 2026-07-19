@@ -14,7 +14,7 @@ const jid = ms => 'j_' + ms.toString(36);
 test('classifySync: not rendered → nyr', () => {
   assert.deepEqual(classifySync({ rendered: false, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }),
     { state: 'nyr', label: 'not rendered', fill: 0 });
-  assert.equal(classifySync({ rendered: true, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }).state, 'nyr');
+  assert.equal(classifySync({ rendered: true, builtFrom: '', mainSha: 'abc', ahead: null, fileTouched: null }).state, 'unknown');
 });
 
 test('classifySync: built_from equals main HEAD → insync', () => {
@@ -200,4 +200,32 @@ test('effectiveHubCfg: empty login falls back to cfg.owner', () => {
   const out = effectiveHubCfg({ owner: 'realowner' }, '', '');
   assert.equal(out.owner, 'realowner');
   assert.equal(out.hubRepo, 'realowner/footnote-projects');
+});
+
+
+test('classifySync: rendered, no built_from ref → falls back to timestamps (source newer = stale)', () => {
+  const v = classifySync({ rendered: true, builtFrom: '', mainSha: '',
+    renderedAt: '2026-07-01T00:00:00Z', sourceAt: '2026-07-16T00:00:00Z' });
+  assert.equal(v.state, 'stale');
+  assert.equal(v.label, 'source newer');
+});
+
+test('classifySync: rendered after the source last changed → up to date', () => {
+  const v = classifySync({ rendered: true, builtFrom: '', mainSha: '',
+    renderedAt: '2026-07-17T18:36:33Z', sourceAt: '2026-07-16T11:48:53Z' });
+  assert.equal(v.state, 'insync');
+  assert.equal(v.label, 'up to date');
+  assert.equal(v.fill, 100);
+});
+
+test('classifySync: missing HTML beats every other signal (still not rendered)', () => {
+  const v = classifySync({ rendered: false, builtFrom: 'abc', mainSha: 'abc',
+    renderedAt: '2026-07-17T00:00:00Z', sourceAt: '2026-07-01T00:00:00Z' });
+  assert.equal(v.state, 'nyr');
+});
+
+test('classifySync: rendered but no source file to compare → unknown, not "not rendered"', () => {
+  const v = classifySync({ rendered: true, builtFrom: '', mainSha: '', renderedAt: '2026-07-17T00:00:00Z', sourceAt: null });
+  assert.equal(v.state, 'unknown');
+  assert.equal(v.label, 'no source ref');
 });

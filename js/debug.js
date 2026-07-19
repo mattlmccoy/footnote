@@ -2,24 +2,37 @@
 // DOM + fetch orchestration browser-verified. Owner-side (no AI-clean constraint).
 
 // Per-document drift verdict. `fill` (0..100) drives the little sync bar.
-export function classifySync({ rendered, builtFrom, mainSha, ahead, fileTouched } = {}) {
-  if (!rendered || !builtFrom) return { state: 'nyr', label: 'not rendered', fill: 0 };
-  if (!mainSha) return { state: 'unknown', label: 'unknown', fill: 0 };
-  if (builtFrom === mainSha || ahead === 0) return { state: 'insync', label: 'in sync', fill: 100 };
-  if (typeof ahead === 'number' && ahead > 0) {
-    const fill = Math.max(10, Math.min(90, 100 - ahead * 15));
-    return fileTouched
-      ? { state: 'behind-touched', label: `${ahead} behind`, fill }
-      : { state: 'behind-untouched', label: `${ahead} behind · file untouched`, fill };
+// Two provenance paths, in preference order:
+//  1. built_from_commit — exact, but the render pipeline does not currently record it (it ships as ''),
+//     so this path is effectively dormant until it does.
+//  2. timestamps — when the source file last changed vs when this doc's HTML was last rendered. This is
+//     the signal that actually works today.
+// "not rendered" means ONLY that content/<id>.html is missing; a missing build ref is 'unknown', not
+// 'nyr' (conflating them mislabeled every rendered doc as "not rendered").
+export function classifySync({ rendered, builtFrom, mainSha, ahead, fileTouched, renderedAt, sourceAt } = {}) {
+  if (!rendered) return { state: 'nyr', label: 'not rendered', fill: 0 };
+  if (builtFrom && mainSha) {
+    if (builtFrom === mainSha || ahead === 0) return { state: 'insync', label: 'in sync', fill: 100 };
+    if (typeof ahead === 'number' && ahead > 0) {
+      const fill = Math.max(10, Math.min(90, 100 - ahead * 15));
+      return fileTouched
+        ? { state: 'behind-touched', label: `${ahead} behind`, fill }
+        : { state: 'behind-untouched', label: `${ahead} behind · file untouched`, fill };
+    }
   }
-  return { state: 'unknown', label: 'unknown', fill: 0 };
+  if (renderedAt && sourceAt) {
+    return sourceAt > renderedAt                       // ISO-8601 Z strings compare lexicographically
+      ? { state: 'stale', label: 'source newer', fill: 35 }
+      : { state: 'insync', label: 'up to date', fill: 100 };
+  }
+  return { state: 'unknown', label: 'no source ref', fill: 0 };
 }
 
 // Worst-first severity order for a project's overall dot.
-const _SEV = ['nyr', 'unknown', 'behind-touched', 'behind-untouched', 'insync'];
+const _SEV = ['nyr', 'unknown', 'stale', 'behind-touched', 'behind-untouched', 'insync'];
 export function rollupProject(docVerdicts, openCount) {
   const docs = docVerdicts || [];
-  const behind = docs.filter(d => d.state === 'behind-touched' || d.state === 'behind-untouched').length;
+  const behind = docs.filter(d => d.state === 'stale' || d.state === 'behind-touched' || d.state === 'behind-untouched').length;
   let worst = 'insync';
   for (const d of docs) if (_SEV.indexOf(d.state) < _SEV.indexOf(worst)) worst = d.state;
   return { docCount: docs.length, behind, open: openCount || 0, worst };
@@ -105,22 +118,43 @@ async function _contentJson(token, repo, path, fetchImpl) {
   try { return _b64json(r.json); } catch { return null; }
 }
 
+
+// Last commit date touching `path` in `repo` — the render-provenance fallback used when the pipeline
+// never recorded built_from_commit. Returns an ISO string, or null when unknown.
+async function _lastCommitAt(token, repo, path, fetchImpl) {
+  if (!repo || !path) return null;
+  const r = await dbgGet(token, `${API}/repos/${repo}/commits?path=${path}&per_page=1`, fetchImpl);
+  const c = Array.isArray(r.json) ? r.json[0] : null;
+  return (c && c.commit && c.commit.committer && c.commit.committer.date) || null;
+}
+
 // Collect one project's per-document sync verdicts + rollup.
 export async function collectProject(token, appCfg, projects, projectId, fetchImpl) {
   const cfg = resolveProject(appCfg, projects, projectId);
   const dataRepo = cfg.dataRepo, sourceRepo = cfg.sourceRepo;
   const dpfx = cfg.dataPrefix || '';
+  const spfx = cfg.srcPrefix || '';
   const chR = await dbgGet(token, `${API}/repos/${dataRepo}/contents/${dpfx}chapters.json`, fetchImpl);
   // A transport/auth failure (NOT a real 404) means we can't trust an empty result → surface it, don't render green.
   const chaptersFetchFailed = !chR.ok && chR.status !== 404;
   let chaptersRaw = null;
   if (chR.ok && chR.json && typeof chR.json.content === 'string') { try { chaptersRaw = _b64json(chR.json); } catch { chaptersRaw = null; } }
   const chapterList = Array.isArray(chaptersRaw) ? chaptersRaw : (chaptersRaw && chaptersRaw.chapters) || [];
-  // rendered set: content/<id>.html present in the data-repo tree
+  // One tree read serves two purposes: which docs are rendered, and where the advisor comment stores live.
   const treeR = await dbgGet(token, `${API}/repos/${dataRepo}/git/trees/main?recursive=1`, fetchImpl);
-  const rendered = new Set((treeR.json?.tree || []).filter(x => x.type === 'blob')
-    .map(x => x.path).filter(p => p.startsWith(`${dpfx}content/`) && p.endsWith('.html'))
+  const treePaths = (treeR.json?.tree || []).filter(x => x.type === 'blob').map(x => x.path);
+  const rendered = new Set(treePaths
+    .filter(p => p.startsWith(`${dpfx}content/`) && p.endsWith('.html'))
     .map(p => p.slice((dpfx + 'content/').length, -'.html'.length)));
+  // advisor/<advisorId>/<chapterId>.json — reviewer comments live in their OWN stores, separate from
+  // reviews/. Counting only reviews/ under-reports open work (a reviewer's open comment would read as 0).
+  const advByChapter = new Map();
+  const advRe = new RegExp(`^${dpfx.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}advisor/[^/]+/(.+)\\.json$`);
+  for (const p of treePaths) {
+    const m = advRe.exec(p);
+    if (!m) continue;
+    const arr = advByChapter.get(m[1]) || []; arr.push(p); advByChapter.set(m[1], arr);
+  }
   // source main HEAD (once per project)
   const mainR = sourceRepo ? await dbgGet(token, `${API}/repos/${sourceRepo}/commits/main`, fetchImpl) : { json: null };
   const mainSha = mainR.json?.sha || '';
@@ -131,7 +165,12 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
     const isRendered = rendered.has(ch.id);
     const review = await _contentJson(token, dataRepo, `${dpfx}reviews/${ch.id}.json`, fetchImpl);
     const builtFrom = review?.built_from_commit || '';
-    const openN = (review?.comments || []).filter(isActiveComment).length;
+    let openN = (review?.comments || []).filter(isActiveComment).length;
+    for (const ap of advByChapter.get(ch.id) || []) {          // + this chapter's reviewer stores
+      const aj = await _contentJson(token, dataRepo, ap, fetchImpl);
+      // status 'open' is a reviewer's unsubmitted draft the author never sees — mirror the owner portal.
+      openN += (aj?.comments || []).filter(c => c.status !== 'open' && isActiveComment(c)).length;
+    }
     open += openN;
     let ahead = null, fileTouched = null;
     if (builtFrom && mainSha && builtFrom !== mainSha && sourceRepo) {
@@ -143,7 +182,12 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
       ahead = typeof cmp.ahead_by === 'number' ? cmp.ahead_by : null;
       fileTouched = !!(cmp.files || []).some(fl => fl.filename === ch.sourceFile);
     }
-    const verdict = classifySync({ rendered: isRendered, builtFrom, mainSha, ahead, fileTouched });
+    let renderedAt = null, sourceAt = null;
+    if (isRendered && !builtFrom) {                       // no exact ref → fall back to commit timestamps
+      renderedAt = await _lastCommitAt(token, dataRepo, `${dpfx}content/${ch.id}.html`, fetchImpl);
+      sourceAt = ch.sourceFile ? await _lastCommitAt(token, sourceRepo, `${spfx}${ch.sourceFile}`, fetchImpl) : null;
+    }
+    const verdict = classifySync({ rendered: isRendered, builtFrom, mainSha, ahead, fileTouched, renderedAt, sourceAt });
     docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: isRendered, builtFrom, open: openN, ...verdict });
   }
   const result = { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
@@ -189,7 +233,7 @@ export async function collectGlobal(token, appCfg, projects, fetchImpl) {
   return { github: g, build, mode, queue, pipelineProject };
 }
 
-const _dot = st => ({ insync: 'ok', 'behind-untouched': 'warn', 'behind-touched': 'warn', nyr: 'bad', unknown: 'dim' }[st] || 'dim');
+const _dot = st => ({ insync: 'ok', stale: 'warn', 'behind-untouched': 'warn', 'behind-touched': 'warn', nyr: 'bad', unknown: 'dim' }[st] || 'dim');
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 export function render(state, doc) {
