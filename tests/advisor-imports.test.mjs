@@ -18,8 +18,11 @@ const WHOLEDOC_HELPERS = ['orderedUnits', 'flattenReviews', 'routeWrite', 'wrapU
 // Same guard for the Lane C reliability helpers (nethelpers.js): a bad cachebust rebase could drop the
 // import while leaving the calls, ReferenceError-ing the reviewer's fetch/backoff/orphan paths.
 const NET_HELPERS = ['fetchWithTimeout', 'classifyGitHubError', 'retryAfterMs', 'TTLCache', 'orphanComments'];
+// Same guard for the conditional-request readers (condfetch.js). Dropping this import while the calls
+// remain would ReferenceError every reviewer read — comments, outline and rendered content alike.
+const COND_HELPERS = ['condJson', 'condRaw', 'condInvalidate'];
 
-for (const name of [...WHOLEDOC_HELPERS, ...NET_HELPERS]) {
+for (const name of [...WHOLEDOC_HELPERS, ...NET_HELPERS, ...COND_HELPERS]) {
   test(`advisor.js imports '${name}' if it uses it (guards a bad-merge import drop)`, () => {
     const usedInBody = new RegExp(`\\b${name}\\b`).test(body);
     if (!usedInBody) return;   // not used → nothing to import
