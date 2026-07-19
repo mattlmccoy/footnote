@@ -1,5 +1,6 @@
 import { getConfig, dataRepoParts, dataPath } from './config.js?v=f58d6b0';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
+import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js';
 // Every GitHub request is bounded (timeout + one transport retry) so a hung request can't hang the app,
 // and non-ok responses throw an error carrying .status + .headers so callers can classify rate limits.
 const gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });
@@ -26,19 +27,52 @@ const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.git
 // one call to list every file path in the data repo (so the inbox only fetches files that exist). In
 // workspace mode the tree holds every project's files, so filter to this project's prefix and strip it —
 // callers get the same repo-relative paths (reviews/x.json) whether legacy or workspace.
-export async function ghTree(tok){
-  const r = await gfetch(`${API}/repos/${slug()}/git/trees/main?recursive=1&t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
+// Stable URLs (no ?t= buster) so an ETag can key them. `cache:'no-store'` still keeps the BROWSER out of
+// the loop — every read reaches GitHub — but we attach our own If-None-Match, so an unchanged resource
+// comes back 304 and costs no rate limit. Freshness is unchanged: nothing is served un-revalidated.
+const treeUrl = () => `${API}/repos/${slug()}/git/trees/main?recursive=1`;
+const contentUrl = path => `${API}/repos/${slug()}/contents/${dp(path)}`;
+// A write changes the file AND the repo tree; drop both so the next read re-fetches rather than revalidating
+// a token we already know is stale (this is what keeps putJson's 409 retry looking at a current sha).
+const invalidate = path => { condDrop(contentUrl(path)); condDrop(treeUrl()); };
+
+export async function ghTree(tok, _retried){
+  condScope(tok);
+  const url = treeUrl();
+  const r = await gfetch(url, { headers: condHeaders(url, hdr(tok)), cache:'no-store' });
+  const pfx = getConfig().dataPrefix || '';
+  const shape = paths => paths.filter(p => p.startsWith(pfx)).map(p => p.slice(pfx.length));
+  if (r.status===304){
+    const hit = condGet(url);
+    if (hit) return shape(hit.payload);
+    condDrop(url);                                        // validator desync: read it unconditionally once
+    if (!_retried) return ghTree(tok, true);
+    throw ghErr(r, 'tree');
+  }
   if (!r.ok) throw ghErr(r, 'tree');
-  const d = await r.json(); const pfx = getConfig().dataPrefix || '';
-  return (d.tree||[]).filter(x => x.type==='blob' && x.path.startsWith(pfx)).map(x => x.path.slice(pfx.length));
+  const d = await r.json();
+  const blobs = (d.tree||[]).filter(x => x.type==='blob').map(x => x.path);
+  condPut(url, r.headers.get('etag'), blobs);             // cache unfiltered: the prefix is applied per call
+  return shape(blobs);
 }
-export async function getJson(tok, path){
-  const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}?t=${Date.now()}`, { headers:hdr(tok), cache:'no-store' });
-  if (r.status===404) return { json:null, sha:null };
+export async function getJson(tok, path, _retried){
+  condScope(tok);
+  const url = contentUrl(path);
+  const r = await gfetch(url, { headers: condHeaders(url, hdr(tok)), cache:'no-store' });
+  if (r.status===304){
+    const hit = condGet(url);
+    // re-parse the cached TEXT so a caller that mutated an earlier result can't corrupt this one
+    if (hit) return { json: JSON.parse(hit.payload.text), sha: hit.payload.sha };
+    condDrop(url);
+    if (!_retried) return getJson(tok, path, true);
+    throw ghErr(r);
+  }
+  if (r.status===404){ condDrop(url); return { json:null, sha:null }; }
   if (!r.ok) throw ghErr(r);
   const d = await r.json();
   if (typeof d.content !== 'string' || !d.content.trim()) throw new Error('empty content for '+path);
   const txt = decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
+  condPut(url, r.headers.get('etag'), { text: txt, sha: d.sha });
   return { json: JSON.parse(txt), sha:d.sha };
 }
 // binary file helpers (figure markup PNGs): content is already base64 (no JSON wrapping)
@@ -48,18 +82,22 @@ export async function getSha(tok, path){
   return (await r.json()).sha;
 }
 export async function putFile(tok, path, base64, msg){
+  invalidate(path);
   const put = s => gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
     body: JSON.stringify({ message:msg, content:base64, sha:s||undefined }) });
   let r = await put(await getSha(tok, path).catch(() => null));
   if (!r.ok) throw ghErr(r, 'put file');
+  invalidate(path);
   return (await r.json()).content.sha;
 }
 export async function deleteFile(tok, path, msg){
+  invalidate(path);
   const sha = await getSha(tok, path).catch(() => null);
   if (!sha) return false;                                  // already gone
   const r = await gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'DELETE', headers:hdr(tok),
     body: JSON.stringify({ message:msg, sha }) });
   if (!r.ok) throw ghErr(r, 'delete');
+  invalidate(path);
   return true;
 }
 export async function getDataUrl(tok, path, mime='image/png'){
@@ -68,6 +106,7 @@ export async function getDataUrl(tok, path, mime='image/png'){
   const d = await r.json(); return `data:${mime};base64,` + (d.content||'').replace(/\s/g,'');
 }
 export async function putJson(tok, path, obj, sha, msg, autoRetry=true){
+  invalidate(path);
   const content = btoa(unescape(encodeURIComponent(JSON.stringify(obj,null,2))));
   const put = s => gfetch(`${API}/repos/${slug()}/contents/${dp(path)}`, { method:'PUT', headers:hdr(tok),
     body: JSON.stringify({ message:msg, content, sha:s||undefined }) });
@@ -75,5 +114,7 @@ export async function putJson(tok, path, obj, sha, msg, autoRetry=true){
   if (r.status === 409 && autoRetry){                      // stale sha (whole-file replace) — refetch + retry once
     try { const cur = await getJson(tok, path); r = await put(cur.sha); } catch(e){}
   }
-  if (!r.ok) throw ghErr(r, 'put'); return (await r.json()).content.sha;
+  if (!r.ok) throw ghErr(r, 'put');
+  invalidate(path);          // re-drop: a concurrent read may have re-cached the pre-write content
+  return (await r.json()).content.sha;
 }
