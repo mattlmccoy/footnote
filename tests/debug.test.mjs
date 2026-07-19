@@ -278,6 +278,17 @@ test('fmtRate: says LEFT vs USED so the number cannot be misread as consumption'
   assert.equal(fmtRate(4731, 5000, RESET, NOW), '4,731 left of 5,000 · 269 used · resets in 28 min');
 });
 
+test('fmtRate: an unstarted window is not shown as a countdown', () => {
+  // GitHub reports reset = now + FULL window length until something actually counts against the limit
+  // (demonstrated on an untouched resource: 0 used -> "resets in <full window>"). For core that is a flat
+  // 60 min on every page load, which reads as a stuck clock. Say what is really true instead.
+  assert.equal(fmtRate(5000, 5000, NOW + 3600_000, NOW), '5,000 of 5,000 · nothing used this hour');
+});
+
+test('fmtRate: the countdown returns as soon as anything has been spent', () => {
+  assert.equal(fmtRate(4999, 5000, NOW + 3600_000, NOW), '4,999 left of 5,000 · 1 used · resets in 60 min');
+});
+
 test('fmtRate: omits the reset clause when the reset time is unknown', () => {
   assert.equal(fmtRate(4731, 5000, null, NOW), '4,731 left of 5,000 · 269 used');
 });
