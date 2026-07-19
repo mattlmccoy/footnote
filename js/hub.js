@@ -16,6 +16,7 @@ import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)
 import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
+import { initAccent } from './accent.js?v=d59d97d';   // per-viewer accent color (overrides the brand default)
 startNetWatch();
 showBuildTag(import.meta.url);
 
@@ -363,6 +364,7 @@ export async function launch() {
     } catch (e) { console.warn('overleaf auto-seal:', e.message); }
   }
   document.documentElement.style.setProperty('--accent', cfg.brand.accent);
+  initAccent();   // a viewer's chosen accent overrides the instance brand color (ac-<id> class + palette CSS)
 
   // Derive the real GitHub username from the token so defaults aren't the "your-github-username"
   // placeholder, and grab the display name + avatar for the greeting. Runs at launch + after connect.
@@ -408,7 +410,7 @@ export async function launch() {
       .fn-vid{display:block;position:relative;width:520px;aspect-ratio:16/10;border-radius:16px;overflow:hidden;border:1px solid var(--line);box-shadow:0 34px 80px -26px rgba(20,24,48,.55);background:#0c0f1e;text-decoration:none}
       .fn-vid iframe{position:absolute;top:0;left:0;width:1300px;height:812px;border:0;transform:scale(.4);transform-origin:top left;pointer-events:none}
       .fn-vid-badge{position:absolute;left:13px;bottom:13px;z-index:2;display:inline-flex;align-items:center;gap:7px;background:rgba(12,15,30,.62);color:#fff;font-size:12.5px;font-weight:600;padding:7px 13px;border-radius:22px;backdrop-filter:blur(4px);transition:background .15s}
-      .fn-vid:hover .fn-vid-badge{background:#2c64c4}
+      .fn-vid:hover .fn-vid-badge{background:var(--accent)}
       .fn-vid-badge .pg{display:inline-flex;width:17px;height:17px;border-radius:50%;background:#fff;color:#2c64c4;align-items:center;justify-content:center;font-size:8px;padding-left:1px}
       @media(max-width:960px){ .fn-shell{max-width:880px} .fn-split{grid-template-columns:1fr} .fn-vid-col{display:none} }
     </style>
