@@ -504,11 +504,15 @@ export async function launch() {
 
   async function projects() {
     frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
-    let list = [];
-    try { list = await loadProjects({ ...cfg, hubRepo: hub() }, tok()); } catch {}
-    // Account-level config (workspaces list). Absent (404 → null) for existing users, which groups the whole
-    // list into ONE default workspace → isOnlyGroup=true → the flat shelf renders exactly as before.
-    const account = await loadAccount({ ...cfg, hubRepo: hub() }, tok()).catch(() => null);
+    // These two reads are INDEPENDENT — serialising them doubled the wait on the first screen every
+    // user sees. Same fallbacks as before: a failed project list is [], and loadAccount keeps its own
+    // undefined(failed)/null(genuinely absent) distinction so nothing rewrites account.json from an
+    // unknown baseline.
+    const appCfg = { ...cfg, hubRepo: hub() };
+    const [list, account] = await Promise.all([
+      loadProjects(appCfg, tok()).catch(() => []),
+      loadAccount(appCfg, tok()).catch(() => null),
+    ]);
     // The grouping label lives in the DEDICATED string field `workspaceLabel` (read by groupByWorkspace),
     // distinct from `project.workspace` (the storage boolean read by projectStorage). No projection needed:
     // pass the real list. `i` is the project's position in the full list so spine colors stay stable.

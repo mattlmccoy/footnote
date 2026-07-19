@@ -222,3 +222,34 @@ test('restoreAdvisorPlan: is idempotent — restoring an already-present reviewe
   const plan = restoreAdvisorPlan(tomb, reg, rel);
   assert.equal(plan.advisors.filter(a => a.id === 'vega-ab12').length, 1, 'no duplicate advisor');
 });
+
+// ---- batch progress: "Send all to Claude" / "Mark all read" loop sequentially over N comments.
+// They showed a frozen "Sending…" with no count, and on failure left the button disabled forever
+// (no retry without a reload). These encode the label + the button state instead.
+import { batchProgress, batchOutcome } from '../js/owneradmin.js';
+
+test('batchProgress counts through the batch', () => {
+  assert.equal(batchProgress('Sending', 0, 20), 'Sending 1 of 20…');
+  assert.equal(batchProgress('Sending', 5, 20), 'Sending 6 of 20…');
+  assert.equal(batchProgress('Marking', 11, 12), 'Marking 12 of 12…');
+});
+
+test('batchOutcome: full success re-enables and reports the verb done', () => {
+  assert.deepEqual(batchOutcome({ verb: 'Send', done: 20, total: 20 }),
+    { label: 'Sent 20', disabled: false });
+});
+
+test('batchOutcome: a failure part-way names how far it got AND re-enables for retry', () => {
+  const o = batchOutcome({ verb: 'Send', done: 7, total: 20, error: 'network' });
+  assert.match(o.label, /7 of 20/);
+  assert.equal(o.disabled, false, 'must re-enable so the user can retry');
+});
+
+test('batchOutcome: failure on the very first item still re-enables', () => {
+  assert.equal(batchOutcome({ verb: 'Mark', done: 0, total: 12, error: 'boom' }).disabled, false);
+});
+
+test('batchOutcome: nothing to do is not a failure', () => {
+  assert.deepEqual(batchOutcome({ verb: 'Send', done: 0, total: 0 }),
+    { label: 'Nothing to send', disabled: false });
+});

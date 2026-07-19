@@ -1097,7 +1097,7 @@ async function loadWholeDoc(){
     document.getElementById('nav').innerHTML=''; document.getElementById('comments').innerHTML=''; return;
   }
   const t=tok(); const dev=location.hostname==='localhost'||location.hostname==='127.0.0.1';
-  read.innerHTML=`<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
+  read.innerHTML=`<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div><div class="wd-progress" style="margin-top:6px;font-size:12px;color:var(--text-3)">0 of ${_wholeUnits.length} ${_wholeUnits.length===1?escapeHtml(UNIT):escapeHtml(UNIT)+'s'}</div></div>`;
   // Fetch every released unit's rendered HTML CONCURRENTLY (was sequential). Order preserved by mapping
   // back over _wholeUnits, not by fetch-completion order.
   const fetchFrag=async(u)=>{
@@ -1107,7 +1107,10 @@ async function loadWholeDoc(){
     }catch(e){}
     return null;
   };
-  const frags=await Promise.all(_wholeUnits.map(fetchFrag));
+  // Countable work (N units) — show it landing instead of an indeterminate spinner.
+  let _got=0;
+  const _tick=()=>{ const el=read.querySelector('.wd-progress'); if(el) el.textContent=`${_got} of ${_wholeUnits.length} ${_wholeUnits.length===1?UNIT:UNIT+'s'}`; };
+  const frags=await Promise.all(_wholeUnits.map(u=>fetchFrag(u).then(r=>{ _got++; _tick(); return r; })));
   const parts=_wholeUnits.map((u,i)=>{
     const frag=frags[i]!=null?frags[i]:`<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;
     return wrapUnit(u.id, `${unitLabelWithTitle(u, UNIT)}`, frag);

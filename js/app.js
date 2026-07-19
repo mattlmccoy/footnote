@@ -17,7 +17,7 @@ import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=7d58e97
 import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chapter 3" → the CHAPTER (never an appendix that shares the number)
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
-import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome } from './owneradmin.js?v=aa80e0c';
+import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=aa80e0c';
 import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=068da19';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
@@ -1514,7 +1514,7 @@ async function loadWholeDoc(){
     document.getElementById('nav').innerHTML = ''; document.getElementById('comments').innerHTML = ''; return;
   }
   const t = tok(); if (!t){ renderConnect(); return; }
-  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div></div>`;
+  read.innerHTML = `<div class="empty"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Assembling the whole ${escapeHtml(DOC)}…</div><div class="wd-progress" style="margin-top:6px;font-size:12px;color:var(--text-3)">0 of ${_wholeUnits.length} ${_wholeUnits.length === 1 ? escapeHtml(UNIT) : escapeHtml(UNIT) + 's'}</div></div>`;
   const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   // Fetch every unit's rendered HTML CONCURRENTLY (was one sequential GitHub round-trip per unit, slow on a
   // large doc). Order is preserved by mapping back over _wholeUnits, not by fetch-completion order.
@@ -1526,7 +1526,11 @@ async function loadWholeDoc(){
     } catch(e){}
     return null;
   };
-  const frags = await Promise.all(_wholeUnits.map(fetchFrag));
+  // Countable work (N units) — show it landing instead of an indeterminate spinner.
+  const _status = () => read.querySelector('.wd-progress');
+  let _got = 0;
+  const _tick = () => { const el = _status(); if (el) el.textContent = `${_got} of ${_wholeUnits.length} ${_wholeUnits.length === 1 ? UNIT : UNIT + 's'}`; };
+  const frags = await Promise.all(_wholeUnits.map(u => fetchFrag(u).then(r => { _got++; _tick(); return r; })));
   const parts = _wholeUnits.map((u, i) => {
     const frag = frags[i] != null ? frags[i] : `<div class="empty" style="padding:22px"><i class="ti ti-file-code" style="font-size:20px;color:var(--text-3)"></i><div style="font-size:13px;margin-top:8px">Reading view not built yet for this ${escapeHtml(UNIT)}.</div></div>`;   // placeholder for THIS section — never abort the whole view
     return wrapUnit(u.id, `${unitLabelWithTitle(u, UNIT)}`, frag);
@@ -3898,18 +3902,32 @@ async function openReleasePanel(opts){
   };
   function wireHeader(box, a){
     const ra = box.querySelector('.rel-readall'); if (ra) ra.onclick = async () => {
-      ra.disabled = true; ra.textContent = 'Marking…';
-      try { for (const {chapter, c} of (inbox[a]||[])) if (!c.read){ await markAdvisorRead(a, chapter, c.id); c.read = true; }
-        box.querySelectorAll('.rel-row').forEach(r => { r.classList.add('is-read'); const cb = r.querySelector('.rel-readbox'); if (cb) cb.checked = true; }); syncAdvHeader(a); }
-      catch(e){ ra.textContent = 'Failed'; }
+      const todoRead = (inbox[a]||[]).filter(({c}) => !c.read);
+      ra.disabled = true; let doneRead = 0;
+      try {
+        for (const {chapter, c} of todoRead){
+          ra.textContent = batchProgress('Marking', doneRead, todoRead.length);
+          await markAdvisorRead(a, chapter, c.id); c.read = true; doneRead++;
+        }
+        box.querySelectorAll('.rel-row').forEach(r => { r.classList.add('is-read'); const cb = r.querySelector('.rel-readbox'); if (cb) cb.checked = true; }); syncAdvHeader(a);
+        const o = batchOutcome({ verb:'Mark', done:doneRead, total:todoRead.length }); ra.textContent = o.label; ra.disabled = o.disabled;
+      }
+      catch(e){ const o = batchOutcome({ verb:'Mark', done:doneRead, total:todoRead.length, error:e.message }); ra.textContent = o.label; ra.disabled = o.disabled; }
     };
     const sa = box.querySelector('.rel-sendall'); if (sa) sa.onclick = async () => {   // absent when AI off
       const todo = (inbox[a]||[]).filter(({c}) => c.read && !c.sent && c.status==='submitted');
       if (!todo.length){ sa.textContent = 'Nothing to send'; return; }
       if (!confirm(`Send ${todo.length} comment${todo.length!==1?'s':''} from ${idLabel(a)} to Claude?`)) return;
-      sa.disabled = true; sa.textContent = 'Sending…';
-      try { for (const {chapter, c} of todo){ await sendAdvisorToClaude(a, chapter, c); c.sent = true; } refresh(); }
-      catch(e){ sa.textContent = 'Failed: ' + e.message; }
+      sa.disabled = true; let doneSent = 0;
+      try {
+        for (const {chapter, c} of todo){
+          sa.textContent = batchProgress('Sending', doneSent, todo.length);
+          await sendAdvisorToClaude(a, chapter, c); c.sent = true; doneSent++;
+        }
+        const o = batchOutcome({ verb:'Send', done:doneSent, total:todo.length }); sa.textContent = o.label; sa.disabled = o.disabled;
+        refresh();
+      }
+      catch(e){ const o = batchOutcome({ verb:'Send', done:doneSent, total:todo.length, error:e.message }); sa.textContent = o.label; sa.disabled = o.disabled; }
     };
   }
   // Clear a reviewer from the inbox: deletes only their comment files (advisor/<id>/*.json).

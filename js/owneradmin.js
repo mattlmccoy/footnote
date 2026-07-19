@@ -118,3 +118,21 @@ export function restoreAdvisorPlan(tomb, reg = { advisors: [] }, rel = {}) {
   }
   return { advisors, release };
 }
+
+// ---- batch progress (owner inbox: "Mark all read", "Send all to Claude") ----
+// Both loop sequentially over every comment. They used to show a frozen "Sending…" with no count,
+// and on failure set the label but left the button DISABLED — no retry without reloading the page.
+// `i` is the zero-based index of the item being worked on, so the label is 1-based for humans.
+export function batchProgress(verb, i, total) {
+  return `${verb} ${Math.min(i + 1, total)} of ${total}…`;
+}
+
+// The end state of a batch. ALWAYS re-enables: a partial failure is exactly when the user needs to
+// retry, and how far it got is the useful part (the completed items are already persisted).
+export function batchOutcome({ verb, done, total, error } = {}) {
+  const v = verb || 'Send';
+  const past = v === 'Send' ? 'Sent' : v === 'Mark' ? 'Marked' : `${v}ed`;
+  if (!total) return { label: `Nothing to ${v.toLowerCase()}`, disabled: false };
+  if (error) return { label: `Failed after ${done} of ${total}`, disabled: false };
+  return { label: `${past} ${done}`, disabled: false };
+}
