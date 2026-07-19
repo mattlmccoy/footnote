@@ -28,6 +28,32 @@ export function classifySync({ rendered, builtFrom, mainSha, ahead, fileTouched,
   return { state: 'unknown', label: 'no source ref', fill: 0 };
 }
 
+// The staged-edit branch for a doc, if the source repo has one. Branch naming verified against the real
+// source repo (review-edits/__outline__, review-edits/citations-audit, …). null when there is none.
+export function editBranchFor(branches, docId) {
+  if (!branches || !docId) return null;
+  const want = `review-edits/${docId}`;
+  return branches.includes(want) ? want : null;
+}
+
+// Coarse human age for the oldest queued job. null in → null out (unknown stays unknown).
+export function humanAge(ms) {
+  if (ms == null) return null;
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return '<1 min';
+  if (m < 60) return `${m} min`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h} h`;
+  return `${Math.floor(h / 24)} d`;
+}
+
+// "4,731 / 5,000" — the denominator matters (a bare number hides how close to the ceiling you are).
+export function fmtRate(remaining, limit) {
+  if (remaining == null) return '?';
+  const r = Number(remaining).toLocaleString('en-US');
+  return limit == null ? r : `${r} / ${Number(limit).toLocaleString('en-US')}`;
+}
+
 // Worst-first severity order for a project's overall dot.
 const _SEV = ['nyr', 'unknown', 'stale', 'behind-touched', 'behind-untouched', 'insync'];
 export function rollupProject(docVerdicts, openCount) {
@@ -100,6 +126,7 @@ import { resolveProject, loadConfig, loadProjects } from './config.js?v=f58d6b0'
 import { isActiveComment } from './model.js?v=c284b81';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
+import { parseVersion, latestFromHtml, isStale } from './version.js?v=dev';
 
 const API = 'https://api.github.com';
 const _b64json = d => JSON.parse(decodeURIComponent(escape(atob(String(d.content).replace(/\s/g, '')))));
@@ -164,6 +191,9 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
   // source main HEAD (once per project)
   const mainR = sourceRepo ? await dbgGet(token, `${API}/repos/${sourceRepo}/commits/main`, fetchImpl) : { json: null };
   const mainSha = mainR.json?.sha || '';
+  // staged-edit branches on the source repo (verified to exist: review-edits/<id>)
+  const brR = sourceRepo ? await dbgGet(token, `${API}/repos/${sourceRepo}/branches?per_page=100`, fetchImpl) : { json: null };
+  const branches = Array.isArray(brR.json) ? brR.json.map(b => b && b.name).filter(Boolean) : [];
   const compareCache = new Map();
   const docs = [];
   let open = 0;
@@ -194,7 +224,7 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
       sourceAt = ch.sourceFile ? await _lastCommitAt(token, sourceRepo, `${spfx}${ch.sourceFile}`, fetchImpl) : null;
     }
     const verdict = classifySync({ rendered: isRendered, builtFrom, mainSha, ahead, fileTouched, renderedAt, sourceAt });
-    docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: isRendered, builtFrom, open: openN, ...verdict });
+    docs.push({ id: ch.id, n: ch.n, title: ch.title, rendered: isRendered, builtFrom, open: openN, editBranch: editBranchFor(branches, ch.id), ...verdict });
   }
   const result = { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
   if (chaptersFetchFailed) result.error = `could not read chapters.json (status ${chR.status})`;
@@ -215,15 +245,25 @@ export async function collectAll(token, appCfg, projects, fetchImpl) {
 // primary project for the mode + job-queue readout (jobs/mode are per Review-repo).
 export async function collectGlobal(token, appCfg, projects, fetchImpl) {
   const f = fetchImpl || fetch;
-  const g = { login: null, tokenValid: false, scopes: null, rateRemaining: null, net: 'ok' };
+  const g = { login: null, tokenValid: false, scopes: null, rateRemaining: null, rateLimit: null, latencyMs: null, net: 'ok' };
+  const t0 = Date.now();
   const who = await dbgGet(token, `${API}/user`, fetchImpl);
+  g.latencyMs = Date.now() - t0;                       // real round-trip to api.github.com
   g.tokenValid = who.ok; g.login = who.json?.login || null;
   g.scopes = parseScopes(who.headers?.get ? who.headers.get('x-oauth-scopes') : null);
   const rl = await dbgGet(token, `${API}/rate_limit`, fetchImpl);
   g.rateRemaining = rl.json?.rate?.remaining ?? null;
+  g.rateLimit = rl.json?.rate?.limit ?? null;
   let build = { deployedSha: '', deployedTime: '', pageStale: false };
   try { const b = await (await f('build.json?t=' + Date.now(), { cache: 'no-store' })).json();
     build.deployedSha = b.sha || ''; build.deployedTime = formatBuildTime(b.time || ''); } catch {}
+  // Honest staleness: this module's own cache-bust hash vs the one debug.html currently serves. (The
+  // site-wide build.json sha is a COMMIT sha — a different namespace — so comparing to it would be noise.)
+  build.pageSha = parseVersion(import.meta.url);
+  try {
+    const html = await (await f('debug.html?t=' + Date.now(), { cache: 'no-store' })).text();
+    build.pageStale = isStale(build.pageSha, latestFromHtml(html, 'debug.js'));
+  } catch {}
   // pipeline (mode + job queue) for the primary project, if any
   let mode = 'local', queue = { count: 0, oldest: null }, pipelineProject = null;
   const primary = (projects || [])[0];
@@ -246,40 +286,68 @@ export function render(state, doc) {
   const d = doc || document;
   const root = d.getElementById('root');
   if (!state.authenticated) { root.innerHTML = `<p style="color:var(--dim)">Not authenticated — open this page from the owner portal (Alt+click the build orb) so your token is available.</p>`; return; }
-  const g = state.github, b = state.build;
-  const card = (title, rows) => `<div style="border:1px solid var(--line);background:var(--card);border-radius:9px;padding:11px 13px">
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin-bottom:8px">${title}</div>${rows}</div>`;
-  const row = (k, v) => `<div style="display:flex;justify-content:space-between;padding:3px 0"><span>${k}</span><span style="color:var(--dim)">${v}</span></div>`;
-  const q = state.queue || { count: 0, oldest: null };
-  const projHtml = (state.projects || []).map(p => {
+  const g = state.github, b = state.build, q = state.queue || { count: 0, oldest: null };
+
+  const pill = (txt, tone) => `<span style="display:inline-block;padding:2px 9px;border-radius:20px;font-size:11.5px;font-weight:600;background:var(--${tone}bg);color:var(--${tone})">${txt}</span>`;
+  const dot = (tone) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--${tone});margin-right:7px;vertical-align:middle"></span>`;
+  const card = (title, rows) => `<div style="border:1px solid var(--line);background:var(--card);border-radius:9px;padding:12px 14px">
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin-bottom:9px">${title}</div>${rows}</div>`;
+  const row = (k, v) => `<div style="display:flex;justify-content:space-between;align-items:baseline;gap:14px;padding:3.5px 0"><span>${k}</span><span style="color:var(--dim);text-align:right">${v}</span></div>`;
+
+  // ---- per-project tables (with real column headers) ----
+  const noMarker = '<style>#root summary::-webkit-details-marker{display:none}</style>';
+  const th = (t, extra = '') => `<th style="text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;color:var(--dim);font-weight:600;padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap;${extra}">${t}</th>`;
+  const td = (v, extra = '') => `<td style="padding:7px 10px;border-top:1px solid var(--line);${extra}">${v}</td>`;
+  const bar = (v) => `<span style="position:relative;display:inline-block;width:64px;height:6px;border-radius:4px;background:var(--line);overflow:hidden;vertical-align:middle;margin-right:9px"><i style="position:absolute;left:0;top:0;bottom:0;width:${Math.max(0, Math.min(100, v.fill || 0))}%;border-radius:4px;background:var(--${_dot(v.state)})"></i></span>`;
+
+  const projHtml = (state.projects || []).map((p, pi) => {
     const rl = p.rollup || { docCount: 0, behind: 0, open: 0, worst: 'insync' };
-    const table = (p.docs || []).map(x => `<tr>
-      <td style="padding:6px 10px;border-top:1px solid var(--line)">${esc(x.n)} · ${esc(x.title)}</td>
-      <td style="padding:6px 10px;border-top:1px solid var(--line)"><span style="color:var(--${_dot(x.state)})">●</span> ${esc(x.label || x.state)}</td>
-      <td style="padding:6px 10px;border-top:1px solid var(--line);font-family:ui-monospace,Menlo,monospace;font-size:11px">${esc((x.builtFrom || '—').slice(0, 7))}</td>
-      <td style="padding:6px 10px;border-top:1px solid var(--line)">${x.open || 0}</td></tr>`).join('');
-    return `<details style="border:1px solid var(--line);border-radius:9px;margin-bottom:8px" ${state.projects.length === 1 ? 'open' : ''}>
-      <summary style="padding:10px 13px;cursor:pointer"><span style="color:var(--${_dot(rl.worst)})">●</span>
-        <b>${esc(p.name || p.id)}</b> <span style="color:var(--dim);font-size:11.5px">${rl.docCount} docs · ${rl.behind} behind · ${rl.open} open${p.error ? ' · ERROR: ' + esc(p.error) : ''}</span></summary>
-      <table style="width:100%;border-collapse:collapse;font-size:12px">${table}</table></details>`;
+    const rows = (p.docs || []).map(x => `<tr>
+      ${td(`${esc(x.n)} · ${esc(x.title)}`)}
+      ${td(x.rendered ? 'yes' : `${dot('bad')}missing`, 'white-space:nowrap;' + (x.rendered ? '' : 'color:var(--bad)'))}
+      ${td(esc((x.builtFrom || '—').slice(0, 7)), 'font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--dim)')}
+      ${td(`${bar(x)}<span style="color:var(--${_dot(x.state)})">${esc(x.label || x.state)}</span>`, 'white-space:nowrap')}
+      ${td(x.editBranch ? `<span style="font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--warnbg);color:var(--warn);font-family:ui-monospace,Menlo,monospace">${esc(x.editBranch)}</span>` : '<span style="color:var(--dim)">—</span>')}
+      ${td(String(x.open || 0), 'text-align:right')}
+    </tr>`).join('');
+    return `<details style="border:1px solid var(--line);border-radius:9px;margin-bottom:9px;overflow:hidden" ${pi === 0 ? 'open' : ''}>
+      <summary style="padding:11px 13px;cursor:pointer;list-style:none;display:flex;align-items:center;gap:0"><span style="color:var(--dim);margin-right:8px;font-size:10px">${pi === 0 ? '&#9660;' : '&#9654;'}</span>${dot(_dot(rl.worst))}<b>${esc(p.name || p.id)}</b>
+        <span style="color:var(--dim);font-size:11.5px;margin-left:6px">${rl.docCount} docs · ${rl.behind} behind main · ${rl.open} open comment${rl.open === 1 ? '' : 's'}${p.error ? ' · ERROR: ' + esc(p.error) : ''}</span></summary>
+      <table style="width:100%;border-collapse:collapse;font-size:12.5px">
+        <thead><tr>${th('Document')}${th('Rendered')}${th('Built from')}${th('vs source main')}${th('Edits')}${th('Open', 'text-align:right')}</tr></thead>
+        <tbody>${rows}</tbody></table></details>`;
   }).join('');
-  root.innerHTML = `
-    <div style="display:flex;align-items:center;gap:10px;border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:14px">
-      <h1 style="font-size:15px;margin:0">Footnote · Debug</h1>
-      <span style="font-size:11px;color:var(--dim)">deployed ${esc(b.deployedSha)} · this page ${b.pageStale ? 'STALE' : 'current'}</span>
-      <button id="dbg-copy" style="margin-left:auto;font:inherit;font-size:12px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 10px;color:var(--accent);cursor:pointer">Copy snapshot</button>
+
+  root.innerHTML = `${noMarker}
+    <div style="display:flex;align-items:center;gap:11px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding-bottom:11px;margin-bottom:15px">
+      <h1 style="font-size:15.5px;margin:0;letter-spacing:-.2px">Footnote · Debug</h1>
+      ${pill('deployed ' + esc(b.deployedSha || '?'), 'ok')}
+      <span style="font-size:11.5px;color:var(--dim)">this page: <span style="font-family:ui-monospace,Menlo,monospace">${esc(b.pageSha || b.deployedSha || '?')}</span> · ${b.pageStale ? '<span style="color:var(--warn)">stale</span>' : 'up to date'}</span>
+      <span style="margin-left:auto;font-size:11.5px;color:var(--dim)">refreshed ${esc(state.refreshedAt || '')} · <a href="#" id="dbg-reload" style="color:var(--accent)">reload</a></span>
+      <button id="dbg-copy" style="font:inherit;font-size:12px;background:none;border:1px solid var(--line);border-radius:6px;padding:4px 11px;color:var(--accent);cursor:pointer">Copy snapshot</button>
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
-      ${card('GitHub connection', row('Token', g.tokenValid ? 'valid · ' + esc(g.login) : 'INVALID') + row('Scopes', g.scopes ? esc(g.scopes.join(', ')) : '(fine-grained)') + row('Rate limit', esc(g.rateRemaining ?? '?')) + row('Net', esc(g.net)))}
-      ${card('Pipeline', row('Mode', esc(state.mode)) + row('Queue', q.count ? `${q.count} pending${q.oldest ? ' · oldest ' + esc(q.oldest.type) : ''}` : 'idle') + row('Deployed', esc(b.deployedTime)))}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:17px">
+      ${card('GitHub connection',
+        row('Owner token', g.tokenValid ? `valid · ${esc(g.login)}` : '<span style="color:var(--bad)">INVALID</span>') +
+        row('Scopes', g.scopes ? `<span style="font-family:ui-monospace,Menlo,monospace;font-size:11.5px">${esc(g.scopes.join(' · '))}</span>` : '(fine-grained)') +
+        row('Reachability', `api.github.com${g.latencyMs != null ? ' · ' + g.latencyMs + ' ms' : ''}`) +
+        row('Rate limit', esc(fmtRate(g.rateRemaining, g.rateLimit))))}
+      ${card('Pipeline',
+        row('Processing mode', pill(esc(state.mode || '?'), state.mode === 'cloud' ? 'warn' : 'ok')) +
+        row(`${dot(q.count ? 'warn' : 'ok')}Job queue`, q.count ? `${q.count} pending` : 'idle') +
+        row('Oldest job', q.oldest ? `${esc(q.oldest.type)}${humanAge(q.oldest.ageMs) ? ' · ' + humanAge(q.oldest.ageMs) : ''}` : '—') +
+        row('Last deploy', esc(b.deployedTime || '?')))}
     </div>
-    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin:0 2px 8px">Projects (${(state.projects || []).length})</div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--dim);font-weight:600;margin:0 2px 9px">Projects (${(state.projects || []).length})</div>
     ${projHtml || '<p style="color:var(--dim)">No projects.</p>'}`;
+
   const copyBtn = d.getElementById('dbg-copy');
   if (copyBtn) copyBtn.onclick = async () => {
     try { await navigator.clipboard.writeText(buildSnapshot(state.snapshot)); copyBtn.textContent = 'Copied ✓'; setTimeout(() => (copyBtn.textContent = 'Copy snapshot'), 1500); }
     catch { copyBtn.textContent = 'Copy failed'; }
   };
+  const rl = d.getElementById('dbg-reload');
+  if (rl) rl.onclick = (e) => { e.preventDefault(); location.reload(); };
 }
 
 // Assemble the snapshot object render() hands to buildSnapshot on copy.
@@ -312,7 +380,8 @@ export async function boot() {
   const global = await collectGlobal(token, appCfg, projects);
   const deep = await collectAll(token, appCfg, projects);
   const nowIso = new Date().toISOString();
-  const state = { authenticated: true, ...global, projects: deep };
+  const state = { authenticated: true, ...global, projects: deep,
+    refreshedAt: new Date().toLocaleTimeString([], { hour12: false }) };
   state.snapshot = _snapshotOf(state, nowIso);
   render(state, document);
 }

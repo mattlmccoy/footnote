@@ -250,3 +250,27 @@ test('queueAge: prefers the requested_ts field over decoding the id', () => {
   const now = Date.parse('2026-06-26T02:14:43.003Z');
   assert.deepEqual(queueAge(jobs, now), { count: 1, oldest: { type: 'export', ageMs: 60000 } });
 });
+
+import { editBranchFor, humanAge, fmtRate } from '../js/debug.js';
+
+// Verified against the real source repo: review-edits/{citations-audit,lit-citations,__outline__,outline}
+test('editBranchFor: matches review-edits/<docId>, else null', () => {
+  const branches = ['main', 'review-edits/__outline__', 'review-edits/citations-audit'];
+  assert.equal(editBranchFor(branches, '__outline__'), 'review-edits/__outline__');
+  assert.equal(editBranchFor(branches, 'ch_modeling'), null);
+  assert.equal(editBranchFor(null, 'ch_modeling'), null);
+});
+
+test('humanAge: min / h / d, null passthrough', () => {
+  assert.equal(humanAge(4 * 60 * 1000), '4 min');
+  assert.equal(humanAge(3 * 3600 * 1000), '3 h');
+  assert.equal(humanAge(2 * 86400 * 1000), '2 d');
+  assert.equal(humanAge(30 * 1000), '<1 min');
+  assert.equal(humanAge(null), null);
+});
+
+test('fmtRate: thousands separators with a denominator', () => {
+  assert.equal(fmtRate(4731, 5000), '4,731 / 5,000');
+  assert.equal(fmtRate(4731, null), '4,731');
+  assert.equal(fmtRate(null, 5000), '?');
+});
