@@ -171,3 +171,61 @@ def test_write_counts_json_from_content(tmp_path, monkeypatch):
     ci_render.write_counts("", rows)
     got = json.loads((tmp_path / "content" / "counts.json").read_text())
     assert got == {"ch_a": {"words": 3, "chars": 13}, "ch_b": {"words": 2, "chars": 10}}   # chars WITH spaces
+
+
+# ---------------- built.json: which source commit each unit was rendered from ----------------
+# The reader needs commit-exact provenance ("is this doc's HTML built from current main?").
+# It is written as a SIDECAR beside counts.json, never into reviews/<id>.json — that file holds
+# the user's comments and must not be written by CI.
+
+def test_source_sha_reads_the_clone_head(tmp_path):
+    import ci_render, subprocess
+    repo = tmp_path / "src"
+    repo.mkdir()
+    run = lambda *a: subprocess.run(a, cwd=repo, check=True, capture_output=True)
+    run("git", "init", "-q")
+    run("git", "config", "user.email", "t@t.t")
+    run("git", "config", "user.name", "t")
+    (repo / "f.tex").write_text("hi")
+    run("git", "add", "-A")
+    run("git", "commit", "-qm", "one")
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, capture_output=True, text=True).stdout.strip()
+    assert ci_render.source_sha(repo) == head
+
+
+def test_source_sha_is_empty_for_a_non_git_dir(tmp_path):
+    import ci_render
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert ci_render.source_sha(plain) == ""
+
+
+def test_write_build_manifest_records_only_units_built_this_run(tmp_path, monkeypatch):
+    import ci_render, json
+    (tmp_path / "content").mkdir()
+    monkeypatch.chdir(tmp_path)
+    # first run: both units built from sha AAA
+    ci_render.write_build_manifest("", ["ch_a", "ch_b"], "A" * 40, "2026-07-19T00:00:00Z")
+    # second run: only ch_a rebuilt, now from BBB — ch_b must KEEP its old provenance
+    got = ci_render.write_build_manifest("", ["ch_a"], "B" * 40, "2026-07-19T01:00:00Z")
+    assert got["ch_a"] == {"sha": "B" * 40, "ts": "2026-07-19T01:00:00Z"}
+    assert got["ch_b"] == {"sha": "A" * 40, "ts": "2026-07-19T00:00:00Z"}
+    on_disk = json.loads((tmp_path / "content" / "built.json").read_text())
+    assert on_disk == got
+
+
+def test_write_build_manifest_skips_when_sha_unknown(tmp_path, monkeypatch):
+    import ci_render, json
+    (tmp_path / "content").mkdir()
+    monkeypatch.chdir(tmp_path)
+    ci_render.write_build_manifest("", ["ch_a"], "", "2026-07-19T00:00:00Z")
+    # an unknown sha must not be recorded as provenance (unknown != a real build ref)
+    assert json.loads((tmp_path / "content" / "built.json").read_text()) == {}
+
+
+def test_write_build_manifest_honors_the_workspace_prefix(tmp_path, monkeypatch):
+    import ci_render
+    (tmp_path / "metro" / "content").mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+    ci_render.write_build_manifest("metro/", ["intro"], "C" * 40, "2026-07-19T00:00:00Z")
+    assert (tmp_path / "metro" / "content" / "built.json").exists()

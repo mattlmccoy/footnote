@@ -54,6 +54,13 @@ export function fmtRate(remaining, limit) {
   return limit == null ? r : `${r} / ${Number(limit).toLocaleString('en-US')}`;
 }
 
+// content/built.json (ci_render write_build_manifest) = {unitId: {sha, ts}} — which source commit a
+// unit's HTML was rendered from. '' when unrecorded, so an unknown ref is never mistaken for a real one.
+export function builtShaFor(manifest, docId) {
+  const e = manifest && docId ? manifest[docId] : null;
+  return (e && e.sha) || '';
+}
+
 // Worst-first severity order for a project's overall dot.
 const _SEV = ['nyr', 'unknown', 'stale', 'behind-touched', 'behind-untouched', 'insync'];
 export function rollupProject(docVerdicts, openCount) {
@@ -194,13 +201,16 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
   // staged-edit branches on the source repo (verified to exist: review-edits/<id>)
   const brR = sourceRepo ? await dbgGet(token, `${API}/repos/${sourceRepo}/branches?per_page=100`, fetchImpl) : { json: null };
   const branches = Array.isArray(brR.json) ? brR.json.map(b => b && b.name).filter(Boolean) : [];
+  // commit-exact provenance, written by the render pipeline beside counts.json
+  const builtManifest = (await _contentJson(token, dataRepo, `${dpfx}content/built.json`, fetchImpl)) || {};
   const compareCache = new Map();
   const docs = [];
   let open = 0;
   for (const ch of chapterList) {
     const isRendered = rendered.has(ch.id);
     const review = await _contentJson(token, dataRepo, `${dpfx}reviews/${ch.id}.json`, fetchImpl);
-    const builtFrom = review?.built_from_commit || '';
+    // manifest first (the render pipeline records it); the legacy reviews field is a fallback
+    const builtFrom = builtShaFor(builtManifest, ch.id) || review?.built_from_commit || '';
     let openN = (review?.comments || []).filter(isActiveComment).length;
     for (const ap of advByChapter.get(ch.id) || []) {          // + this chapter's reviewer stores
       const aj = await _contentJson(token, dataRepo, ap, fetchImpl);

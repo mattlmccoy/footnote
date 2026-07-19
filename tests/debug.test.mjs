@@ -274,3 +274,18 @@ test('fmtRate: thousands separators with a denominator', () => {
   assert.equal(fmtRate(4731, null), '4,731');
   assert.equal(fmtRate(null, 5000), '?');
 });
+
+// content/built.json (written by ci_render write_build_manifest) = {unitId: {sha, ts}}.
+// It makes classifySync's exact-commit path live instead of falling back to timestamps.
+import { builtShaFor } from '../js/debug.js';
+
+test('builtShaFor: reads the per-unit sha from the manifest', () => {
+  const m = { ch_a: { sha: 'abc1234', ts: '2026-07-19T00:00:00Z' } };
+  assert.equal(builtShaFor(m, 'ch_a'), 'abc1234');
+});
+
+test('builtShaFor: unknown unit / missing manifest → empty (never a fake ref)', () => {
+  assert.equal(builtShaFor({ ch_a: { sha: 'x' } }, 'ch_b'), '');
+  assert.equal(builtShaFor(null, 'ch_a'), '');
+  assert.equal(builtShaFor({ ch_a: {} }, 'ch_a'), '');
+});

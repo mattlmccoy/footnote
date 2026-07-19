@@ -9,6 +9,9 @@ read-only with ``SOURCE_TOKEN``), and runs the generic export pipeline
 
     <prefix>content/<unit>.html          reading HTML fragment
     <prefix>content/<unit>.srcmap.json   paragraph -> source map
+    <prefix>content/counts.json          {unitId: {words, chars}} for the home grid
+    <prefix>content/built.json           {unitId: {sha, ts}} — the source commit each unit was
+                                         rendered from (commit-exact drift for the reader)
 
 Never touches the source repo beyond a read-only clone. The workflow commits the outputs
 with ``[skip ci]``. Dual-mode via ci_notify_common.project_prefixes() so one workflow serves
@@ -24,6 +27,7 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -115,6 +119,45 @@ def write_counts(prefix, rows):
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(counts), encoding="utf-8")
     return counts
+
+
+def source_sha(source_dir):
+    """The source commit the units are being rendered from. '' when `source_dir` is not a git
+    checkout (an unknown ref must never be recorded as provenance)."""
+    try:
+        out = subprocess.run(["git", "-C", str(source_dir), "rev-parse", "HEAD"],
+                             check=True, capture_output=True, text=True)
+        return out.stdout.strip()
+    except Exception:
+        return ""
+
+
+def write_build_manifest(prefix, built_ids, sha, now_iso):
+    """Merge <prefix>content/built.json = {unitId: {sha, ts}} — which source commit each unit's HTML
+    was rendered from. The reader uses it for commit-exact drift ("is this doc built from current
+    main?") instead of guessing from file timestamps.
+
+    Only units rebuilt THIS run are stamped; units kept from a prior run keep their recorded
+    provenance, so the manifest never claims a unit is fresher than it is. A blank sha records
+    nothing (unknown is not a build ref).
+
+    Deliberately a SIDECAR beside counts.json: `built_from_commit` nominally lives in
+    reviews/<id>.json, but that file holds the user's comments and must never be written by CI.
+    """
+    p = Path(f"{prefix}content/built.json")
+    cur = {}
+    if p.exists():
+        try:
+            cur = json.loads(p.read_text(encoding="utf-8")) or {}
+        except Exception:
+            cur = {}
+    if sha:
+        for uid in built_ids or []:
+            if uid:
+                cur[uid] = {"sha": sha, "ts": now_iso}
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(cur), encoding="utf-8")
+    return cur
 
 
 def load_units(prefix):
@@ -211,6 +254,7 @@ def render_project(prefix, this_repo, token, workdir):
     chapters_json = str(Path(f"{prefix}chapters.json").resolve())
     Path(f"{prefix}content").mkdir(parents=True, exist_ok=True)
     built = 0
+    built_ids = []
     for r in rows:
         uid = r.get("id")
         if not uid:
@@ -223,7 +267,11 @@ def render_project(prefix, this_repo, token, workdir):
                    BUILD_DIR=str((workdir / "build" / (prefix.rstrip("/") or "root")).resolve()))
         if build_guarded(uid, out, env, workdir, "content"):
             built += 1
+            built_ids.append(uid)
     write_counts(prefix, rows)
+    # record WHICH source commit these units came from, so the reader can report drift exactly
+    write_build_manifest(prefix, built_ids, source_sha(source_dir),
+                         datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"))
     print(f"[render] {prefix or '(root)'}: built {built}/{len(rows)} units")
     return built
 
