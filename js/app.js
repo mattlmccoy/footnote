@@ -18,6 +18,7 @@ import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chap
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=bb27716';
+import { livePollDelay, jobPollDelay } from './polldelay.js';   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=068da19';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
@@ -654,24 +655,39 @@ async function loadAdvisorComments(ch){
 // Live polling for the owner: refresh advisor comments on a cadence + on tab refocus, without
 // disrupting the author. Guard: skip while a textarea in the comment/reply area has focus, and
 // preserve the comment-rail scroll across a refresh. New comment cards get a one-shot flash.
-let ownerPollTimer = null;
+let ownerPollTimer = null, _ownerIdle = 0, _ownerLiveOn = false;
 function ownerBusy(){ const a = document.activeElement; return !!(a && (a.tagName === 'TEXTAREA' || a.isContentEditable)); }
 function seenCommentIds(){ return new Set([...document.querySelectorAll('#comments [data-aid]')].map(e => e.dataset.aid)); }
 async function ownerLivePoll(){
   // Only auto-refresh the reading view's comment rail (the "I had to reload to see comments" pain).
   // The release panel is NOT auto-rebuilt — its full re-render would collapse expanded groups and
   // clobber the notify-email field mid-edit; that stays manual (deferred follow-up).
-  if (document.hidden || ownerBusy() || !tok()) return;
-  if (typeof current === 'undefined' || !current) return;   // not in a chapter → nothing to poll
+  if (document.hidden || ownerBusy() || !tok()){ _ownerIdle++; return; }
+  if (typeof current === 'undefined' || !current){ _ownerIdle++; return; }   // not in a chapter → nothing to poll
   const rail = document.querySelector('#comments, .comment-rail'); const top = rail ? rail.scrollTop : 0;
   const before = seenCommentIds();
-  try { await loadAdvisorComments(current); } catch(e){ return; }
+  try { await loadAdvisorComments(current); } catch(e){ _ownerIdle++; return; }
   const railNow = document.querySelector('#comments, .comment-rail'); if (railNow) railNow.scrollTop = top;
+  const after = seenCommentIds();
+  // any change resets the cadence to fast; an unchanged poll widens the gap (see polldelay.js)
+  let changed = after.size !== before.size; if (!changed) for (const id of after) if (!before.has(id)){ changed = true; break; }
+  _ownerIdle = changed ? 0 : _ownerIdle + 1;
   document.querySelectorAll('#comments [data-aid]').forEach(el => { if (!before.has(el.dataset.aid)){ el.classList.add('cmt-new'); setTimeout(() => el.classList.remove('cmt-new'), 2200); } });
 }
-function startOwnerLiveSync(){ stopOwnerLiveSync(); ownerPollTimer = setInterval(ownerLivePoll, 20000); }
-function stopOwnerLiveSync(){ if (ownerPollTimer){ clearInterval(ownerPollTimer); ownerPollTimer = null; } }
-document.addEventListener('visibilitychange', () => { if (!document.hidden) ownerLivePoll(); });
+// self-scheduling (not setInterval) so each wait can adapt: idle polls widen the gap, any change snaps
+// it back to 20s. Mirrors the reviewer portal's loop so both portals age the same way.
+function _scheduleOwnerPoll(){
+  if (!_ownerLiveOn) return;
+  clearTimeout(ownerPollTimer);
+  ownerPollTimer = setTimeout(async () => {
+    try { await ownerLivePoll(); } catch(e){}
+    _scheduleOwnerPoll();
+  }, livePollDelay({ idlePolls: _ownerIdle }));
+}
+function startOwnerLiveSync(){ stopOwnerLiveSync(); _ownerLiveOn = true; _ownerIdle = 0; _scheduleOwnerPoll(); }
+function stopOwnerLiveSync(){ _ownerLiveOn = false; if (ownerPollTimer){ clearTimeout(ownerPollTimer); ownerPollTimer = null; } }
+// returning to the tab is a strong signal the author wants current data: poll now, at full cadence
+document.addEventListener('visibilitychange', () => { if (!document.hidden){ _ownerIdle = 0; ownerLivePoll(); _scheduleOwnerPoll(); } });
 let advNotesState = { notes:{}, sha:null };   // owner-private notes, shared by the rail + panel
 // ---------- clickable cross-references (Figure / Table / Section / Chapter N.M) ----------
 function sectionNumberMap(doc){
@@ -2070,12 +2086,23 @@ function openCloudActivity(jobId){
     const g = groupStream(events);
     panel.querySelector('#ca-feed').innerHTML = g.jobEvents.map(jobRow).join('') + g.groups.map(card).join('');
   }
+  // Progress polling is the single hottest loop in the app, so it is BOTH conditional and adaptive:
+  // a stable URL + If-None-Match means "no new events" costs no rate limit, and the cadence stays at
+  // 2.5s for ~30s (while the user is watching) before widening. A hidden tab drops to the slow cadence.
+  let _polls = 0, _progEtag = null, _progText = null;
+  const _progUrl = `https://api.github.com/repos/${DATA_REPO}/contents/${dpath('progress/' + jobId + '.jsonl')}`;
   async function poll(){
     if (stop) return;
     try {
-      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('progress/' + jobId + '.jsonl')}?t=${Date.now()}`,
-        { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
-      if (r.ok){ const evs = parseEvents(await r.text()); render(evs); if (isTerminal(evs)){ stop = true; return; } }
+      const r = await fetch(_progUrl,
+        { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw',
+                     ...(_progEtag ? { 'If-None-Match': _progEtag } : {}) }, cache: 'no-store' });
+      if (r.status === 304 && _progText !== null){
+        const evs = parseEvents(_progText);            // unchanged since the last read — free, nothing new to show
+        if (isTerminal(evs)){ stop = true; return; }
+      }
+      else if (r.ok){ const txt = await r.text(); _progEtag = r.headers.get('etag'); _progText = txt;
+        const evs = parseEvents(txt); render(evs); if (isTerminal(evs)){ stop = true; return; } }
       else {
         // No events yet: the job may be correctly queued BEHIND another (apply is serialized). Show its
         // queue position so a normal wait doesn't read as a hang. Read-only on jobs.json.
@@ -2088,8 +2115,16 @@ function openCloudActivity(jobId){
         });
       }
     } catch(e){}
-    if (!stop) setTimeout(poll, 2500);
+    _polls++;
+    if (!stop) setTimeout(poll, jobPollDelay({ polls: _polls, hidden: document.hidden }));
   }
+  // coming back to the tab should feel instant: reset the ramp and read once now. Self-removing, so a
+  // session that opens many job panels doesn't accumulate a listener per finished job.
+  const _onVis = () => {
+    if (stop){ document.removeEventListener('visibilitychange', _onVis); return; }
+    if (!document.hidden){ _polls = 0; poll(); }
+  };
+  document.addEventListener('visibilitychange', _onVis);
   poll();
 }
 
