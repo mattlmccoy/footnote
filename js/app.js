@@ -1,6 +1,6 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount, isResolved } from './model.js?v=c284b81';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=2ea57eb';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=caae74b';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=d47929c';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=c823c55';
 import { isOverleafLinked } from './overleaf.js?v=5e5b959';   // tokenless B1: recognize an Overleaf-bridge-linked project
@@ -18,8 +18,8 @@ import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chap
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=bb27716';
-import { livePollDelay, jobPollDelay } from './polldelay.js';
-import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
+import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
+import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=068da19';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';

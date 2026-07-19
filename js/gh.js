@@ -1,7 +1,7 @@
 import { getConfig, dataRepoParts, dataPath } from './config.js?v=f58d6b0';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js?v=f5d7c87';
-import { observeBudget } from './ratebudget.js';   // every response reports the remaining hourly budget — 304s included
+import { observeBudget } from './ratebudget.js?v=dbe477a';   // every response reports the remaining hourly budget — 304s included
 // Every GitHub request is bounded (timeout + one transport retry) so a hung request can't hang the app,
 // and non-ok responses throw an error carrying .status + .headers so callers can classify rate limits.
 const gfetch = (url, opts) => fetchWithTimeout(url, opts, { timeoutMs:15000, retries:1 });

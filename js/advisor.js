@@ -6,14 +6,14 @@ import { startTour, tourSeen, markTourSeen } from './tour.js?v=1dde05d';
 import { wordDiff } from './textdiff.js?v=112b6a1';
 import { loadConfig, dataRepoParts, loadChapters, setConfig, dataRepoFromParams, workspaceInviteBroken } from './config.js?v=f58d6b0';   // instance config + chapter manifest; assistant-free by construction
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';
-import { livePollDelay } from './polldelay.js';   // one cadence policy for both portals   // appendices follow their home chapter's release (one rule, both portals)
+import { livePollDelay } from './polldelay.js?v=d6ff0d6';   // one cadence policy for both portals   // appendices follow their home chapter's release (one rule, both portals)
 import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=1fb5404';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
-import { condJson, condRaw, condInvalidate } from './condfetch.js';
-import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
+import { condJson, condRaw, condInvalidate } from './condfetch.js?v=aa80181';
+import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
 import { parseLatexTitle } from './docparse.js?v=c61fbc8';   // authoritative doc title = the LaTeX \title in the uploaded source

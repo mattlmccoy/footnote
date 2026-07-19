@@ -7,8 +7,8 @@
 //
 // Term-neutral by construction, so the reviewer portal can import it without breaking its clean gate.
 
-import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js';
-import { observeBudget } from './ratebudget.js';   // every response reports the remaining hourly budget — 304s included
+import { condScope, condHeaders, condGet, condPut, condDrop } from './condcache.js?v=f5d7c87';
+import { observeBudget } from './ratebudget.js?v=dbe477a';   // every response reports the remaining hourly budget — 304s included
 
 const _f = impl => impl || fetch;
 // Errors must stay classifiable by nethelpers.classifyGitHubError and advisor's is401, which regex-matches
