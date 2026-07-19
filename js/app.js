@@ -1,6 +1,6 @@
 import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount, isResolved } from './model.js?v=c284b81';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
-import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=ec910f6';
+import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=2ea57eb';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=d47929c';
 import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=c823c55';
 import { isOverleafLinked } from './overleaf.js?v=5e5b959';   // tokenless B1: recognize an Overleaf-bridge-linked project
