@@ -390,7 +390,7 @@ export async function launch() {
       </div>` : '';
     root.innerHTML = `<div class="fn-shell">
       <header class="fn-top">
-        <span class="fn-brand">${MARK(cfg.brand.accent)}<span class="fn-word">${esc(cfg.brand.name)}</span></span>
+        <span class="fn-brand">${MARK('var(--accent)')}<span class="fn-word">${esc(cfg.brand.name)}</span></span>
         ${userbar}
       </header>
       <main class="fn-main"><div class="fn-rule" aria-hidden="true">${GUTTER}</div>${inner}</main>
@@ -531,7 +531,7 @@ export async function launch() {
     frame(`<div class="fn-head fn-reveal"><span class="fn-eyebrow">Your library</span><h1 class="fn-h1">Documents in review</h1></div>
       ${list.length
         ? shelfHtml
-        : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK(cfg.brand.accent)}</div>
+        : `${stepperHtml(2)}<div class="fn-empty fn-reveal"><div class="fn-empty-mark">${MARK('var(--accent)')}</div>
              <h2 class="fn-empty-h">Your shelf is empty</h2>
              <p class="fn-empty-p">Point Footnote at a LaTeX or Word document and invite your reviewers. It becomes the first book on your shelf.</p>
              <button class="fn-btn fn-btn-primary" id="fn-new2">Add your first document</button></div>`}
