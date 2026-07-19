@@ -1229,18 +1229,14 @@ function renderTopbar(){ const m=chMeta(current);
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-help" title="How reviewing works"><i class="ti ti-help-circle"></i></button>
-      <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="icbtn" id="btn-export" title="Download this ${UNIT} (Word · Markdown)"><i class="ti ti-file-export"></i></button>
-      <button class="icbtn" id="btn-notify" title="Email notifications"><i class="ti ti-bell"></i></button>
-      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>
+      ${settingsBtn()}
     </div>`;
   document.getElementById('btn-home').onclick=enterHome;
   document.getElementById('chsel').onclick=openChapterMenu;
-  document.getElementById('btn-notify').onclick=openNotifyPrefs;
+  wireSettingsBtn();
   document.getElementById('btn-help').onclick=()=>window.open('tutorials/walkthrough.html','_blank','noopener');
-  document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
   document.getElementById('btn-export').onclick=()=>exportDialog(current);
-  document.getElementById('btn-key').onclick=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
   const si=document.getElementById('search'); si.addEventListener('keydown',e=>{ if(e.key==='Enter') runSearch(si.value); if(e.key==='Escape'){ si.value=''; clearSearch(); } });
 }
 function openChapterMenu(){ const old=document.getElementById('chmenu'); if(old){ old.remove(); return; } const menu=document.createElement('div'); menu.id='chmenu';
@@ -1298,14 +1294,10 @@ function reviewHeaderHtml(releasedCount){
 function enterHome(){
   stopLiveSync();
   document.getElementById('nav').style.display='none'; document.getElementById('comments').style.display='none';
-  document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:9px">${allDocsLink()}${brandMark('#2c64c4')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}<span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
-     <button class="icbtn" id="btn-theme" style="margin-left:auto"><i class="ti ti-moon"></i></button>
-     <button class="icbtn" id="btn-notify" title="Email notifications"><i class="ti ti-bell"></i></button>
-     <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button>`;
-  document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-notify').onclick=openNotifyPrefs;
-  const askKey=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
-  document.getElementById('btn-key').onclick=askKey;
+  document.getElementById('topbar').innerHTML=`<span style="display:inline-flex;align-items:center;gap:9px">${allDocsLink()}${brandMark('var(--accent)')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}<span style="font-size:13px;color:var(--text-2)">· ${escapeHtml(ADVISOR.name)}</span></span>
+     ${settingsBtn('margin-left:auto')}`;
+  wireSettingsBtn();
+  const askKey=openKeyDialog;
   // first-run: no access key yet — prompt for it before anything else
   if(!tok()){
     read.innerHTML=`<div class="empty"><i class="ti ti-lock" style="font-size:24px;color:var(--text-3)"></i>
@@ -1362,7 +1354,7 @@ function enterHome(){
       <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px">${UNIT.toUpperCase()}S FOR REVIEW</div>
       ${list.length?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${cards}</div>`:`<div class="empty" style="margin:6vh auto"><i class="ti ti-mail-fast" style="font-size:26px;color:var(--text-3)"></i>
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
-        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div><div id="adv-appearance"></div></div>`;
+        <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg=>tg.onclick=()=>{
     const grid=tg.parentElement.querySelector('.appx-home-grid');
@@ -1374,19 +1366,6 @@ function enterHome(){
   document.getElementById('outline-card')?.addEventListener('click', loadOutline);   // absent when the doc has no outline (e.g. a journal article)
   document.getElementById('responses-card')?.addEventListener('click', loadResponses);
   renderAdvisorDownloads();
-  renderAdvAppearance();
-}
-// Reviewer accent picker (same per-viewer mechanism as the owner). A small swatch row on the home view.
-function renderAdvAppearance(){
-  const box=document.getElementById('adv-appearance'); if(!box) return;
-  const draw=()=>{
-    box.innerHTML=`<div style="margin-top:26px;border-top:.5px solid var(--border);padding-top:16px">
-      <div style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:11px">APPEARANCE</div>
-      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:10px">Accent color — saved in this browser.</div>
-      ${swatchesHtml(storedAccent(localStorage))}</div>`;
-    box.querySelectorAll('.ac-swatch').forEach(b=>b.onclick=()=>{ const id=b.dataset.accent; applyAccent(id,document); saveAccent(localStorage,id); draw(); });
-  };
-  draw();
 }
 // ---------- responses to your comments (read-only; gated by the owner's release toggle) ----------
 async function loadResponses(){
@@ -1576,11 +1555,9 @@ function renderOutlineTopbar(){
     <button class="chsel" id="chsel" style="cursor:default"><i class="ti ti-list-tree"></i><span>Proposed outline</span></button>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
-      <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
-      <button class="icbtn" id="btn-key" title="Access key"><i class="ti ti-key"></i></button></div>`;
+      ${settingsBtn()}</div>`;
   document.getElementById('btn-home').onclick=enterHome;
-  document.getElementById('btn-theme').onclick=()=>{ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme',document.documentElement.classList.contains('dark')?'dark':'light'); };
-  document.getElementById('btn-key').onclick=async()=>{ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); };
+  wireSettingsBtn();
 }
 function renderOutline(data){
   const cnt=(label,sec)=>review.comments.filter(c=>c.anchor?.quote===label && c.anchor?.section===sec && !_isArchived(c)).length;   // ACTIVE only — a resolved comment must not light the node badge
@@ -1736,11 +1713,46 @@ function setupMobileSheet(){
 const RVH_SPINES = ['#2c64c4','#b5643c','#4a7c59','#7a4b73','#c08a2d','#2f7d80','#93313e'];
 function _rawRecents(){ try { const v = JSON.parse(_store.get(recentsKey()) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
 function recordRecent(entry){ try { _store.set(recentsKey(), JSON.stringify(recentsAdd(_rawRecents(), entry))); } catch(e){} }
-function reviewerPill(){ return `<span style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:#2c64c4;background:rgba(44,100,196,.12);border:1px solid rgba(44,100,196,.32);border-radius:20px;padding:2px 8px;white-space:nowrap">Reviewer</span>`; }
+// ---------- settings dropdown: theme, accent, notifications and the access key in one tucked-away menu ----------
+function settingsBtn(extra=''){ return `<button class="icbtn" id="btn-settings" title="Settings"${extra?` style="${extra}"`:''}><i class="ti ti-settings"></i></button>`; }
+function toggleAdvTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); }
+async function openKeyDialog(){ applyKeyChoice(await keyModal({ current:tok()||'', allowClear:true, title:'Your access key' })); }
+function openSettingsMenu(){
+  const old=document.getElementById('rev-settings'); if(old){ old.remove(); return; }
+  const btn=document.getElementById('btn-settings'); if(!btn) return;
+  const r=btn.getBoundingClientRect();
+  const m=document.createElement('div'); m.id='rev-settings';
+  m.style.cssText=`position:fixed;top:${Math.round(r.bottom+8)}px;right:${Math.max(12,Math.round(window.innerWidth-r.right))}px;z-index:9000;background:var(--bg);border:.5px solid var(--border-2);border-radius:11px;box-shadow:0 14px 36px rgba(0,0,0,.17);padding:12px 14px;min-width:264px`;
+  const row='display:flex;align-items:center;gap:9px;width:100%;background:none;border:0;padding:7px 8px;border-radius:7px;cursor:pointer;font:inherit;font-size:13px;color:var(--text);text-align:left';
+  const hdr='font-size:10px;letter-spacing:.07em;color:var(--text-3);font-weight:600;margin:2px 0 7px';
+  const dark=document.documentElement.classList.contains('dark');
+  m.innerHTML=`<div style="${hdr}">APPEARANCE</div>
+    <button id="rs-theme" style="${row}"><i class="ti ti-${dark?'sun':'moon'}" style="width:16px"></i>${dark?'Light mode':'Dark mode'}</button>
+    <div style="font-size:12px;color:var(--text-3);margin:11px 0 8px 1px">Accent color</div>
+    <div id="rs-accent">${swatchesHtml(storedAccent(localStorage))}</div>
+    <div style="border-top:.5px solid var(--border);margin:13px 0 9px"></div>
+    <button id="rs-notify" style="${row}"><i class="ti ti-bell" style="width:16px"></i>Email notifications</button>
+    <button id="rs-key" style="${row}"><i class="ti ti-key" style="width:16px"></i>Access key</button>`;
+  document.body.appendChild(m);
+  m.querySelectorAll('button').forEach(b=>{ b.onmouseenter=()=>b.style.background='var(--bg-3,rgba(127,127,127,.10))'; b.onmouseleave=()=>b.style.background='none'; });
+  const paintSwatches=()=>{
+    const box=m.querySelector('#rs-accent'); box.innerHTML=swatchesHtml(storedAccent(localStorage));
+    box.querySelectorAll('.ac-swatch').forEach(s=>s.onclick=()=>{ const id=s.dataset.accent; applyAccent(id,document); saveAccent(localStorage,id); paintSwatches(); });
+  };
+  paintSwatches();
+  m.querySelector('#rs-theme').onclick=()=>{ toggleAdvTheme(); m.remove(); openSettingsMenu(); };
+  m.querySelector('#rs-notify').onclick=()=>{ m.remove(); openNotifyPrefs(); };
+  m.querySelector('#rs-key').onclick=()=>{ m.remove(); openKeyDialog(); };
+  setTimeout(()=>document.addEventListener('click',function h(e){
+    if(!m.contains(e.target) && !btn.contains(e.target)){ m.remove(); document.removeEventListener('click',h); }
+  }),0);
+}
+function wireSettingsBtn(){ const b=document.getElementById('btn-settings'); if(b) b.onclick=e=>{ e.stopPropagation(); openSettingsMenu(); }; }
+function reviewerPill(){ return `<span style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);border-radius:20px;padding:2px 8px;white-space:nowrap">Reviewer</span>`; }
 function allDocsLink(){ return `<a href="advisor.html" title="All documents shared with you" style="font-size:13px;color:var(--text-2);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;white-space:nowrap">← All documents</a>`; }
 function _relDays(ts){ if(!ts) return ''; const d=Math.floor((Date.now()-ts)/86400000); return d<=0?'today':d===1?'yesterday':d<7?`${d} days ago`:d<14?'last week':`${Math.floor(d/7)} weeks ago`; }
 const RVH_STYLE = `<style id="rvh-style">
-  .rvh{--a:#2c64c4;--str:#4a7c59;--ink:#211f1a;--faint:#a49e90;--ln:#e4dfd2;--serif:"Fraunces",Georgia,serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+  .rvh{--a:var(--accent);--str:#4a7c59;--ink:#211f1a;--faint:#a49e90;--ln:#e4dfd2;--serif:"Fraunces",Georgia,serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
     max-width:900px;margin:0 auto;padding:30px 24px 80px;color:var(--ink)}
   .rvh-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--a)}
   .rvh-h1{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.02em;margin:3px 0 26px}
@@ -1760,7 +1772,7 @@ const RVH_STYLE = `<style id="rvh-style">
 </style>`;
 function _homeTopbar(name){
   document.getElementById('topbar').innerHTML =
-    `<span style="display:inline-flex;align-items:center;gap:9px">${brandMark('#2c64c4')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}</span>`
+    `<span style="display:inline-flex;align-items:center;gap:9px">${brandMark('var(--accent)')}<strong style="font-size:16px;font-weight:600">Footnote</strong>${reviewerPill()}</span>`
     + (name ? `<span style="margin-left:auto;font-size:13px;color:var(--text-2)">Reviewing as <b style="font-weight:600">${escapeHtml(name)}</b></span>` : '');
 }
 // The author's display name for "shared by": their GitHub profile name (public /users/<login>), cached
@@ -1810,7 +1822,7 @@ function renderReviewerHome(){
   if (nav) nav.style.display = 'none'; if (cm) cm.style.display = 'none';
   const head = `<span class="rvh-eyebrow">Shared with you</span><h1 class="rvh-h1">Documents to review</h1>`;
   if (!list.length){
-    read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-empty">${brandMark('#2c64c4')}
+    read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-empty">${brandMark('var(--accent)')}
       <div style="font-size:16px;font-weight:500;margin:12px 0 6px;color:var(--ink)">No documents yet</div>
       <div style="font-size:13px;line-height:1.6">Open the invite link from your email and the document appears here. After that, this is your home for every document shared with you.</div></div></div>`;
     return;
@@ -1968,8 +1980,8 @@ async function checkVersion(){
     if (!r || !r.ok) return;
     if (isStale(_BUILD, latestFromHtml(await r.text(), 'advisor.js')) && !document.getElementById('updbar')){
       const b = document.createElement('div'); b.id = 'updbar';
-      b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;background:#2c64c4;color:#fff;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:9px 14px;text-align:center';
-      b.innerHTML = 'A newer version of Footnote is available. <button id="updref" style="margin-left:8px;background:#fff;color:#2c64c4;border:0;border-radius:6px;padding:3px 11px;font:inherit;font-weight:600;cursor:pointer">Refresh</button>';
+      b.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:9998;background:var(--accent);color:#fff;font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;padding:9px 14px;text-align:center';
+      b.innerHTML = 'A newer version of Footnote is available. <button id="updref" style="margin-left:8px;background:#fff;color:var(--accent);border:0;border-radius:6px;padding:3px 11px;font:inherit;font-weight:600;cursor:pointer">Refresh</button>';
       document.body.appendChild(b);
       const rb = document.getElementById('updref'); if (rb) rb.onclick = () => location.reload();
     }
