@@ -10,7 +10,7 @@ import { livePollDelay } from './polldelay.js?v=d6ff0d6';   // one cadence polic
 import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate } from './accent.js?v=f797986';   // per-viewer accent color (theme-only; no assistant)
+import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=f797986';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
@@ -1751,7 +1751,7 @@ function openSettingsMenu(){
     box.querySelectorAll('.ac-swatch').forEach(s=>s.onclick=()=>{ chooseAccent(s.dataset.accent,document,localStorage); paintSwatches(); });
   };
   paintSwatches();
-  m.querySelector('#rs-theme').onclick=()=>{ toggleAdvTheme(); m.remove(); openSettingsMenu(); };
+  m.querySelector('#rs-theme').onclick=withColorEasterEgg((e)=>{ toggleAdvTheme(); m.remove(); if(!(e&&e.altKey)) openSettingsMenu(); });
   m.querySelector('#rs-notify').onclick=()=>{ m.remove(); openNotifyPrefs(); };
   m.querySelector('#rs-key').onclick=()=>{ m.remove(); openKeyDialog(); };
   setTimeout(()=>document.addEventListener('click',function h(e){

@@ -121,3 +121,25 @@ test('hueShift rotates the hue and a full turn returns the original color', () =
   assert.notEqual(hueShift(c, 180).toLowerCase(), c);
   assert.equal(Math.round(hexToHsl(hueShift(c, 90)).h - hexToHsl(c).h), 90);
 });
+
+// --------------------------------------------------------------- alt-triple-click easter egg
+import { AltTripleClick } from '../js/accent.js';
+
+test('AltTripleClick fires on 3 alt-clicks within the window, and only then', () => {
+  let t = 1000; const now = () => t;
+  const d = new AltTripleClick(600, now);
+  const click = (alt, dt = 0) => { t += dt; return d.hit(alt); };
+  assert.equal(click(true), false);
+  assert.equal(click(true, 100), false);
+  assert.equal(click(true, 100), true);          // 3rd alt-click within 600ms → fire
+  assert.equal(click(true, 100), false);         // counter resets after firing
+});
+
+test('AltTripleClick ignores non-alt clicks and resets when they are too slow', () => {
+  let t = 0; const d = new AltTripleClick(500, () => t);
+  assert.equal(d.hit(true), false);
+  t += 100; assert.equal(d.hit(false), false);   // a plain click breaks the streak
+  t += 100; assert.equal(d.hit(true), false);    // streak restarts
+  t += 100; assert.equal(d.hit(true), false);
+  t += 900; assert.equal(d.hit(true), false);    // too slow → not a triple (this is only #1 again)
+});
