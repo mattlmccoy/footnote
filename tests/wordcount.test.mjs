@@ -29,3 +29,32 @@ test('countWords: nested reference divs stripped whole + chars with spaces (engi
   assert.equal(countWords(html).words, 4);                                   // only "real prose words here"
   assert.equal(countWords('<p>Hello brave new world</p>').chars, 'Hello brave new world'.length);   // WITH spaces
 });
+
+// ---- filling in counts for units the author hasn't opened (the "0 words" rows) ----
+import { missingCountIds, mergeCounts } from '../js/wordcount.js';
+
+test('missingCountIds finds units with no usable count, preserving order', () => {
+  const units = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  const counts = { a: { words: 100, chars: 500 }, b: { words: 0, chars: 0 }, c: null };
+  // 0 is a real possible count for an empty unit, but it is also what an unrendered unit shows;
+  // treat only a missing/!=number words as "not counted yet" so a genuine 0 isn't refetched forever
+  assert.deepEqual(missingCountIds(units, counts), ['c', 'd']);
+  assert.deepEqual(missingCountIds(units, {}), ['a', 'b', 'c', 'd']);
+  assert.deepEqual(missingCountIds([], counts), []);
+});
+
+test('mergeCounts: the engine file wins, the local cache only fills gaps', () => {
+  const engine = { a: { words: 10, chars: 50 } };                 // authoritative (written at render)
+  const cached = { a: { words: 999, chars: 999 }, b: { words: 20, chars: 80 } };
+  assert.deepEqual(mergeCounts(engine, cached), {
+    a: { words: 10, chars: 50 },                                   // engine value survives
+    b: { words: 20, chars: 80 },                                   // cache fills the gap
+  });
+});
+
+test('mergeCounts tolerates missing / malformed sides', () => {
+  assert.deepEqual(mergeCounts(null, null), {});
+  assert.deepEqual(mergeCounts({ a: { words: 1, chars: 2 } }, null), { a: { words: 1, chars: 2 } });
+  assert.deepEqual(mergeCounts(null, { a: { words: 1, chars: 2 } }), { a: { words: 1, chars: 2 } });
+  assert.deepEqual(mergeCounts({ a: 'junk' }, { a: { words: 5, chars: 6 } }), { a: { words: 5, chars: 6 } });
+});

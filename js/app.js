@@ -20,7 +20,7 @@ import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSh
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=bb27716';
 import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
-import { formatCount, totalWords, totalChars, countWords } from './wordcount.js?v=068da19';
+import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=068da19';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
@@ -179,7 +179,19 @@ let CHAPTERS = await loadChapters(localStorage.getItem('ghpat'));
 const tok = () => localStorage.getItem('ghpat');   // MUST be defined before loadCounts() runs at boot (line below) — a later const here = temporal-dead-zone crash that blanks the whole app
 // Per-unit word/char counts, produced at render time (content/counts.json). One cheap fetch; absence is fine.
 let COUNTS = {};
-async function loadCounts(){ const t = tok(); if (!t) return; try { const r = await getJson(t, dpath('content/counts.json')); COUNTS = (r.json && typeof r.json === 'object') ? r.json : {}; } catch(e){ COUNTS = {}; } }
+// Counts the author's own browser has computed (client fallback / Count all). Persisted because every
+// view swap rebuilds #read from scratch, so an in-memory count died the moment you went back home and
+// every unit read "0 words" again until you re-opened it. The engine's counts.json still wins when present.
+const countsCacheKey = () => `fn:counts:${DATA_REPO}:${dpath('')}`;
+function loadCachedCounts(){ try { return JSON.parse(localStorage.getItem(countsCacheKey()) || '{}') || {}; } catch(e){ return {}; } }
+function saveCachedCounts(){ try { localStorage.setItem(countsCacheKey(), JSON.stringify(COUNTS)); } catch(e){} }
+async function loadCounts(){
+  const cached = loadCachedCounts();
+  const t = tok(); if (!t){ COUNTS = cached; return; }
+  let engine = {};
+  try { const r = await getJson(t, dpath('content/counts.json')); engine = (r.json && typeof r.json === 'object') ? r.json : {}; } catch(e){ engine = {}; }
+  COUNTS = mergeCounts(engine, cached);
+}
 await loadCounts();
 const chMeta = id => CHAPTERS.find(c => c.id === id) || (id === '__outline__' ? { n:'·', title:'Proposed outline' } : id === '__whole__' ? { n:'·', title:'Whole document' } : { n:'?', title:id });
 // ---------- whole-document ("read the whole paper") view state ----------
@@ -460,7 +472,7 @@ function renderDoc(fragment){
   if (!previewing) loadSrcmapPencils(current);
   if (current && current !== '__whole__' && !previewing && COUNTS[current]?.words == null){
     // count the RAW fragment (pre-KaTeX) — the live #doc is post-KaTeX and would inflate the count.
-    try { COUNTS[current] = countWords(fragment); } catch(e){}
+    try { COUNTS[current] = countWords(fragment); saveCachedCounts(); } catch(e){}
   }
   if (!previewing) renderWordCountFab();
 }
@@ -3188,11 +3200,34 @@ function toggleHelp(){
 }
 // Word-style count panel (⋯ → Word count): per-unit words/chars (rendered prose, refs/footnotes/equations
 // excluded — see wordcount.js) plus a Total row. Reuses the shared openModal dialog chrome.
+// Count every unit the author hasn't opened, straight from the built HTML — no cloud render, no writes.
+// Reads are conditional (ETag), so the first pass costs one request per unit and repeats cost nothing.
+// onProgress reports (done, total) so a 14-unit document doesn't look frozen.
+async function countAllUnits(onProgress){
+  const t = tok(); if (!t) return { counted: 0, failed: 0 };
+  const ids = missingCountIds(CHAPTERS, COUNTS);
+  let counted = 0, failed = 0, done = 0;
+  for (const id of ids){
+    try {
+      const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/' + id + '.html')}`,
+        { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } });
+      if (r.ok){ COUNTS[id] = countWords(await r.text()); counted++; }
+      else failed++;                                   // not built yet: leave it uncounted, don't fake a 0
+    } catch(e){ failed++; }
+    onProgress && onProgress(++done, ids.length);
+  }
+  if (counted) saveCachedCounts();
+  return { counted, failed };
+}
+
 function openWordCountPanel(){
   const rows = CHAPTERS.map(c => { const wc = COUNTS[c.id] || { words:0, chars:0 };
+    const known = typeof COUNTS[c.id]?.words === 'number';
+    // an uncounted unit shows an em dash, not "0" — a confident zero for unread prose is a false reading
+    const w = known ? wc.words.toLocaleString('en-US') : '—', ch = known ? (wc.chars||0).toLocaleString('en-US') : '—';
     return `<tr><td style="padding:4px 0">${escapeHtml(unitLabel(c, UNIT))} · ${escapeHtml(shortTitle(c.title))}</td>
-      <td style="text-align:right;font-variant-numeric:tabular-nums">${(wc.words||0).toLocaleString('en-US')}</td>
-      <td style="text-align:right;color:var(--text-3);font-variant-numeric:tabular-nums">${(wc.chars||0).toLocaleString('en-US')}</td></tr>`; }).join('');
+      <td style="text-align:right;font-variant-numeric:tabular-nums${known ? '' : ';color:var(--text-3)'}">${w}</td>
+      <td style="text-align:right;color:var(--text-3);font-variant-numeric:tabular-nums">${ch}</td></tr>`; }).join('');
   const box = document.createElement('div');
   box.innerHTML = `
     <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px">Rendered prose — references, footnotes, and equations excluded.</div>
@@ -3203,7 +3238,21 @@ function openWordCountPanel(){
         <td style="padding-top:6px">Total</td>
         <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalWords(COUNTS).toLocaleString('en-US')}</td>
         <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalChars(COUNTS).toLocaleString('en-US')}</td></tr></tfoot></table>`;
-  openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, [{ label:'Close', primary:true, onClick: close => close() }]);
+  const pending = missingCountIds(CHAPTERS, COUNTS).length;
+  const note = document.createElement('div');
+  note.style.cssText = 'font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px';
+  note.textContent = pending ? `${pending} ${pending === 1 ? UNIT : UNIT + 's'} not counted yet.` : '';
+  box.appendChild(note);
+  const buttons = [{ label:'Close', primary:true, onClick: close => close() }];
+  if (pending) buttons.unshift({ label:'Count all', onClick: async (close, btn) => {
+    if (btn){ btn.disabled = true; btn.textContent = 'Counting…'; }
+    const res = await countAllUnits((done, total) => { note.textContent = `Counting ${done} of ${total}…`; });
+    if (btn){ btn.disabled = false; btn.textContent = 'Count all'; }
+    close();
+    openWordCountPanel();                              // reopen with the filled-in table
+    if (res.failed) flash(`Counted ${res.counted}. ${res.failed} not built yet — render them to include.`);
+  }});
+  openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, buttons);
 }
 // Floating word-count tool: a small pill on a chapter reading view showing this unit's count; click opens the
 // full panel. Appended INSIDE #read, so ANY view that replaces read.innerHTML (home, settings, reviewers,
@@ -3276,7 +3325,8 @@ function openModal(title, body, actions = []) {
     if (_onModalEsc && !_modalStack.length){ document.removeEventListener('keydown', _onModalEsc); _onModalEsc = null; } };
   back.querySelector('.modal-x').onclick = close;
   back.onclick = e => { if (e.target === back) close(); };
-  actions.forEach((a, i) => { const b = back.querySelector(`.modal-foot [data-i="${i}"]`); if (b) b.onclick = () => a.onClick(close); });
+  // handlers get the button too, so a long-running action can disable itself and show progress
+  actions.forEach((a, i) => { const b = back.querySelector(`.modal-foot [data-i="${i}"]`); if (b) b.onclick = () => a.onClick(close, b); });
   document.body.appendChild(back);
   if (!_onModalEsc){ _onModalEsc = e => { if (e.key === 'Escape'){ const top = document.querySelector(`.modal-backdrop[data-mid="${topModal(_modalStack)}"]`); top?.querySelector('.modal-x')?.click(); } };
     document.addEventListener('keydown', _onModalEsc); }
