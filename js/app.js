@@ -2428,6 +2428,7 @@ function enterHome(){
   document.getElementById('btn-export-menu').onclick = openExportMenu;
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
   read.innerHTML = homeHtml();
+  renderHelpFab();   // the landing page has its own banner (not renderTopbar), so create the help button here too
   paintDots();   // color the setup-card + inbox status dots to the current connection state
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg => tg.onclick = () => {
