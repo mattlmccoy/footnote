@@ -20,7 +20,7 @@ import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSh
 import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, renderBuiltStatus, emailTestOutcome, batchProgress, batchOutcome } from './owneradmin.js?v=bb27716';
 import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
-import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=068da19';
+import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=2bef567';
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
