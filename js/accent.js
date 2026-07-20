@@ -141,6 +141,12 @@ export function rainbowSweep(fromHex, toHex, t) {
   return hslToHex(a.h + dh * t, a.s + (b.s - a.s) * t, a.l + (b.l - a.l) * t);
 }
 
+// Rotate a colour's hue by `deg` degrees, keeping saturation/lightness. Pure.
+export function hueShift(hex, deg) {
+  const { h, s, l } = hexToHsl(hex);
+  return hslToHex(h + deg, s, l);
+}
+
 // ---- the cycler (DOM; browser-verified) ----
 let _timer = null, _raf = null, _obs = null, _cur = null, _inlineSet = false;
 const _mode = (d) => (d.documentElement.classList.contains('dark') ? 'dark' : 'light');
@@ -232,4 +238,35 @@ export function startMulticolor(doc) {
     }, CYCLE_MS - (Date.now() % CYCLE_MS) + 50);
   };
   schedule();
+}
+
+// ---- completion celebration ----
+// A one-off victory lap: sweep the accent a full turn around the hue wheel and land back on the
+// colour you started with, so nothing about your chosen accent actually changes. Works whatever
+// accent is active (including Multicolor), and afterwards the authoritative state is re-applied.
+let _celebRaf = null;
+export const CELEBRATE_MS = 2000;
+
+export function celebrate(doc, storage) {
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  if (!d || typeof getComputedStyle === 'undefined') return false;
+  if (_reduceMotion() || typeof requestAnimationFrame === 'undefined') return false;   // no flashing
+  const cs = getComputedStyle(d.documentElement);
+  const base = (cs.getPropertyValue('--accent') || '').trim();
+  const baseBg = (cs.getPropertyValue('--accent-bg') || '').trim();
+  if (!/^#[0-9a-f]{6}$/i.test(base)) return false;
+  const bgOk = /^#[0-9a-f]{6}$/i.test(baseBg);
+  if (_celebRaf) cancelAnimationFrame(_celebRaf);
+  const t0 = Date.now();
+  const step = () => {
+    const p = Math.min(1, (Date.now() - t0) / CELEBRATE_MS);
+    const deg = 360 * (p < 1 ? (1 - Math.pow(1 - p, 3)) : 1);   // ease-out: quick spin, gentle landing
+    setInline(d, hueShift(base, deg), bgOk ? hueShift(baseBg, deg) : undefined);
+    if (p < 1) { _celebRaf = requestAnimationFrame(step); return; }
+    _celebRaf = null;
+    clearInline(d);
+    applyAccent(storedAccent(storage || (typeof localStorage !== 'undefined' ? localStorage : null)), d);
+  };
+  _celebRaf = requestAnimationFrame(step);
+  return true;
 }

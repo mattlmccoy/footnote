@@ -28,7 +28,7 @@ import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
 import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=609b2d1';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
-import { readProgress } from './cardstats.js?v=cfa6c99';
+import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=cfa6c99';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
@@ -894,7 +894,7 @@ function buildNav(){
     a.querySelector('.nav-t').onclick = () => h.scrollIntoView({ behavior:'smooth', block:'start' });
     a.querySelector('.chk').onclick = e => { e.stopPropagation();
       if (review.read[h.id]) delete review.read[h.id]; else review.read[h.id] = true;
-      save(); syncUpSoon(); buildNav(); };
+      save(); syncUpSoon(); buildNav(); checkMilestones(); };
     nav.appendChild(a);
   });
   read.onscroll = () => { let cur = null; hs.forEach(h => { if (h.getBoundingClientRect().top < 140) cur = h.id; });
@@ -1061,7 +1061,19 @@ function loadMarkupThumb(el, path){
 let editingId = null, activeCommentId = null, resolvedOpen = false;
 let cFilter = { status:'all', tag:'all', sort:'doc' };
 const STATUS_ORDER = ['all','open','queued','staged','approved','answered','merged','declined','resolved'];
-const RESOLVED_STATES = new Set(['merged','declined','resolved']);   // terminal — fold into "Resolved (N)"
+const RESOLVED_STATES = new Set(['merged','declined','resolved']);
+// Completion celebration: a rainbow sweep when a chapter is finished (every section read, or every
+// comment resolved). Snapshot-compared so it fires at the moment of completion and never on load.
+let _msSnap = null, _msCh = null;
+function checkMilestones(){
+  try {
+    const now = chapterMilestones(review, c => RESOLVED_STATES.has(c.status));
+    if (_msCh !== current){ _msCh = current; _msSnap = now; return; }   // first look at this chapter: seed only
+    const fired = newMilestones(_msSnap, now);
+    _msSnap = now;
+    if (fired.read || fired.comments) celebrate(document, localStorage);
+  } catch(e){}
+}   // terminal — fold into "Resolved (N)"
 function docOrderIndex(){           // map comment id -> vertical position of its anchor in the doc
   const map = {}; const order = [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')];
   review.comments.forEach(c => { const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,30);
@@ -1119,6 +1131,7 @@ function renderComments(){
   }
   renderClaudeFindings(pane);
   renderAdvisorSection(pane);
+  checkMilestones();   // all comments resolved? celebrate
 }
 function buildCommentCard(c){
     const card = document.createElement('div'); card.className = 'ccard'; card.dataset.id = c.id;

@@ -110,3 +110,14 @@ test('the Multicolor swatch hints that clicking it again shuffles', () => {
   const html = swatchesHtml('multicolor');
   assert.match(html, /data-accent="multicolor"[^>]*shuffle/i);
 });
+
+// --------------------------------------------------------------- celebration sweep
+import { hueShift } from '../js/accent.js';
+
+test('hueShift rotates the hue and a full turn returns the original color', () => {
+  const c = '#2c64c4';
+  assert.equal(hueShift(c, 0).toLowerCase(), c);
+  assert.equal(hueShift(c, 360).toLowerCase(), c);
+  assert.notEqual(hueShift(c, 180).toLowerCase(), c);
+  assert.equal(Math.round(hexToHsl(hueShift(c, 90)).h - hexToHsl(c).h), 90);
+});

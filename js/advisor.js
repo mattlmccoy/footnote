@@ -23,7 +23,7 @@ import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote log
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
-import { readProgress } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
+import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a764ebc';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -690,7 +690,7 @@ function buildNav(){
     a.querySelector('.nav-t').onclick=()=>h.scrollIntoView({behavior:'smooth',block:'start'});
     a.querySelector('.chk').onclick=e=>{ e.stopPropagation();
       if(review.read[h.id]) delete review.read[h.id]; else review.read[h.id]=true;
-      markDirty(); buildNav(); };
+      markDirty(); buildNav(); checkMilestones(); };
     nav.appendChild(a); });
   read.onscroll=()=>{ let cur=null; hs.forEach(h=>{ if(h.getBoundingClientRect().top<140) cur=h.id; }); nav.querySelectorAll('a').forEach(a=>a.classList.toggle('active',a.dataset.sec===cur)); review.cursor={sec:cur}; clearTimeout(scrollT); scrollT=setTimeout(save,900); };
   read.onscroll();
@@ -1759,6 +1759,19 @@ function openSettingsMenu(){
   }),0);
 }
 function wireSettingsBtn(){ const b=document.getElementById('btn-settings'); if(b) b.onclick=e=>{ e.stopPropagation(); openSettingsMenu(); }; }
+// Completion celebration: a rainbow sweep when the reviewer finishes reading a chapter. Snapshot-
+// compared so it fires on completion, never on load. Comment resolution is the author's job, so the
+// resolved-predicate is always false here and only the read milestone can fire.
+let _msSnap = null, _msCh = null;
+function checkMilestones(){
+  try {
+    const now = chapterMilestones(review, () => false);
+    if (_msCh !== current){ _msCh = current; _msSnap = now; return; }
+    const fired = newMilestones(_msSnap, now);
+    _msSnap = now;
+    if (fired.read) celebrate(document, localStorage);
+  } catch(e){}
+}
 function reviewerPill(){ return `<span style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);border-radius:20px;padding:2px 8px;white-space:nowrap">Reviewer</span>`; }
 function allDocsLink(){ return `<a href="advisor.html" title="All documents shared with you" style="font-size:13px;color:var(--text-2);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;white-space:nowrap">← All documents</a>`; }
 function _relDays(ts){ if(!ts) return ''; const d=Math.floor((Date.now()-ts)/86400000); return d<=0?'today':d===1?'yesterday':d<7?`${d} days ago`:d<14?'last week':`${Math.floor(d/7)} weeks ago`; }
