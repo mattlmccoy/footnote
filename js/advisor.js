@@ -546,6 +546,7 @@ function renderWordCountFab(fragment){
   if (!read || !current) return;
   const wc = (COUNTS[current] && typeof COUNTS[current].words === 'number') ? COUNTS[current] : safeCount(fragment);
   if (!wc) return;
+  COUNTS[current] = wc;   // persist the fallback so the breakdown panel (which reads COUNTS) matches the pill
   const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count — click for the full breakdown';
   fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:flex;align-items:center;gap:7px;'
     + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'

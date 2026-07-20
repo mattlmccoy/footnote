@@ -18,6 +18,13 @@ test('advisor loads counts.json and renders the reading-view pill', () => {
   assert.match(adv, /renderWordCountFab|wc-fab/, 'reading view must show a word-count pill');
 });
 
+test('renderWordCountFab persists its fallback count into COUNTS so the panel matches the pill', () => {
+  // the reported bug: pill showed 396 words while the panel showed an em dash + Total 0, because the
+  // fallback count was computed only for the pill and never written where the panel reads it.
+  const fn = adv.slice(adv.indexOf('function renderWordCountFab'), adv.indexOf('function renderWordCountFab') + 900);
+  assert.match(fn, /COUNTS\[current\]\s*=/, 'the fallback count must be stored into COUNTS[current]');
+});
+
 test('the reviewer word-count pill is clickable and opens a breakdown panel (mirrors the author panel)', () => {
   assert.match(adv, /function openWordCountPanel/, 'reviewer needs a word-count panel');
   // the pill must actually wire a click to it — a display-only pill was the reported bug
