@@ -16,7 +16,7 @@ import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)
 import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
-import { initAccent } from './accent.js?v=1fb5404';   // per-viewer accent color (overrides the brand default)
+import { initAccent } from './accent.js?v=2326d13';   // per-viewer accent color (overrides the brand default)
 startNetWatch();
 showBuildTag(import.meta.url);
 
