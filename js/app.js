@@ -21,6 +21,7 @@ import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, ren
 import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=2bef567';
+import { helpFabRight } from './fablayout.js';   // help button sits beside the word-count pill
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
@@ -276,7 +277,6 @@ function renderTopbar(){
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
-      <button class="icbtn" id="btn-help" title="Guides &amp; help"><i class="ti ti-help-circle"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
@@ -285,13 +285,13 @@ function renderTopbar(){
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
   document.getElementById('chsel').onclick = openChapterMenu;
-  document.getElementById('btn-help').onclick = () => window.open('tutorials/index.html', '_blank', 'noopener');
   document.getElementById('btn-theme').onclick = toggleTheme;
   document.getElementById('btn-send').onclick = openSendMenu;
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-more').onclick = openMoreMenu;
   document.getElementById('btn-settings').onclick = () => openSettingsPage();
+  renderHelpFab();                          // body-level, so it outlives every view swap
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -3254,6 +3254,64 @@ function openWordCountPanel(){
   }});
   openModal('<i class="ti ti-abacus" style="margin-right:7px"></i>Word count', box, buttons);
 }
+// Floating help button — the single entry to the tutorials, mirroring the reviewer portal's corner button.
+// Appended to BODY (not #read) so it survives every view swap, and positioned to the LEFT of the
+// word-count pill so the two never overlap. Can be hidden from the ⋯ menu for anyone who finds it noisy.
+const HELP_FAB_KEY = 'fn:helpfab:hidden';
+function helpFabOn(){ try { return localStorage.getItem(HELP_FAB_KEY) !== '1'; } catch(e){ return true; } }
+function setHelpFabOn(on){ try { on ? localStorage.removeItem(HELP_FAB_KEY) : localStorage.setItem(HELP_FAB_KEY, '1'); } catch(e){} }
+
+function openHelpMenu(){
+  document.getElementById('helpmenu')?.remove();
+  const autoOff = tourSeen('tour-owner-v1');           // true = the tour won't auto-show for returning users
+  const m = document.createElement('div'); m.id = 'helpmenu';
+  const b = document.getElementById('help-fab');
+  const right = b ? (window.innerWidth - b.getBoundingClientRect().right) : 22;
+  m.style.cssText = `position:fixed;right:${right}px;bottom:64px;z-index:61;background:var(--bg);border:.5px solid var(--border-2);`
+    + 'border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:236px';
+  m.innerHTML = `
+    <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
+    <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
+    <div class="mmi" data-act="docs"><i class="ti ti-external-link"></i>Full documentation</div>
+    <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>`;
+  document.body.appendChild(m);
+  const acts = { tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
+    docs: () => window.open('tutorials/index.html', '_blank', 'noopener'),
+    tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
+      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } } };
+  m.querySelectorAll('.mmi').forEach(el => {
+    el.onmouseenter = () => el.style.background = 'var(--bg-3)';
+    el.onmouseleave = () => el.style.background = 'transparent';
+    el.onclick = () => { m.remove(); acts[el.dataset.act]?.(); };
+  });
+  setTimeout(() => document.addEventListener('click', function away(e){
+    if (!m.contains(e.target) && e.target.id !== 'help-fab'){ m.remove(); document.removeEventListener('click', away); }
+  }), 0);
+}
+
+function renderHelpFab(){
+  document.getElementById('help-fab')?.remove();
+  document.getElementById('helpmenu')?.remove();
+  if (!helpFabOn()) return;
+  const b = document.createElement('button');
+  b.id = 'help-fab'; b.title = 'Guides & tutorials'; b.setAttribute('aria-label', 'Guides and tutorials');
+  b.style.cssText = 'position:fixed;bottom:20px;z-index:60;width:34px;height:34px;border-radius:50%;'
+    + 'border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);cursor:pointer;'
+    + 'display:flex;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,.12)';
+  b.innerHTML = '<i class="ti ti-help-circle" style="font-size:15px"></i>';
+  b.onclick = e => { e.stopPropagation(); document.getElementById('helpmenu') ? document.getElementById('helpmenu').remove() : openHelpMenu(); };
+  document.body.appendChild(b);
+  positionHelpFab();
+}
+
+// Keep clear of the word-count pill, whose width changes with its label ("2,244 words" vs "12,480 words").
+function positionHelpFab(){
+  const b = document.getElementById('help-fab'); if (!b) return;
+  const pill = document.getElementById('wc-fab');
+  b.style.right = helpFabRight(pill ? pill.offsetWidth : 0) + 'px';
+}
+window.addEventListener('resize', positionHelpFab);
+
 // Floating word-count tool: a small pill on a chapter reading view showing this unit's count; click opens the
 // full panel. Appended INSIDE #read, so ANY view that replaces read.innerHTML (home, settings, reviewers,
 // outline, whole-doc, history) auto-removes it — no per-view hide bookkeeping to get wrong.
@@ -3267,6 +3325,7 @@ function renderWordCountFab(){
   const wc = COUNTS[current];
   fab.innerHTML = `<i class="ti ti-abacus" style="font-size:14px;color:var(--accent)"></i>${formatCount(wc ? wc.words : totalWords(COUNTS))}`;
   read.appendChild(fab);
+  positionHelpFab();                       // pill width just changed — shift the help button clear of it
 }
 function openMoreMenu(){
   document.getElementById('moremenu')?.remove();
@@ -3278,20 +3337,17 @@ function openMoreMenu(){
   menu.innerHTML = `
     <div class="mmi" data-act="release"><i class="ti ti-users"></i>Reviewers…</div>
     ${olLinked ? `<div class="mmi" data-act="overleaf"><i class="ti ti-refresh"></i>Refresh from Overleaf</div>` : ''}
-    <div class="mmi" data-act="wordcount"><i class="ti ti-abacus"></i>Word count</div>
     <div class="mmi" data-act="help"><i class="ti ti-keyboard"></i>Buttons & shortcuts</div>
     <div class="mmi" data-act="token"><i class="ti ti-key"></i>Owner key${hasTok?' <span style="color:var(--success);font-size:11px;margin-left:auto">connected</span>':' <span style="color:var(--warn);font-size:11px;margin-left:auto">not set</span>'}</div>
-    <div class="mmi" data-act="tour"><i class="ti ti-help-circle"></i>Take the setup tour</div>
-    <div class="mmi" data-act="tourchapter"><i class="ti ti-book-2"></i>Reviewing a chapter (demo)</div>
-    <div class="mmi" data-act="tourtoggle"><i class="ti ti-${autoOff?'eye-off':'eye-check'}"></i>Auto-show tour: ${autoOff?'off — turn on':'on — turn off'}</div>
-    <div class="mmi" data-act="assistant"><i class="ti ti-settings"></i>AI assistant: ${assistantOn()?'on':'off'} — in Settings</div>
+    <div class="mmi" data-act="helpfab"><i class="ti ti-${helpFabOn()?'eye-check':'eye-off'}"></i>Help button: ${helpFabOn()?'shown — hide':'hidden — show'}</div>
     <div class="mmi" data-act="dash"><i class="ti ti-layout-dashboard"></i>Back to dashboard</div>`;
   document.body.appendChild(menu);
-  const acts = { release: openReleasePanel, wordcount: openWordCountPanel, help: toggleHelp, token: () => openSettingsPage('access'), dash: () => location.href = './index.html', tour: launchOwnerTour, tourchapter: launchOwnerChapterTour,
-    tourtoggle: () => { if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour turned on — it\'ll show on next load.'); }
-      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } },
-    // Both the access token and the AI master switch now live on the dedicated Settings page.
-    assistant: () => openSettingsPage('ai'), overleaf: refreshFromOverleaf };
+  // Word count lives on its own pill (bottom right of a reading view) and the AI switch lives in Settings,
+  // so neither needs a row here. The tutorials moved to the floating help button; this menu only decides
+  // whether that button is on screen.
+  const acts = { release: openReleasePanel, help: toggleHelp, token: () => openSettingsPage('access'),
+    dash: () => location.href = './index.html', overleaf: refreshFromOverleaf,
+    helpfab: () => { setHelpFabOn(!helpFabOn()); renderHelpFab(); flash(helpFabOn() ? 'Help button shown.' : 'Help button hidden — turn it back on in this menu.'); } };
   menu.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
     el.onclick = () => { menu.remove(); acts[el.dataset.act](); }; });
   setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id!=='btn-more' && !e.target.closest?.('#btn-more')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
