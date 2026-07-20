@@ -87,29 +87,20 @@ const OWNER_TOUR = [
   { sel:'#btn-outline', title:'Share your outline early', body:`Post your planned structure so reviewers can comment on it before the full ${UNIT}s are ready.` },
   { sel:'#btn-export-menu', title:'Export your review work', body:'When you\'re ready, take your reviewers\' comments to Overleaf as an edit worklist, or generate a point-by-point response letter.' },
   { sel:'#dl-export-all', title:'Export the document', body:`Download the whole ${DOC}, or any single ${UNIT}, as Word or Markdown with comments and tracked changes included.` },
-  { sel:'#btn-tour', title:'Replay anytime', body:`Reopen this tour or turn auto-show off from here. Open any ${UNIT}, then use the More menu for the reviewing walkthrough.` },
+  { sel:'#help-fab', title:'Replay anytime', body:`Every guide lives here: this tour, the reviewing walkthrough, the full documentation, and the auto-show switch. The More menu can hide the button itself.` },
 ];
-// Small menu on the home "?" button: replay the tour, or toggle auto-show for first-time users.
-function openTourMenu(){
-  document.getElementById('tourmenu')?.remove();
-  const btn = document.getElementById('btn-tour'); if (!btn) return;
-  const r = btn.getBoundingClientRect();
-  const m = document.createElement('div'); m.id = 'tourmenu';
-  m.style.cssText = `position:absolute;top:${r.bottom+6}px;right:${Math.max(8, window.innerWidth-r.right)}px;z-index:46;background:var(--bg);border:.5px solid var(--border-2);border-radius:var(--r-md);box-shadow:0 10px 30px rgba(0,0,0,.16);padding:6px;min-width:230px`;
-  const off = tourSeen('tour-owner-v1');
-  m.innerHTML = `<div class="mmi" data-a="run"><i class="ti ti-help-circle"></i>Take the setup tour</div>
-    <div class="mmi" data-a="chapter"><i class="ti ti-book-2"></i>Reviewing a ${UNIT} (demo)</div>
-    <div class="mmi" data-a="toggle"><i class="ti ti-${off?'eye-off':'eye-check'}"></i>Auto-show for new users: ${off?'off':'on'}</div>`;
-  document.body.appendChild(m);
-  m.querySelectorAll('.mmi').forEach(el => { el.onmouseenter = () => el.style.background='var(--bg-3)'; el.onmouseleave = () => el.style.background='transparent';
-    el.onclick = () => { m.remove();
-      if (el.dataset.a === 'run') launchOwnerTour();
-      else if (el.dataset.a === 'chapter') launchOwnerChapterTour();
-      else if (tourSeen('tour-owner-v1')){ localStorage.removeItem('tour-owner-v1'); flash('Auto-tour on — it\'ll show on next load.'); }
-      else { markTourSeen('tour-owner-v1'); flash('Auto-tour turned off.'); } }; });
-  setTimeout(() => document.addEventListener('click', function h(e){ if (!m.contains(e.target) && e.target.id!=='btn-tour' && !e.target.closest?.('#btn-tour')){ m.remove(); document.removeEventListener('click', h); } }), 0);
+// The home "?" button and its menu are gone: the floating help button (#help-fab) is the single
+// entry to every guide, so two "?" glyphs no longer mean two different things.
+async function launchOwnerTour(){
+  // Every step of this tour points at a home-view control, and tour.js advances past a missing target —
+  // so starting it from a reading view raced through all of them and looked like a dead button. Go home
+  // first, let the targets paint, then run.
+  if (typeof current !== 'undefined' && current){
+    enterHome();
+    await new Promise(r => requestAnimationFrame(() => setTimeout(r, 120)));
+  }
+  startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' });
 }
-function launchOwnerTour(){ startTour(OWNER_TOUR, { storageKey:'tour-owner-v1' }); }
 // The tour's demo chapter is a fully STATIC, dead mock — NOT the live tool. It borrows the real
 // builders (buildAdvCard / buildCommentCard) only to capture exact markup, then injects that as
 // inert HTML strings: none of the real .onclick wiring comes along, so Queue for merge, Resolution,
@@ -165,7 +156,7 @@ const OWNER_CHAPTER_TOUR = [
   { sel:'#tour-demo-select', title:'Comment yourself too', body:'Select any text to leave your own note or propose exact replacement wording, the same way your reviewers do.', pin:'bl' },
   { sel:'#doc figure', title:'Comment on a figure', body:'Click a figure to comment on it, and you can draw a box or circle to point at the exact spot.', pin:'bl' },
   { sel:'#doc table', title:'Everything is reviewable', body:'Tables and equations take comments too, not just paragraphs. Your reviewers can weigh in on all of them the same way.' },
-  { sel:'#btn-more', title:'That is the loop', body:'Read, resolve, approve, merge. Reopen this walkthrough anytime from the More menu.' },
+  { sel:'#help-fab', title:'That is the loop', body:'Read, resolve, approve, merge. Reopen this walkthrough anytime from the help button.' },
 ];
 function launchOwnerChapterTour(){ const restore = loadDemoChapterOwner(); startTour(OWNER_CHAPTER_TOUR, { storageKey:'tour-owner-chapter-v1', onDone: restore }); }
 // Mark seen the moment it auto-launches (not just on finish) so a hard refresh never re-triggers it
@@ -2416,7 +2407,6 @@ function enterHome(){
      <button class="btn" id="btn-export-menu" style="padding:6px 12px" title="Take your reviewers' comments to Overleaf, or into a response letter"><i class="ti ti-file-export"></i>Export<i class="ti ti-chevron-down" style="margin-left:3px;font-size:13px;color:var(--text-3)"></i></button>
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
-     <button class="icbtn" id="btn-tour" title="Take the tour"><i class="ti ti-help-circle"></i></button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('btn-theme').onclick = toggleTheme;
@@ -2424,7 +2414,6 @@ function enterHome(){
   document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
   document.getElementById('btn-export-menu').onclick = openExportMenu;
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
-  document.getElementById('btn-tour').onclick = openTourMenu;
   read.innerHTML = homeHtml();
   paintDots();   // color the setup-card + inbox status dots to the current connection state
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
