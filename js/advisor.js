@@ -505,15 +505,53 @@ function renderConnect(){
 // Floating word-count pill on the reading view, mirroring the author panel. Appended INSIDE #read, so any
 // view swap that replaces read.innerHTML removes it automatically. The reviewer's tour "?" button is nudged
 // to sit to its LEFT (same corner arrangement as the owner), and stays clear as the pill's label changes.
+// Full word-count breakdown, opened from the pill. Lists the units released to this reviewer with their
+// per-unit counts and a total, mirroring the author panel. Unknown units read as an em dash (a confident
+// zero for prose nobody has counted would be a false reading).
+function openWordCountPanel(){
+  document.getElementById('wc-modal')?.remove();
+  const units = CHAPTERS.filter(c => released.includes(c.id));
+  const known = id => COUNTS[id] && typeof COUNTS[id].words === 'number';
+  const rows = units.map(c => {
+    const w = known(c.id) ? COUNTS[c.id].words.toLocaleString('en-US') : '\u2014';
+    const ch = known(c.id) ? (COUNTS[c.id].chars || 0).toLocaleString('en-US') : '\u2014';
+    return `<tr><td style="padding:4px 0">${escapeHtml(unitLabel(c, UNIT))} \u00b7 ${escapeHtml(shortTitle(c.title))}</td>
+      <td style="text-align:right;font-variant-numeric:tabular-nums${known(c.id)?'':';color:var(--text-3)'}">${w}</td>
+      <td style="text-align:right;color:var(--text-3);font-variant-numeric:tabular-nums">${ch}</td></tr>`; }).join('');
+  const shown = Object.fromEntries(units.filter(c => known(c.id)).map(c => [c.id, COUNTS[c.id]]));
+  const pending = units.filter(c => !known(c.id)).length;
+  const back = document.createElement('div'); back.id = 'wc-modal';
+  back.style.cssText = 'position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.34);display:flex;align-items:center;justify-content:center;padding:18px';
+  back.innerHTML = `<div role="dialog" aria-modal="true" aria-label="Word count" style="background:var(--bg);border:.5px solid var(--border-2);border-radius:14px;box-shadow:0 18px 50px rgba(0,0,0,.28);width:min(460px,94vw);max-height:80vh;overflow:auto;padding:20px 22px">
+      <div style="font-size:16px;font-weight:600;margin-bottom:4px"><i class="ti ti-abacus" style="margin-right:7px"></i>Word count</div>
+      <div style="font-size:12.5px;color:var(--text-3);margin-bottom:12px">Rendered prose \u2014 references, footnotes, and equations excluded.</div>
+      <table style="width:100%;font-size:12.5px;border-collapse:collapse"><thead><tr style="color:var(--text-3)">
+        <th style="text-align:left;font-weight:500">${escapeHtml(UNITC || UNIT)}</th><th style="text-align:right;font-weight:500">Words</th><th style="text-align:right;font-weight:500">Chars</th></tr></thead>
+        <tbody>${rows || `<tr><td colspan="3" style="padding:8px 0;color:var(--text-3)">Nothing released yet.</td></tr>`}</tbody>
+        <tfoot><tr style="border-top:.5px solid var(--border);font-weight:600">
+          <td style="padding-top:6px">Total</td>
+          <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${totalWords(shown).toLocaleString('en-US')}</td>
+          <td style="text-align:right;padding-top:6px;font-variant-numeric:tabular-nums">${Object.values(shown).reduce((a,c)=>a+(c.chars||0),0).toLocaleString('en-US')}</td></tr></tfoot></table>
+      <div style="font-size:12px;color:var(--text-3);margin-top:10px;min-height:16px">${pending?`${pending} ${pending===1?UNIT:UNIT+'s'} not counted yet \u2014 open ${pending===1?'it':'them'} to include.`:''}</div>
+      <div style="display:flex;justify-content:flex-end;margin-top:12px"><button class="btn btn-primary" id="wc-close">Close</button></div></div>`;
+  document.body.appendChild(back);
+  const close = () => { back.remove(); document.removeEventListener('keydown', onKey, true); };
+  const onKey = e => { if (e.key === 'Escape'){ e.stopPropagation(); close(); } };
+  back.querySelector('#wc-close').onclick = close;
+  back.onclick = e => { if (e.target === back) close(); };
+  document.addEventListener('keydown', onKey, true);
+}
+
 function renderWordCountFab(fragment){
   if (!read || !current) return;
   const wc = (COUNTS[current] && typeof COUNTS[current].words === 'number') ? COUNTS[current] : safeCount(fragment);
   if (!wc) return;
-  const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count';
+  const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count — click for the full breakdown';
   fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:flex;align-items:center;gap:7px;'
     + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'
-    + 'font:inherit;font-size:12px;font-weight:500;box-shadow:0 2px 12px rgba(0,0,0,.12);cursor:default';
+    + 'font:inherit;font-size:12px;font-weight:500;box-shadow:0 2px 12px rgba(0,0,0,.12);cursor:pointer';
   fab.innerHTML = `<i class="ti ti-abacus" style="font-size:14px;color:var(--accent)"></i>${formatCount(wc.words)}`;
+  fab.onclick = openWordCountPanel;
   read.appendChild(fab);
   positionTourButton();
 }
