@@ -1737,7 +1737,7 @@ function openSettingsMenu(){
   m.querySelectorAll('button').forEach(b=>{ b.onmouseenter=()=>b.style.background='var(--bg-3,rgba(127,127,127,.10))'; b.onmouseleave=()=>b.style.background='none'; });
   const paintSwatches=()=>{
     const box=m.querySelector('#rs-accent'); box.innerHTML=swatchesHtml(storedAccent(localStorage));
-    box.querySelectorAll('.ac-swatch').forEach(s=>s.onclick=()=>{ const id=s.dataset.accent; applyAccent(id,document); saveAccent(localStorage,id); paintSwatches(); });
+    box.querySelectorAll('.ac-swatch').forEach(s=>s.onclick=()=>{ chooseAccent(s.dataset.accent,document,localStorage); paintSwatches(); });
   };
   paintSwatches();
   m.querySelector('#rs-theme').onclick=()=>{ toggleAdvTheme(); m.remove(); openSettingsMenu(); };

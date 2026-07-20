@@ -41,13 +41,14 @@ export function swatchesHtml(selectedId) {
   const esc = (s) => String(s).replace(/[<>"&]/g, c => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' }[c]));
   return `<div class="ac-swatches" style="display:flex;gap:12px;flex-wrap:wrap">` + ACCENTS.map(a => {
     const on = a.id === selectedId;
+    const tip = a.light ? a.name : `${a.name} (click again to shuffle)`;
     const fill = !a.light
       ? 'background:conic-gradient(from 0deg,#e0568c,#e58f2a,#e6b93a,#4a9e4a,#2c64c4,#8e5adf,#e0568c);'
       : `background:${a.light.accent};`;
     const ringColor = a.light ? a.light.accent : '#8e5adf';
     const ring = on ? `box-shadow:0 0 0 2px var(--bg,#fff),0 0 0 4px ${ringColor};` : '';
     return `<button type="button" class="ac-swatch" data-accent="${esc(a.id)}" data-on="${on ? '1' : '0'}"` +
-      ` aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(a.name)}" title="${esc(a.name)}"` +
+      ` aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(a.name)}" title="${esc(tip)}"` +
       ` style="width:24px;height:24px;border-radius:50%;border:0;padding:0;cursor:pointer;${fill}${ring}"></button>`;
   }).join('') + `</div>`;
 }
@@ -167,9 +168,54 @@ export function stopMulticolor(doc) {
   clearInline(d);
 }
 
+function _reduceMotion() {
+  return typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+// Animate from one palette colour to another, the long way round the hue wheel. Shared by the
+// 30-minute cycle and the manual shuffle.
+function _sweepTo(d, fromId, toId) {
+  const m = _mode(d), a = _vals(fromId, m), b = _vals(toId, m);
+  if (!a || !b) return;
+  if (_reduceMotion() || typeof requestAnimationFrame === 'undefined') { setInline(d, b.accent, b.bg); return; }
+  if (_raf) cancelAnimationFrame(_raf);
+  const t0 = Date.now();
+  const step = () => {
+    const p = Math.min(1, (Date.now() - t0) / SWEEP_MS);
+    setInline(d, rainbowSweep(a.accent, b.accent, p), rainbowSweep(a.bg, b.bg, p));
+    if (p < 1) _raf = requestAnimationFrame(step);
+  };
+  _raf = requestAnimationFrame(step);
+}
+
+// Pick a palette colour that isn't the current one. Pure (rand injectable).
+export function pickDifferent(current, ids, rand = Math.random) {
+  const pool = (ids || []).filter(i => i !== current);
+  if (!pool.length) return current;
+  return pool[Math.min(pool.length - 1, Math.floor(rand() * pool.length))];
+}
+
+// The hidden trigger: sweep to a new colour right now (the 30-minute schedule carries on after).
+export function shuffleMulticolor(doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  if (!d || !_cur) return null;
+  const next = pickDifferent(_cur, NAMED_IDS);
+  _sweepTo(d, _cur, next);
+  _cur = next;
+  return next;
+}
+
+// What a swatch click should do: re-clicking the ACTIVE Multicolor swatch shuffles instead of
+// re-selecting (the subtle manual trigger); anything else selects normally.
+export function chooseAccent(id, doc, storage) {
+  const d = doc || (typeof document !== 'undefined' ? document : null);
+  const s = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+  if (id === 'multicolor' && storedAccent(s) === 'multicolor') { shuffleMulticolor(d); return id; }
+  applyAccent(id, d); saveAccent(s, id);
+  return id;
+}
+
 export function startMulticolor(doc) {
   const d = doc || (typeof document !== 'undefined' ? document : null); if (!d) return;
-  const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const paint = (id) => { const v = _vals(id, _mode(d)); if (v) setInline(d, v.accent, v.bg); };
   _cur = accentForSlot(Date.now(), NAMED_IDS, CYCLE_MS);
   paint(_cur);
@@ -178,22 +224,10 @@ export function startMulticolor(doc) {
     _obs = new MutationObserver(() => { if (_cur) paint(_cur); });
     _obs.observe(d.documentElement, { attributes: true, attributeFilter: ['class'] });
   }
-  const sweep = (fromId, toId) => {
-    const m = _mode(d), a = _vals(fromId, m), b = _vals(toId, m);
-    if (!a || !b) return;
-    if (reduce || typeof requestAnimationFrame === 'undefined') { setInline(d, b.accent, b.bg); return; }
-    const t0 = Date.now();
-    const step = () => {
-      const p = Math.min(1, (Date.now() - t0) / SWEEP_MS);
-      setInline(d, rainbowSweep(a.accent, b.accent, p), rainbowSweep(a.bg, b.bg, p));
-      if (p < 1) _raf = requestAnimationFrame(step);
-    };
-    _raf = requestAnimationFrame(step);
-  };
   const schedule = () => {
     _timer = setTimeout(() => {
       const next = accentForSlot(Date.now(), NAMED_IDS, CYCLE_MS);
-      if (next !== _cur) { sweep(_cur, next); _cur = next; }
+      if (next !== _cur) { _sweepTo(d, _cur, next); _cur = next; }
       schedule();
     }, CYCLE_MS - (Date.now() % CYCLE_MS) + 50);
   };
