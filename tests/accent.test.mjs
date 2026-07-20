@@ -143,3 +143,18 @@ test('AltTripleClick ignores non-alt clicks and resets when they are too slow', 
   t += 100; assert.equal(d.hit(true), false);
   t += 900; assert.equal(d.hit(true), false);    // too slow → not a triple (this is only #1 again)
 });
+
+// --------------------------------------------------------------- regression: sweep must beat !important
+// The accent palette classes set --accent with !important. The Multicolor cycler, the manual shuffle,
+// and the completion celebration all drive --accent via setInline(); if that inline write is NOT
+// !important, a stylesheet !important wins and the animation is invisible whenever a static colour is
+// selected. Proven in a browser; guarded here because node has no CSS cascade.
+import { readFileSync } from 'node:fs';
+test('setInline writes --accent with important priority (else the class !important hides the sweep)', () => {
+  const src = readFileSync('js/accent.js', 'utf8');
+  const body = src.slice(src.indexOf('function setInline'), src.indexOf('function clearInline'));
+  for (const m of body.matchAll(/setProperty\(\s*'--accent(?:-bg)?'/g)) {
+    const call = body.slice(m.index, body.indexOf(')', m.index) + 1);
+    assert.match(call, /,\s*'important'\s*\)/, `setInline must pass 'important': ${call}`);
+  }
+});
