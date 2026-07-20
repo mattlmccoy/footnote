@@ -44,3 +44,21 @@ export function countWords(html) {
   const words = s.split(/\s+/).filter(Boolean);
   return { words: words.length, chars: [...words.join(' ')].length };   // chars WITH spaces (codepoint-accurate)
 }
+
+// A unit counts as "not counted yet" only when its words value isn't a number. A genuine 0 (an empty
+// unit) is a real answer and must not be refetched forever — but it is also what an unopened unit shows
+// before anything has counted it, which is why the count-all pass writes a number for every unit.
+export function missingCountIds(units = [], counts = {}) {
+  return (units || []).filter(u => u && u.id && typeof (counts?.[u.id]?.words) !== 'number').map(u => u.id);
+}
+
+// The engine's counts.json is authoritative (written at render time from the real built HTML); the local
+// cache only fills units the engine hasn't published yet, so a stale cached number can never mask a fresh
+// rendered one.
+export function mergeCounts(engine, cached) {
+  const ok = v => v && typeof v.words === 'number';
+  const out = {};
+  for (const [k, v] of Object.entries(cached || {})) if (ok(v)) out[k] = v;
+  for (const [k, v] of Object.entries(engine || {})) if (ok(v)) out[k] = v;
+  return out;
+}
