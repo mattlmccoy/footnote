@@ -308,3 +308,31 @@ export function withColorEasterEgg(toggleTheme, doc, storage) {
     toggleTheme(e);
   };
 }
+
+// One-shot rainbow "fill" celebration for a chapter card's progress bar (home grid). Grows the fill
+// from 0 to 100% behind a moving rainbow gradient, then settles to the steady colour. DOM; the bar
+// uses local --success/--accent (no !important class), so a plain inline write is fine here.
+export function celebrateCardFill(fillEl, settleColor) {
+  const d = typeof document !== 'undefined' ? document : null;
+  if (!fillEl || !d) return false;
+  if (_reduceMotion()) return false;   // no motion for those who opted out
+  if (!d.getElementById('cardfill-kf')) {
+    const st = d.createElement('style'); st.id = 'cardfill-kf';
+    st.textContent = '@keyframes ccfill{from{width:0}to{width:100%}}@keyframes ccsweep{from{background-position:0 0}to{background-position:220px 0}}';
+    (d.head || d.documentElement).appendChild(st);
+  }
+  const prev = fillEl.style.cssText;
+  fillEl.style.background = 'linear-gradient(90deg,#e0568c,#e58f2a,#e6b93a,#4a9e4a,#2c64c4,#8e5adf,#e0568c)';
+  fillEl.style.backgroundSize = '220px 100%';
+  fillEl.style.width = '100%';
+  fillEl.style.animation = 'ccfill .9s cubic-bezier(.22,.61,.36,1) both, ccsweep 1.1s linear';
+  const done = () => {
+    fillEl.removeEventListener('animationend', done);
+    fillEl.style.cssText = prev;                 // back to the steady bar the render set
+    fillEl.style.width = '100%';
+    if (settleColor) fillEl.style.background = settleColor;
+  };
+  fillEl.addEventListener('animationend', done);
+  setTimeout(done, 1600);                         // safety net if animationend is missed
+  return true;
+}
