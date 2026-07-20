@@ -53,3 +53,11 @@ export function newCount(entry, currentReleasedIds) {
   const seenSet = new Set(seen);
   return currentReleasedIds.filter(id => !seenSet.has(id)).length;
 }
+
+// Identity of a remembered document (exported for the shelf's remove action). Same key recentsAdd dedups on.
+export { entryKey };
+
+// Remove the document with this key from the shelf. Tolerates a null/non-array list.
+export function recentsRemove(list, key) {
+  return (Array.isArray(list) ? list : []).filter(e => entryKey(e) !== key);
+}

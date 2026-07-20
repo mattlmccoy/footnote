@@ -82,3 +82,28 @@ test('newCount is 0 when nothing new / unknown baseline', () => {
   assert.equal(newCount(E({ seenReleased: undefined }), ['c1']), 0);   // no baseline → don't badge
   assert.equal(newCount(E({ seenReleased: ['c1'] }), []), 0);
 });
+
+// ---- removing a document from the shelf (reviewer can delete, esp. a dead link) ----
+import { recentsRemove, entryKey } from '../js/reviewerhome.js';
+
+test('entryKey identifies a document by repo + project (matches recentsAdd dedup)', () => {
+  assert.equal(entryKey({ data: 'me/thesis', p: '' }), 'me/thesis/');
+  assert.equal(entryKey({ data: 'me/ws', p: 'metro' }), 'me/ws/metro');
+});
+
+test('recentsRemove drops exactly the matching document, keeps the rest and order', () => {
+  const list = [
+    { a: 'r', data: 'me/a', p: '', k: 'x', ts: 3 },
+    { a: 'r', data: 'me/ws', p: 'metro', k: 'x', ts: 2 },
+    { a: 'r', data: 'me/b', p: '', k: 'x', ts: 1 },
+  ];
+  const out = recentsRemove(list, entryKey({ data: 'me/ws', p: 'metro' }));
+  assert.deepEqual(out.map(e => e.data), ['me/a', 'me/b']);
+});
+
+test('recentsRemove is a no-op for an unknown key and tolerates junk input', () => {
+  const list = [{ a: 'r', data: 'me/a', p: '', k: 'x' }];
+  assert.equal(recentsRemove(list, 'me/nope/').length, 1);
+  assert.deepEqual(recentsRemove(null, 'k'), []);
+  assert.deepEqual(recentsRemove('junk', 'k'), []);
+});
