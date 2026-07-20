@@ -92,3 +92,21 @@ test('rainbowSweep starts at from, ends at to, and takes the long way round the 
   const directMid = (hexToHsl(from).h + hexToHsl(to).h) / 2;
   assert.ok(Math.abs(midHue - directMid) > 60, 'sweeps through other hues, not a direct blend');
 });
+
+// --------------------------------------------------------------- manual shuffle (hidden trigger)
+import { pickDifferent } from '../js/accent.js';
+
+test('pickDifferent never repeats the current color and stays in the palette', () => {
+  for (let i = 0; i < 50; i++) {
+    const n = pickDifferent('blue', NAMED_IDS, Math.random);
+    assert.notEqual(n, 'blue');
+    assert.ok(NAMED_IDS.includes(n));
+  }
+  assert.equal(pickDifferent('blue', ['blue', 'red', 'green'], () => 0), 'red');   // skips current
+  assert.equal(pickDifferent('only', ['only'], () => 0), 'only');                  // degenerate: no other choice
+});
+
+test('the Multicolor swatch hints that clicking it again shuffles', () => {
+  const html = swatchesHtml('multicolor');
+  assert.match(html, /data-accent="multicolor"[^>]*shuffle/i);
+});

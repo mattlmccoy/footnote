@@ -3429,8 +3429,7 @@ function renderSettingsAppearance(pane) {
       ${swatchesHtml(cur)}
     </div>`;
     pane.querySelectorAll('.ac-swatch').forEach(b => b.onclick = () => {
-      const id = b.dataset.accent;
-      applyAccent(id, document); saveAccent(localStorage, id);
+      chooseAccent(b.dataset.accent, document, localStorage);   // re-clicking active Multicolor shuffles
       draw();   // re-render so the selected ring moves
     });
   };
