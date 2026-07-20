@@ -7,7 +7,7 @@
 // Ordered palette. `default` is a sentinel (no colors) → no override, the instance brand accent stands.
 // Each named accent is tuned for BOTH modes so white button text stays legible (yellow is a deep gold).
 export const ACCENTS = [
-  { id: 'default', name: 'Default' },
+  { id: 'multicolor', name: 'Multicolor' },   // dynamic: cycles through the palette (see startMulticolor)
   { id: 'blue',     name: 'Blue',     light: { accent: '#2c64c4', bg: '#eaf1fb' }, dark: { accent: '#6aa0ec', bg: '#1b2c44' } },
   { id: 'purple',   name: 'Purple',   light: { accent: '#7c4ddb', bg: '#efeafb' }, dark: { accent: '#b291f2', bg: '#241d3a' } },
   { id: 'pink',     name: 'Pink',     light: { accent: '#d23c7e', bg: '#fbe8f0' }, dark: { accent: '#ef83b1', bg: '#361b28' } },
@@ -19,7 +19,10 @@ export const ACCENTS = [
 ];
 
 const NAMED = new Set(ACCENTS.filter(a => a.light).map(a => a.id));
-const isValidAccent = (id) => id === 'default' || NAMED.has(id);
+export const NAMED_IDS = ACCENTS.filter(a => a.light).map(a => a.id);   // the static colors Multicolor cycles through
+const isValidAccent = (id) => id === 'default' || id === 'multicolor' || NAMED.has(id);
+export const CYCLE_MS = 30 * 60 * 1000;   // Multicolor picks a new color every 30 minutes
+export const SWEEP_MS = 1500;             // and sweeps round the hue wheel to get there
 const STYLE_ID = 'accent-palette';
 const KEY = 'accent';   // bare key, like the theme toggle's 'theme'
 
@@ -38,10 +41,10 @@ export function swatchesHtml(selectedId) {
   const esc = (s) => String(s).replace(/[<>"&]/g, c => ({ '<': '&lt;', '>': '&gt;', '"': '&quot;', '&': '&amp;' }[c]));
   return `<div class="ac-swatches" style="display:flex;gap:12px;flex-wrap:wrap">` + ACCENTS.map(a => {
     const on = a.id === selectedId;
-    const fill = a.id === 'default'
+    const fill = !a.light
       ? 'background:conic-gradient(from 0deg,#e0568c,#e58f2a,#e6b93a,#4a9e4a,#2c64c4,#8e5adf,#e0568c);'
       : `background:${a.light.accent};`;
-    const ringColor = a.id === 'default' ? '#8e5adf' : a.light.accent;
+    const ringColor = a.light ? a.light.accent : '#8e5adf';
     const ring = on ? `box-shadow:0 0 0 2px var(--bg,#fff),0 0 0 4px ${ringColor};` : '';
     return `<button type="button" class="ac-swatch" data-accent="${esc(a.id)}" data-on="${on ? '1' : '0'}"` +
       ` aria-pressed="${on ? 'true' : 'false'}" aria-label="${esc(a.name)}" title="${esc(a.name)}"` +
@@ -84,7 +87,9 @@ export function ensurePaletteStyle(doc) {
 export function applyAccent(id, doc) {
   const d = doc || (typeof document !== 'undefined' ? document : null);
   if (!d) return;
+  stopMulticolor(d);                                 // also clears any inline colors the cycler set
   d.documentElement.className = nextAccentClassName(d.documentElement.className, id);
+  if (id === 'multicolor') startMulticolor(d);       // drives --accent inline, a new color every 30 min
 }
 
 // Boot helper: inject the palette + apply the stored accent. Call after the theme class is set.
@@ -93,4 +98,104 @@ export function initAccent(doc, storage) {
   const s = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
   ensurePaletteStyle(d);
   applyAccent(storedAccent(s), d);
+}
+
+// ---- Multicolor: a living accent that drifts through the palette ----
+// Deterministic from the clock (every tab/window agrees and it never drifts), pseudo-random order.
+
+export function accentForSlot(nowMs, ids, intervalMs = CYCLE_MS) {
+  const slot = Math.floor(nowMs / intervalMs);
+  const h = (Math.imul(slot ^ 0x9e3779b9, 2654435761) >>> 0);
+  return ids[h % ids.length];
+}
+
+export function hexToHsl(hex) {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+  const l = (mx + mn) / 2;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  let h = 0;
+  if (d !== 0) {
+    if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
+    h *= 60; if (h < 0) h += 360;
+  }
+  return { h, s, l };
+}
+
+export function hslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360;
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  const seg = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(h / 60) % 6];
+  const to = (v) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+  return `#${to(seg[0])}${to(seg[1])}${to(seg[2])}`;
+}
+
+// Interpolate from → to at progress t, taking the LONG way around the hue wheel so the eye sees a
+// little rainbow pass through instead of a flat blend. t=0 → from, t=1 → to. Pure.
+export function rainbowSweep(fromHex, toHex, t) {
+  const a = hexToHsl(fromHex), b = hexToHsl(toHex);
+  let dh = b.h - a.h;
+  if (Math.abs(dh) < 180) dh = dh > 0 ? dh - 360 : dh + 360;   // go the long way
+  return hslToHex(a.h + dh * t, a.s + (b.s - a.s) * t, a.l + (b.l - a.l) * t);
+}
+
+// ---- the cycler (DOM; browser-verified) ----
+let _timer = null, _raf = null, _obs = null, _cur = null, _inlineSet = false;
+const _mode = (d) => (d.documentElement.classList.contains('dark') ? 'dark' : 'light');
+const _vals = (id, mode) => { const a = ACCENTS.find(x => x.id === id); return a && a[mode]; };
+
+function setInline(d, accent, bg) {
+  d.documentElement.style.setProperty('--accent', accent);
+  if (bg) d.documentElement.style.setProperty('--accent-bg', bg);
+  _inlineSet = true;
+}
+// Only clear what WE set, so an instance's inline brand accent isn't wiped.
+function clearInline(d) {
+  if (!_inlineSet) return;
+  d.documentElement.style.removeProperty('--accent');
+  d.documentElement.style.removeProperty('--accent-bg');
+  _inlineSet = false;
+}
+
+export function stopMulticolor(doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null); if (!d) return;
+  if (_timer) clearTimeout(_timer);
+  if (_raf && typeof cancelAnimationFrame !== 'undefined') cancelAnimationFrame(_raf);
+  if (_obs) _obs.disconnect();
+  _timer = _raf = _obs = _cur = null;
+  clearInline(d);
+}
+
+export function startMulticolor(doc) {
+  const d = doc || (typeof document !== 'undefined' ? document : null); if (!d) return;
+  const reduce = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const paint = (id) => { const v = _vals(id, _mode(d)); if (v) setInline(d, v.accent, v.bg); };
+  _cur = accentForSlot(Date.now(), NAMED_IDS, CYCLE_MS);
+  paint(_cur);
+  // keep the right light/dark value when the viewer flips the theme mid-cycle
+  if (typeof MutationObserver !== 'undefined') {
+    _obs = new MutationObserver(() => { if (_cur) paint(_cur); });
+    _obs.observe(d.documentElement, { attributes: true, attributeFilter: ['class'] });
+  }
+  const sweep = (fromId, toId) => {
+    const m = _mode(d), a = _vals(fromId, m), b = _vals(toId, m);
+    if (!a || !b) return;
+    if (reduce || typeof requestAnimationFrame === 'undefined') { setInline(d, b.accent, b.bg); return; }
+    const t0 = Date.now();
+    const step = () => {
+      const p = Math.min(1, (Date.now() - t0) / SWEEP_MS);
+      setInline(d, rainbowSweep(a.accent, b.accent, p), rainbowSweep(a.bg, b.bg, p));
+      if (p < 1) _raf = requestAnimationFrame(step);
+    };
+    _raf = requestAnimationFrame(step);
+  };
+  const schedule = () => {
+    _timer = setTimeout(() => {
+      const next = accentForSlot(Date.now(), NAMED_IDS, CYCLE_MS);
+      if (next !== _cur) { sweep(_cur, next); _cur = next; }
+      schedule();
+    }, CYCLE_MS - (Date.now() % CYCLE_MS) + 50);
+  };
+  schedule();
 }

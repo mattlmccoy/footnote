@@ -3282,7 +3282,7 @@ function renderSettingsAppearance(pane) {
     const cur = storedAccent(localStorage);
     pane.innerHTML = `<div class="set-card">
       <h4>Accent color</h4>
-      <div style="font-size:11.5px;color:var(--text-3);margin:0 0 12px">Pick an accent. It's saved in this browser and applies to your view. “Default” follows this instance's brand color.</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:0 0 12px">Pick an accent. It's saved in this browser and applies to your view. Multicolor drifts through the palette, changing every 30 minutes.</div>
       ${swatchesHtml(cur)}
     </div>`;
     pane.querySelectorAll('.ac-swatch').forEach(b => b.onclick = () => {
