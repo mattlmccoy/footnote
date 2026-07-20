@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { helpFabRight } from '../js/fablayout.js';
+import { helpFabRight, positionFab, watchFabLayout } from '../js/fablayout.js';
 
 test('with no word-count pill the help button sits at the screen edge', () => {
   assert.equal(helpFabRight(0), 22);
@@ -18,4 +18,20 @@ test('the offset tracks the pill as its label grows (2,244 words vs 12,480 words
 
 test('a nonsense width falls back to the edge rather than flinging the button off-screen', () => {
   for (const w of [NaN, -50, 'wide', {}]) assert.equal(helpFabRight(w), 22);
+});
+
+test('positionFab is a no-op without a help button, and handles a missing pill', () => {
+  assert.doesNotThrow(() => positionFab(null, null));
+  const el = { style: {} };
+  positionFab(el, null);
+  assert.equal(el.style.right, '22px');                 // no pill -> right edge (the home case)
+  positionFab(el, { offsetWidth: 130 });
+  assert.equal(el.style.right, '162px');                // pill present -> clear it
+});
+
+test('watchFabLayout degrades safely where there is no DOM to observe', () => {
+  // node has no MutationObserver; the caller must still get a callable teardown, not a crash
+  const stop = watchFabLayout(null, () => {});
+  assert.equal(typeof stop, 'function');
+  assert.doesNotThrow(() => stop());
 });

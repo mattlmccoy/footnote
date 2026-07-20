@@ -21,7 +21,7 @@ import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, ren
 import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=2bef567';
-import { helpFabRight } from './fablayout.js?v=3c718be';   // help button sits beside the word-count pill
+import { helpFabRight, positionFab, watchFabLayout } from './fablayout.js?v=3c718be';   // help button sits beside the word-count pill
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
@@ -3291,15 +3291,23 @@ function renderHelpFab(){
   b.onclick = e => { e.stopPropagation(); document.getElementById('helpmenu') ? document.getElementById('helpmenu').remove() : openHelpMenu(); };
   document.body.appendChild(b);
   positionHelpFab();
+  watchHelpFabLayout();
 }
 
 // Keep clear of the word-count pill, whose width changes with its label ("2,244 words" vs "12,480 words").
+// Home has no pill, so the button returns to the right edge there.
 function positionHelpFab(){
-  const b = document.getElementById('help-fab'); if (!b) return;
-  const pill = document.getElementById('wc-fab');
-  b.style.right = helpFabRight(pill ? pill.offsetWidth : 0) + 'px';
+  positionFab(document.getElementById('help-fab'), document.getElementById('wc-fab'));
 }
 window.addEventListener('resize', positionHelpFab);
+// The pill lives inside #read, which every view swap rebuilds. Positioning only when the pill RENDERS left
+// the button parked at the last chapter's offset after going home, so the same view could show it in two
+// different places. Watching #read keeps it correct without every future view having to remember to call.
+let _stopFabWatch = null;
+function watchHelpFabLayout(){
+  if (_stopFabWatch) _stopFabWatch();
+  _stopFabWatch = watchFabLayout(document.getElementById('read'), positionHelpFab);
+}
 
 // Floating word-count tool: a small pill on a chapter reading view showing this unit's count; click opens the
 // full panel. Appended INSIDE #read, so ANY view that replaces read.innerHTML (home, settings, reviewers,
