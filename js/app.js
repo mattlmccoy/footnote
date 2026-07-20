@@ -21,7 +21,7 @@ import { inviteReadiness, healthSignals, reviewerStatus, restoreAdvisorPlan, ren
 import { livePollDelay, jobPollDelay } from './polldelay.js?v=d6ff0d6';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // ease off before the shared hourly budget runs out   // adaptive polling cadence (rate limit is per-user, shared with reviewers)
 import { formatCount, totalWords, totalChars, countWords, missingCountIds, mergeCounts } from './wordcount.js?v=2bef567';
-import { helpFabRight } from './fablayout.js';   // help button sits beside the word-count pill
+import { helpFabRight } from './fablayout.js?v=3c718be';   // help button sits beside the word-count pill
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
