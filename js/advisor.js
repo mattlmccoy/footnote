@@ -13,8 +13,8 @@ import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw stora
 import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=8894f4d';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
-import { formatCount, totalWords, countWords } from './wordcount.js';   // word counts, mirroring the author panel (term-neutral)
-import { positionFab, watchFabLayout } from './fablayout.js';   // keep the tour button clear of the word-count pill
+import { formatCount, totalWords, countWords } from './wordcount.js?v=2bef567';   // word counts, mirroring the author panel (term-neutral)
+import { positionFab, watchFabLayout } from './fablayout.js?v=3d85aeb';   // keep the tour button clear of the word-count pill
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
