@@ -1739,7 +1739,7 @@ function openSettingsMenu(){
   const dark=document.documentElement.classList.contains('dark');
   m.innerHTML=`<div style="${hdr}">APPEARANCE</div>
     <button id="rs-theme" style="${row}"><i class="ti ti-${dark?'sun':'moon'}" style="width:16px"></i>${dark?'Light mode':'Dark mode'}</button>
-    <div style="font-size:12px;color:var(--text-3);margin:11px 0 8px 1px">Accent color</div>
+    <div style="font-size:12px;color:var(--text-3);margin:11px 0 8px 1px">Accent color <span style="color:var(--text-3);opacity:.8">(Multicolor drifts every 30 min)</span></div>
     <div id="rs-accent">${swatchesHtml(storedAccent(localStorage))}</div>
     <div style="border-top:.5px solid var(--border);margin:13px 0 9px"></div>
     <button id="rs-notify" style="${row}"><i class="ti ti-bell" style="width:16px"></i>Email notifications</button>
