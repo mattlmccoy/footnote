@@ -32,3 +32,17 @@ export function newMilestones(prev, next) {
     comments: !!n.commentsDone && !p.commentsDone,
   };
 }
+
+// One-shot card celebration: which chapter cards read "complete" but haven't been celebrated yet.
+// `isDone(id)` is the readProgress().done rule; `celebrated` is a Set of already-celebrated ids. Pure.
+export function newlyCompleteCards(items, isDone, celebrated) {
+  const seen = celebrated || new Set();
+  return (items || []).filter(x => x && x.id && isDone(x.id) && !seen.has(x.id)).map(x => x.id);
+}
+export function parseCelebrated(raw) {
+  try { const v = JSON.parse(raw); return Array.isArray(v) ? v.filter(x => typeof x === 'string') : []; }
+  catch { return []; }
+}
+export function addCelebrated(list, id) {
+  return (list || []).includes(id) ? list : [...(list || []), id];
+}

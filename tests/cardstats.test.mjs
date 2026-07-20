@@ -61,3 +61,22 @@ test('newMilestones fires only on a false → true flip (never repeats, never on
   assert.deepEqual(newMilestones(read, none), { read: false, comments: false });
   assert.deepEqual(newMilestones(none, read), { read: true, comments: false });
 });
+
+// ---- one-shot card fill celebration: celebrate a chapter card the first time it reads complete ----
+import { newlyCompleteCards, parseCelebrated, addCelebrated } from '../js/cardstats.js';
+
+test('newlyCompleteCards = complete cards not celebrated before', () => {
+  const items = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+  const done = { a: true, b: false, c: true };
+  assert.deepEqual(newlyCompleteCards(items, id => done[id], new Set()), ['a', 'c']);
+  assert.deepEqual(newlyCompleteCards(items, id => done[id], new Set(['a'])), ['c']);   // a already celebrated
+  assert.deepEqual(newlyCompleteCards(items, id => done[id], new Set(['a', 'c'])), []); // all celebrated
+});
+
+test('parseCelebrated / addCelebrated round-trip a stored id list', () => {
+  assert.deepEqual(parseCelebrated(null), []);
+  assert.deepEqual(parseCelebrated('["a","b"]'), ['a', 'b']);
+  assert.deepEqual(parseCelebrated('garbage'), []);
+  assert.deepEqual(addCelebrated(['a'], 'b'), ['a', 'b']);
+  assert.deepEqual(addCelebrated(['a'], 'a'), ['a']);        // idempotent
+});

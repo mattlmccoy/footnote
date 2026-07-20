@@ -25,10 +25,10 @@ import { helpFabRight, positionFab, watchFabLayout } from './fablayout.js?v=3d85
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
-import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=8894f4d';
+import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg, celebrateCardFill } from './accent.js?v=8894f4d';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
-import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=e2207bf';
+import { readProgress, chapterMilestones, newMilestones, newlyCompleteCards, parseCelebrated, addCelebrated } from './cardstats.js?v=e2207bf';
 import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
@@ -1074,6 +1074,24 @@ function checkMilestones(){
     if (fired.read || fired.comments) celebrate(document, localStorage);
   } catch(e){}
 }   // terminal — fold into "Resolved (N)"
+// One-shot rainbow FILL on any home-grid card that just reached "complete", then it settles to the
+// steady green bar. Persisted per project so each chapter celebrates once (never re-fires on revisit).
+function celebrateCompletedCards(){
+  try {
+    const read = document.getElementById('read'); if (!read) return;
+    const key = 'cardCeleb:' + (_projectId || (_CFG && _CFG.dataRepo) || '');
+    let celeb = parseCelebrated(localStorage.getItem(key));
+    const seen = new Set(celeb);
+    const items = CHAPTERS.filter(c => c.kind !== 'appendix');
+    const fresh = newlyCompleteCards(items, id => chapterStats(id).readDone, seen);
+    fresh.forEach((id, i) => {
+      const el = read.querySelector(`.chcard[data-ch="${(window.CSS && CSS.escape) ? CSS.escape(id) : id}"] .chbar-fill`);
+      if (el) setTimeout(() => celebrateCardFill(el, 'var(--success)'), 140 + i * 150);   // stagger a cascade
+      celeb = addCelebrated(celeb, id);
+    });
+    if (fresh.length) localStorage.setItem(key, JSON.stringify(celeb));
+  } catch(e){}
+}
 function docOrderIndex(){           // map comment id -> vertical position of its anchor in the doc
   const map = {}; const order = [...document.querySelectorAll('#doc p, #doc li, #doc figure, #doc figcaption, #doc h2, #doc h3')];
   review.comments.forEach(c => { const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim().slice(0,30);
@@ -2431,6 +2449,7 @@ function enterHome(){
   renderHelpFab();   // the landing page has its own banner (not renderTopbar), so create the help button here too
   paintDots();   // color the setup-card + inbox status dots to the current connection state
   read.querySelectorAll('.chcard[data-ch], .btn[data-ch]').forEach(el => el.onclick = () => enterChapter(el.dataset.ch));
+  celebrateCompletedCards();   // one-shot rainbow fill on cards that just reached complete
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg => tg.onclick = () => {
     const grid = tg.parentElement.querySelector('.appx-home-grid');
     const open = grid.style.display === 'none';
@@ -3002,7 +3021,7 @@ function homeHtml(){
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
         <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
-        <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
+        <div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div class="chbar-fill" style="width:${done?100:pct}%;height:100%;background:${bar}"></div></div>
         <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${status}</span><span style="margin-left:auto">${right}</span>${COUNTS[c.id]?.words != null ? `<span style="color:var(--text-3)">${formatCount(COUNTS[c.id].words)}</span>` : ''}</div></div>`;
   }).join('');
   const appUnits = CHAPTERS.filter(c => c.kind === 'appendix');
