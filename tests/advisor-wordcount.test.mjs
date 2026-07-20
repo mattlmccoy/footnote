@@ -18,6 +18,13 @@ test('advisor loads counts.json and renders the reading-view pill', () => {
   assert.match(adv, /renderWordCountFab|wc-fab/, 'reading view must show a word-count pill');
 });
 
+test('the reviewer word-count pill is clickable and opens a breakdown panel (mirrors the author panel)', () => {
+  assert.match(adv, /function openWordCountPanel/, 'reviewer needs a word-count panel');
+  // the pill must actually wire a click to it — a display-only pill was the reported bug
+  assert.match(adv, /fab\.onclick\s*=\s*openWordCountPanel/, 'the pill must open the panel on click');
+  assert.ok(!/'wc-fab'[\s\S]{0,500}?cursor:default/.test(adv), 'the pill should not be cursor:default (implies non-interactive)');
+});
+
 test('the imported word-count / layout modules are AI-clean (reviewer gate)', () => {
   for (const f of ['wordcount.js', 'fablayout.js']) {
     const src = readFileSync(new URL('../js/' + f, import.meta.url), 'utf8');
