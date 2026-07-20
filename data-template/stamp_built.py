@@ -47,6 +47,34 @@ def _stamp_ts(entry):
         return None
 
 
+def head_commit_epoch(source_dir):
+    """Commit time of the source HEAD, as epoch seconds. None when unknown."""
+    try:
+        out = subprocess.run(["git", "-C", str(source_dir), "show", "-s", "--format=%ct", "HEAD"],
+                             check=True, capture_output=True, text=True)
+        return float(out.stdout.strip())
+    except Exception:
+        return None
+
+
+def partition_units(content_dir, manifest, head_epoch):
+    """Split the units that need stamping into (fresh, stale).
+
+    `stale` = its HTML is OLDER than the source HEAD commit, so it was rendered BEFORE that commit
+    existed and was therefore NOT built from it. Stamping those would record provenance they never
+    had — the exact mistake a blanket backfill makes (13 units rendered 18:22 vs a HEAD from 18:35).
+    They are held back, not guessed at.
+    """
+    todo = units_needing_stamp(content_dir, manifest)
+    if head_epoch is None:
+        return todo, []
+    fresh, stale = [], []
+    for uid in todo:
+        p = Path(content_dir) / f"{uid}.html"
+        (fresh if p.stat().st_mtime >= head_epoch else stale).append(uid)
+    return fresh, stale
+
+
 def units_needing_stamp(content_dir, manifest):
     """Unit ids whose content/<id>.html has changed since it was last stamped (or was never
     stamped). Sorted for a stable manifest diff."""
@@ -90,9 +118,13 @@ def main(argv=None):
 
     out = content_dir / "built.json"
     manifest = load_manifest(out)
-    todo = units_needing_stamp(content_dir, manifest)
+    todo, stale = partition_units(content_dir, manifest, head_commit_epoch(a.source))
+    for uid in stale:
+        print(f"[stamp] SKIP {uid}: rendered before {sha[:7]} existed — re-render it to record provenance",
+              file=sys.stderr)
     if not todo:
-        print(f"[stamp] every unit already stamped at or after its last render ({len(manifest)} recorded)")
+        print(f"[stamp] nothing to stamp ({len(manifest)} recorded"
+              + (f", {len(stale)} held back as not-built-from-HEAD" if stale else "") + ")")
         return 0
 
     now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
