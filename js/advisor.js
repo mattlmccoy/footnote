@@ -10,7 +10,7 @@ import { livePollDelay } from './polldelay.js?v=d6ff0d6';   // one cadence polic
 import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=8f4c423';   // per-viewer accent color (theme-only; no assistant)
+import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg, celebrateCardFill } from './accent.js?v=8f4c423';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
 import { formatCount, totalWords, countWords } from './wordcount.js?v=2bef567';   // word counts, mirroring the author panel (term-neutral)
@@ -25,7 +25,7 @@ import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote log
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
-import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=9814102';   // shared read-progress derivation (parity with author cards)
+import { readProgress, chapterMilestones, newMilestones, newlyCompleteCards, parseCelebrated, addCelebrated } from './cardstats.js?v=9814102';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a764ebc';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -1401,7 +1401,7 @@ function enterHome(){
   const appUnits=list.filter(c=>c.kind==='appendix');
   const cards=chOnly.map(c=>{ const r=JSON.parse(localStorage.getItem(localKey(c.id))||'null'); const n=r?.comments?.length||0;
     const p=readProgress(r); const pct=p.done?100:Math.round(p.frac*100); const bar=p.done?'var(--success)':'var(--accent)';
-    const progress=p.secN?`<div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div style="width:${pct}%;height:100%;background:${bar}"></div></div>`:'';
+    const progress=p.secN?`<div style="height:5px;border-radius:4px;background:var(--bg-3);overflow:hidden;margin-bottom:8px"><div class="chbar-fill" style="width:${pct}%;height:100%;background:${bar}"></div></div>`:'';
     const status=p.secN?(p.done?`<span style="color:var(--success)">reviewed</span>`:`${p.doneN}/${p.secN} read`):'open to review';
     return `<div class="chcard" data-ch="${c.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer">
       <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
@@ -1444,6 +1444,7 @@ function enterHome(){
         <div style="font-size:16px;font-weight:500;margin:10px 0 6px">Nothing has been shared with you yet</div>
         <div style="font-size:13px;line-height:1.6;max-width:420px;margin:0 auto">You'll be emailed the moment the author releases a ${escapeHtml(UNIT)} to you. In the meantime you can comment on the proposed outline above.</div></div>`}${appendixSection}<div id="adv-downloads"></div></div>`;
   read.querySelectorAll('[data-ch]').forEach(el=>el.onclick=()=>loadChapter(el.dataset.ch));
+  celebrateCompletedCards();   // one-shot rainbow fill on cards that just reached complete (parity with the owner)
   read.querySelectorAll('#appx-home .appx-toggle').forEach(tg=>tg.onclick=()=>{
     const grid=tg.parentElement.querySelector('.appx-home-grid');
     const open=grid.style.display==='none';
@@ -1836,6 +1837,25 @@ function openSettingsMenu(){
   }),0);
 }
 function wireSettingsBtn(){ const b=document.getElementById('btn-settings'); if(b) b.onclick=e=>{ e.stopPropagation(); openSettingsMenu(); }; }
+// One-shot rainbow FILL on any reviewer home-grid card that just reached "complete" (every section
+// read), then it settles to the steady green bar. Once per chapter, persisted per reviewer. Parity
+// with the owner grid; the bar uses local --success (no !important class), so the inline write is fine.
+function celebrateCompletedCards(){
+  try {
+    const read=document.getElementById('read'); if(!read) return;
+    const key='cardCeleb:'+effId();
+    let celeb=parseCelebrated(localStorage.getItem(key));
+    const isDone=id=>{ try { return readProgress(JSON.parse(localStorage.getItem(localKey(id))||'null')).done; } catch(e){ return false; } };
+    const items=CHAPTERS.filter(c=>c.kind!=='appendix');
+    const fresh=newlyCompleteCards(items, isDone, new Set(celeb));
+    fresh.forEach((id,i)=>{
+      const el=read.querySelector(`.chcard[data-ch="${(window.CSS&&CSS.escape)?CSS.escape(id):id}"] .chbar-fill`);
+      if(el) setTimeout(()=>celebrateCardFill(el,'var(--success)'), 140+i*150);
+      celeb=addCelebrated(celeb,id);
+    });
+    if(fresh.length) localStorage.setItem(key, JSON.stringify(celeb));
+  } catch(e){}
+}
 // Completion celebration: a rainbow sweep when the reviewer finishes reading a chapter. Snapshot-
 // compared so it fires on completion, never on load. Comment resolution is the author's job, so the
 // resolved-predicate is always false here and only the read milestone can fire.
