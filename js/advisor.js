@@ -22,7 +22,7 @@ import { parseLatexTitle } from './docparse.js?v=c61fbc8';   // authoritative do
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=7d58e97';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote logo (shared with the launcher)
-import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
+import { recentsKey, recentsAdd, recentsList, recentsRemove, entryKey, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { readProgress, chapterMilestones, newMilestones, newlyCompleteCards, parseCelebrated, addCelebrated } from './cardstats.js?v=9814102';   // shared read-progress derivation (parity with author cards)
@@ -1803,6 +1803,15 @@ function setupMobileSheet(){
 const RVH_SPINES = ['#2c64c4','#b5643c','#4a7c59','#7a4b73','#c08a2d','#2f7d80','#93313e'];
 function _rawRecents(){ try { const v = JSON.parse(_store.get(recentsKey()) || '[]'); return Array.isArray(v) ? v : []; } catch { return []; } }
 function recordRecent(entry){ try { _store.set(recentsKey(), JSON.stringify(recentsAdd(_rawRecents(), entry))); } catch(e){} }
+// Reviewer removes a document from their shelf (their own per-browser list — no server state, nothing on
+// the author's side). Useful when an invite link is revoked/expired and the entry is now dead.
+function removeFromShelf(entry){
+  if (!entry) return;
+  const title = entry.title || entry.p || 'this document';
+  if (!confirm(`Remove "${title}" from your shelf?\nYou can re-add it any time by opening the invite link again.`)) return;
+  try { _store.set(recentsKey(), JSON.stringify(recentsRemove(_rawRecents(), entryKey(entry)))); } catch(e){}
+  renderReviewerHome();
+}
 // ---------- settings dropdown: theme, accent, notifications and the access key in one tucked-away menu ----------
 function settingsBtn(extra=''){ return `<button class="icbtn" id="btn-settings" title="Settings"${extra?` style="${extra}"`:''}><i class="ti ti-settings"></i></button>`; }
 function toggleAdvTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); }
@@ -1873,17 +1882,20 @@ function checkMilestones(){
 function reviewerPill(){ return `<span style="font-family:var(--mono,'IBM Plex Mono',monospace);font-size:10px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,transparent);border:1px solid color-mix(in srgb,var(--accent) 32%,transparent);border-radius:20px;padding:2px 8px;white-space:nowrap">Reviewer</span>`; }
 function allDocsLink(){ return `<a href="advisor.html" title="All documents shared with you" style="font-size:13px;color:var(--text-2);text-decoration:none;padding:4px 10px;border:1px solid var(--border);border-radius:8px;white-space:nowrap">← All documents</a>`; }
 function _relDays(ts){ if(!ts) return ''; const d=Math.floor((Date.now()-ts)/86400000); return d<=0?'today':d===1?'yesterday':d<7?`${d} days ago`:d<14?'last week':`${Math.floor(d/7)} weeks ago`; }
+// Neutral, theme-aware palette drawn from the app tokens so the shelf matches the author's home in both
+// light and dark (it used to hardcode a warm cream/wood/green scheme that clashed with the owner view and
+// looked wrong in dark mode). Per-document spine colors are kept — they give each book its identity.
 const RVH_STYLE = `<style id="rvh-style">
-  .rvh{--a:var(--accent);--str:#4a7c59;--ink:#211f1a;--faint:#a49e90;--ln:#e4dfd2;--serif:"Fraunces",Georgia,serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
+  .rvh{--a:var(--accent);--str:var(--text-2);--ink:var(--text);--faint:var(--text-3);--ln:var(--border);--serif:"Fraunces",Georgia,serif;--mono:"IBM Plex Mono",ui-monospace,monospace;
     max-width:900px;margin:0 auto;padding:30px 24px 80px;color:var(--ink)}
   .rvh-eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.18em;text-transform:uppercase;color:var(--a)}
   .rvh-h1{font-family:var(--serif);font-weight:600;font-size:30px;letter-spacing:-.02em;margin:3px 0 26px}
   .rvh-shelf{display:flex;flex-wrap:wrap;align-items:flex-end;gap:26px 22px;padding:6px 4px 0}
-  .rvh-board{height:12px;margin:0 -4px 2px;border-radius:0 0 6px 6px;background:linear-gradient(#e7e0d0,#d8cfba);box-shadow:inset 0 2px 0 rgba(255,255,255,.5),0 10px 22px -12px rgba(40,34,20,.4)}
+  .rvh-board{height:12px;margin:0 -4px 2px;border-radius:0 0 6px 6px;background:var(--bg-3);box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 10px 22px -14px rgba(0,0,0,.35)}
   .rvh-book{position:relative;display:flex;flex-direction:column;width:176px;min-height:230px;padding:20px 20px 18px 26px;text-decoration:none;color:inherit;text-align:left;cursor:pointer;
-    background:linear-gradient(160deg,#fffefb 0%,#faf7ef 100%);border:1px solid var(--ln);border-left:none;border-radius:3px 12px 12px 3px;
-    box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 14px 26px -16px rgba(40,34,20,.5),0 3px 6px -4px rgba(40,34,20,.3);transition:transform .18s cubic-bezier(.2,.7,.2,1),box-shadow .2s}
-  .rvh-book:hover{transform:translateY(-8px) rotate(-.4deg);box-shadow:0 1px 0 rgba(255,255,255,.6) inset,0 26px 40px -18px rgba(40,34,20,.55)}
+    background:var(--bg-2);border:1px solid var(--ln);border-left:none;border-radius:3px 12px 12px 3px;
+    box-shadow:0 14px 26px -18px rgba(0,0,0,.45),0 3px 6px -4px rgba(0,0,0,.2);transition:transform .18s cubic-bezier(.2,.7,.2,1),box-shadow .2s}
+  .rvh-book:hover{transform:translateY(-8px) rotate(-.4deg);box-shadow:0 26px 40px -20px rgba(0,0,0,.5)}
   .rvh-spine{position:absolute;left:0;top:0;bottom:0;width:11px;border-radius:3px 0 0 3px;background:linear-gradient(90deg,color-mix(in srgb,var(--sp) 78%,#000) 0%,var(--sp) 55%,color-mix(in srgb,var(--sp) 70%,#fff) 100%);box-shadow:1px 0 0 rgba(0,0,0,.12),inset -2px 0 3px rgba(0,0,0,.18)}
   .rvh-by{font-family:var(--mono);font-size:11px;color:var(--str);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rvh-title{font-family:var(--serif);font-weight:500;font-size:19px;line-height:1.15;color:var(--ink);margin-top:10px;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
@@ -1891,6 +1903,13 @@ const RVH_STYLE = `<style id="rvh-style">
   .rvh-meta{font-family:var(--mono);font-size:10.5px;color:var(--faint);margin-top:auto;padding-top:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .rvh-empty{max-width:460px;margin:11vh auto;text-align:center;color:var(--faint)}
   .rvh-empty svg{width:40px;height:40px}
+  .rvh-del{position:absolute;top:7px;right:7px;width:22px;height:22px;border-radius:50%;border:1px solid var(--border);background:var(--bg);color:var(--text-3);font-size:14px;line-height:1;cursor:pointer;
+    display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .15s,color .15s,border-color .15s;z-index:2}
+  .rvh-book:hover .rvh-del,.rvh-del:focus{opacity:1}
+  .rvh-del:hover{color:var(--danger,#c0392b);border-color:var(--danger,#c0392b)}
+  .rvh-book.rvh-dead{opacity:.72}
+  .rvh-book.rvh-dead .rvh-del{opacity:1;color:var(--danger,#c0392b);border-color:var(--danger,#c0392b)}
+  .rvh-dead-tag{align-self:flex-start;font-family:var(--mono);font-size:10px;font-weight:600;color:var(--danger,#c0392b);background:color-mix(in srgb,var(--danger,#c0392b) 12%,transparent);border-radius:20px;padding:1px 8px;margin-top:8px}
 </style>`;
 function _homeTopbar(name){
   document.getElementById('topbar').innerHTML =
@@ -1918,6 +1937,13 @@ async function _resolveAuthorNames(list){
   }
   _refreshBy(list);
 }
+// Mark a shelf book as unreachable (dead invite key): dim it and show the "link no longer active" tag.
+function _markDead(i){
+  const book = read.querySelector(`.rvh-book[data-i="${i}"]`); if (!book) return;
+  book.classList.add('rvh-dead');
+  const tag = book.querySelector('.rvh-dead-tag'); if (tag) tag.style.display = '';
+  const badge = book.querySelector('.rvh-badge'); if (badge) badge.style.display = 'none';
+}
 async function _paintHomeBadges(list){
   const typed = _cacheObj('footnote:authortyped'); let typedChanged = false;
   await Promise.all(list.map(async (e, i) => {
@@ -1925,6 +1951,9 @@ async function _paintHomeBadges(list){
       const [owner, repo] = (e.data || '').split('/'); if (!owner || !repo || !e.k) return;
       const prefix = e.p ? `${e.p}/` : '';
       const r = await _gfetch(`${_API}/repos/${owner}/${repo}/contents/${prefix}release.json?t=${Date.now()}`, { headers:_hdr(e.k), cache:'no-store' });
+      // A revoked/expired key (or a removed repo) makes this document unreachable — flag the book so the
+      // reviewer knows to remove it (the × is already there; this just makes the dead state visible).
+      if (r.status === 401 || r.status === 403 || r.status === 404){ _markDead(i); return; }
       if (!r.ok) return;
       const d = await r.json(); if (typeof d.content !== 'string') return;
       const j = JSON.parse(decodeURIComponent(escape(atob(d.content.replace(/\s/g, '')))));
@@ -1951,12 +1980,15 @@ function renderReviewerHome(){
   }
   const books = list.map((e, i) => `<a class="rvh-book" style="--sp:${RVH_SPINES[i % RVH_SPINES.length]}" data-i="${i}">
       <span class="rvh-spine"></span>
+      <button class="rvh-del" type="button" title="Remove from your shelf" aria-label="Remove from your shelf" data-i="${i}">&times;</button>
       <span class="rvh-by">${escapeHtml(_authorDisplay(e.owner))}</span>
       <span class="rvh-title">${escapeHtml(e.title || e.p || 'Untitled document')}</span>
       <span class="rvh-badge" style="display:none"></span>
+      <span class="rvh-dead-tag" style="display:none">link no longer active</span>
       <span class="rvh-meta">opened ${_relDays(e.ts)}</span></a>`).join('');
   read.innerHTML = `${RVH_STYLE}<div class="rvh">${head}<div class="rvh-shelf">${books}</div><div class="rvh-board"></div></div>`;
   read.querySelectorAll('.rvh-book').forEach(el => { el.onclick = () => { location.href = linkFor(list[+el.dataset.i]); }; });
+  read.querySelectorAll('.rvh-del').forEach(btn => { btn.onclick = ev => { ev.preventDefault(); ev.stopPropagation(); removeFromShelf(list[+btn.dataset.i]); }; });
   _paintHomeBadges(list);
   _resolveAuthorNames(list);
 }
