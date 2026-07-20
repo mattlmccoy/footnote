@@ -13,6 +13,8 @@ import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw stora
 import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=f4e6ff9';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
+import { formatCount, totalWords, countWords } from './wordcount.js';   // word counts, mirroring the author panel (term-neutral)
+import { positionFab, watchFabLayout } from './fablayout.js';   // keep the tour button clear of the word-count pill
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
 import { reviewingHeader, releaseView, validateKey, FIRST_RUN_TOUR, commentDraftKey } from './onboarding.js?v=8cb7d00';   // pure onboarding logic (header/state routing/key validation/first-run guide/draft key)
 import { orderedUnits, mergeReviews as flattenReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';   // whole-document reader mirror (used on render + comment paths) — DO NOT drop; a bad merge once did and broke the reviewer
@@ -188,6 +190,13 @@ const authorId = () => SHARED ? (reviewerName() || 'Lab reviewer') : ADVISOR.id;
 const displayName = () => SHARED ? (reviewerName() || ADVISOR.name) : ADVISOR.name;
 let DATA_REPO = '';        // populated from footnote.config.json at boot
 let CHAPTERS = [];         // the adopter's chapter manifest (config.chapters), populated at boot
+let COUNTS = {};           // per-unit {words,chars} from content/counts.json (written by the engine at render)
+async function loadCounts(){
+  const t = tok(); if (!t){ COUNTS = {}; return; }
+  try { const r = await condJson(_curl('content/counts.json'), { headers:_hdr(t), token:t, fetchImpl:_gfetch });
+    COUNTS = (r.json && typeof r.json === 'object') ? r.json : {}; }
+  catch(e){ COUNTS = {}; }
+}
 let HAS_OUTLINE = false;   // whether the data repo ships an outline.json with chapters — gates the home outline card (journals have none)
 // whole-document ("read the whole paper") view: WHOLE active; _reviews holds every RELEASED unit's review
 // (per-chapter files stay separate); comments resolve within their own #wd-<id> segment and route back to
@@ -493,9 +502,39 @@ function renderConnect(){
 }
 
 // ---------- document rendering (math, footnotes, figures, cross-refs) ----------
+// Floating word-count pill on the reading view, mirroring the author panel. Appended INSIDE #read, so any
+// view swap that replaces read.innerHTML removes it automatically. The reviewer's tour "?" button is nudged
+// to sit to its LEFT (same corner arrangement as the owner), and stays clear as the pill's label changes.
+function renderWordCountFab(fragment){
+  if (!read || !current) return;
+  const wc = (COUNTS[current] && typeof COUNTS[current].words === 'number') ? COUNTS[current] : safeCount(fragment);
+  if (!wc) return;
+  const fab = document.createElement('button'); fab.id = 'wc-fab'; fab.title = 'Word count';
+  fab.style.cssText = 'position:fixed;right:22px;bottom:20px;z-index:60;display:flex;align-items:center;gap:7px;'
+    + 'padding:8px 13px;border-radius:999px;border:.5px solid var(--border);background:var(--bg-2);color:var(--text-2);'
+    + 'font:inherit;font-size:12px;font-weight:500;box-shadow:0 2px 12px rgba(0,0,0,.12);cursor:default';
+  fab.innerHTML = `<i class="ti ti-abacus" style="font-size:14px;color:var(--accent)"></i>${formatCount(wc.words)}`;
+  read.appendChild(fab);
+  positionTourButton();
+}
+function safeCount(fragment){ try { return countWords(fragment); } catch(e){ return null; } }
+// The tour button lives at the screen edge on home; on a reading view it steps left of the word-count pill.
+function positionTourButton(){
+  const b = document.getElementById('adv-tour-btn'); if (!b) return;
+  b.style.bottom = '20px';
+  positionFab(b, document.getElementById('wc-fab'));
+}
+let _stopFabWatch = null;
+function watchTourButtonLayout(){
+  if (_stopFabWatch) _stopFabWatch();
+  _stopFabWatch = watchFabLayout(document.getElementById('read'), positionTourButton);
+}
+window.addEventListener('resize', positionTourButton);
+
 function renderDoc(fragment){
   read.innerHTML = `<article id="doc">${fragment}</article>`;
   const doc = document.getElementById('doc');
+  renderWordCountFab(fragment);   // count the raw fragment now, before KaTeX inflates the math nodes
   fixFootnotes(doc); runKatex(doc); wireFigures(doc); wireCitations(doc); linkCrossRefs(doc); buildNav(); markWhatsNew(doc); paintHighlights();
   if (review.cursor?.sec) document.getElementById(review.cursor.sec)?.scrollIntoView();
   syncDown(); startLiveSync();
@@ -1330,7 +1369,7 @@ function enterHome(){
       <div style="font-size:11.5px;color:var(--text-3)">${unitLabel(c, UNIT)}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(c.title)}</div>
       ${progress}
-      <div style="font-size:11px;color:var(--text-2);display:flex"><span>${status}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; }).join('');
+      <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${status}</span>${typeof COUNTS[c.id]?.words==='number'?`<span style="color:var(--text-3)">${formatCount(COUNTS[c.id].words)}</span>`:''}${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; }).join('');
   const appOpen=localStorage.getItem('home:appendicesOpen')!=='0';
   const appCard=a=>{ const r=JSON.parse(localStorage.getItem(localKey(a.id))||'null'); const n=r?.comments?.length||0;
     const homeMeta=a.home?chMeta(a.home):null;
@@ -1338,7 +1377,7 @@ function enterHome(){
     return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
       <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
-      <div style="font-size:11px;color:var(--text-2);display:flex"><span>${escapeHtml(sub)}</span>${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; };
+      <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${escapeHtml(sub)}</span>${typeof COUNTS[a.id]?.words==='number'?`<span style="color:var(--text-3)">${formatCount(COUNTS[a.id].words)}</span>`:''}${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; };
   const appendixSection=appUnits.length?`<div id="appx-home" style="margin-top:26px">
       <div class="appx-toggle" style="font-size:11px;letter-spacing:.06em;color:var(--text-3);margin-bottom:13px;cursor:pointer;user-select:none"><span class="appx-caret">${appOpen?'▾':'▸'}</span> APPENDICES <span style="color:var(--text-3)">· ${appUnits.length}</span></div>
       <div class="appx-home-grid" style="display:${appOpen?'grid':'none'};grid-template-columns:repeat(auto-fill,minmax(205px,1fr));gap:14px">${appUnits.map(appCard).join('')}</div>
@@ -1892,6 +1931,7 @@ async function boot(){
   DATA_REPO = _eff.dataRepo;
   DOC = _eff.doc.noun; UNIT = _eff.doc.unitNoun; DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1); UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);
   CHAPTERS = await loadChapters(tok());   // parsed manifest from the (project's) data repo, not shipped in config
+  await loadCounts();   // per-unit word counts for the home cards + reading-view pill
   // F7: a workspace invite that lost its &p= reads the empty repo root. Before falling through to the
   // misleading "nothing shared" state, probe the tree once — if the repo IS a workspace with projects,
   // the link is broken, so say so. Only on the cold no-&p=, no-root-chapters path (never the happy one).
@@ -1906,6 +1946,7 @@ async function boot(){
   const _r = sessionStorage.getItem('_resume'); if (_r){ sessionStorage.removeItem('_resume'); loadChapter(_r); } else enterHome();   // a refresh returns you to where you were (loadChapter routes __outline__ to the outline)
   startOutbox(); retryPending(); renderBanner();
   ensureTourButton();
+  positionTourButton(); watchTourButtonLayout();   // keep the tour button clear of the reading-view word-count pill
   // Only auto-run once the reviewer is actually in (has an access key) — never over the login screen.
   // Mark seen at launch (not just on finish) so a hard refresh doesn't re-show it to a returning reviewer.
   // A brand-new reviewer gets the concise 3-step first-run guide; "Show me" opens the full interactive tour.
