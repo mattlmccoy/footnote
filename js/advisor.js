@@ -10,7 +10,7 @@ import { livePollDelay } from './polldelay.js?v=d6ff0d6';   // one cadence polic
 import { attachmentsView } from './appattach.js?v=3a4f618';   // which appendix attaches to which chapter (source-derived; term-neutral)
 import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, clearReviewerKey, reviewerKeyWarning } from './invite.js?v=2a36cf4';   // magic-link: key in the invite URL + reviewer-key storage (own slot, not the owner ghpat)
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
-import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=609b2d1';   // per-viewer accent color (theme-only; no assistant)
+import { initAccent, swatchesHtml, applyAccent, saveAccent, storedAccent } from './accent.js?v=f797986';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
@@ -23,7 +23,7 @@ import { brandMark } from './brandmark.js?v=a2aa2c8';   // the real Footnote log
 import { recentsKey, recentsAdd, recentsList, linkFor, newCount, pickAuthorName } from './reviewerhome.js?v=5c25117';   // remembered documents for the reviewer Home
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
-import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=cfa6c99';   // shared read-progress derivation (parity with author cards)
+import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=e2207bf';   // shared read-progress derivation (parity with author cards)
 import { fetchWithTimeout, classifyGitHubError, retryAfterMs, TTLCache, orphanComments } from './nethelpers.js?v=a764ebc';   // bounded fetch + rate-limit backoff + read cache + orphan fallback
 startNetWatch();
 showBuildTag(import.meta.url);
