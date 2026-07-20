@@ -270,3 +270,39 @@ export function celebrate(doc, storage) {
   _celebRaf = requestAnimationFrame(step);
   return true;
 }
+
+// ---- easter egg: alt/option-click the theme button 3x to jump to a shuffling Multicolor ----
+// Pure streak detector: N alt-clicks inside a rolling time window. Injectable clock for tests.
+export class AltTripleClick {
+  constructor(windowMs = 600, now = () => Date.now(), need = 3) { this.w = windowMs; this.now = now; this.need = need; this.n = 0; this.last = -Infinity; }
+  hit(altKey) {
+    const t = this.now();
+    if (!altKey || t - this.last > this.w) this.n = 0;   // non-alt or too slow → restart the streak
+    this.last = t;
+    if (!altKey) return false;
+    this.n += 1;
+    if (this.n >= this.need) { this.n = 0; return true; }
+    return false;
+  }
+}
+
+// Wrap a theme-toggle handler so an alt-triple-click triggers Multicolor instead of toggling the
+// theme on that 3rd click. The normal (non-alt) click still toggles; alt-clicks before the 3rd are
+// swallowed so dark mode doesn't flicker. Returns the wrapped click handler. DOM (browser-verified).
+export function withColorEasterEgg(toggleTheme, doc, storage) {
+  const det = new AltTripleClick();
+  return (e) => {
+    if (e && e.altKey) {
+      e.preventDefault();
+      if (det.hit(true)) {
+        const d = doc || (typeof document !== 'undefined' ? document : null);
+        const s = storage || (typeof localStorage !== 'undefined' ? localStorage : null);
+        applyAccent('multicolor', d); saveAccent(s, 'multicolor');   // start the cycle…
+        shuffleMulticolor(d);                                        // …and jump to a fresh colour now
+      }
+      return;                                    // alt-clicks never toggle the theme
+    }
+    det.hit(false);                              // a plain click breaks any in-progress streak
+    toggleTheme(e);
+  };
+}

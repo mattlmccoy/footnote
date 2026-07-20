@@ -25,7 +25,7 @@ import { helpFabRight, positionFab, watchFabLayout } from './fablayout.js?v=3d85
 import { buildWorklist, worklistToMarkdown, worklistToHtml } from './worklist.js?v=cc14030';
 import { startWatch as startNetWatch, paintDots } from './netstatus.js?v=0760473';
 import { settingsSections, resolveSection } from './settings.js?v=feaf87b';
-import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate } from './accent.js?v=f797986';
+import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg } from './accent.js?v=f797986';
 import { modalReducer, topModal } from './modal.js?v=aa8d478';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { readProgress, chapterMilestones, newMilestones } from './cardstats.js?v=e2207bf';
@@ -276,7 +276,7 @@ function renderTopbar(){
     </div>`;
   document.getElementById('btn-home').onclick = enterHome;
   document.getElementById('chsel').onclick = openChapterMenu;
-  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   document.getElementById('btn-send').onclick = openSendMenu;
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
@@ -2422,7 +2422,7 @@ function enterHome(){
      <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
      <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
-  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   document.getElementById('btn-releases').onclick = openReleasePanel;
   document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
   document.getElementById('btn-export-menu').onclick = openExportMenu;
@@ -2530,7 +2530,7 @@ async function loadOwnerOutline(){
     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
   document.getElementById('btn-send').onclick = openSendMenu;   // structure comments → apply-edits on review-edits/__outline__ (parity with chapters)
-  document.getElementById('btn-theme').onclick = toggleTheme;
+  document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   read.innerHTML = `<div class="empty">Loading outline…</div>`;
   let data = null; const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
   try {
