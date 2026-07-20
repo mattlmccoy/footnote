@@ -169,6 +169,7 @@ import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { condApi } from './condfetch.js?v=acd31f3';   // conditional reads: an unchanged diagnostic costs no rate limit
 import { budgetSnapshot } from './ratebudget.js?v=dbe477a';   // budget observed from real response headers
 import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
+import { unitLabel } from './unitlabel.js?v=dev';   // 'Chapter 3' / 'Appendix A' — never a raw .n
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
 
 const API = 'https://api.github.com';
@@ -281,13 +282,14 @@ export async function collectProject(token, appCfg, projects, projectId, fetchIm
       ]);
     }
     const verdict = classifySync({ rendered: isRendered, builtFrom, mainSha, ahead, fileTouched, renderedAt, sourceAt });
-    return { id: ch.id, n: ch.n, title: ch.title, rendered: isRendered, builtFrom, open: openN,
-             editBranch: editBranchFor(branches, ch.id), ...verdict };
+    return { id: ch.id, n: ch.n, kind: ch.kind || null, title: ch.title, rendered: isRendered, builtFrom,
+             open: openN, editBranch: editBranchFor(branches, ch.id), ...verdict };
   };
 
   const docs = (await mapLimit(chapterList, DOC_CONCURRENCY, collectDoc)).filter(Boolean);
   const open = docs.reduce((a, d) => a + (d.open || 0), 0);
-  const result = { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs, rollup: rollupProject(docs, open) };
+  const result = { id: cfg.projectId, name: cfg.projectName, dataRepo, sourceRepo, docs,
+                   unitNoun: (cfg.doc && cfg.doc.unitNoun) || 'chapter', rollup: rollupProject(docs, open) };
   if (chaptersFetchFailed) result.error = `could not read chapters.json (status ${chR.status})`;
   return result;
 }
@@ -383,7 +385,7 @@ export function render(state, doc) {
   const projHtml = (state.projects || []).map((p, pi) => {
     const rl = p.rollup || { docCount: 0, behind: 0, open: 0, worst: 'insync' };
     const rows = (p.docs || []).map(x => `<tr>
-      ${td(`${esc(x.n)} · ${esc(x.title)}`)}
+      ${td(`${esc(unitLabel({ n: x.n, kind: x.kind }, p.unitNoun))} · ${esc(x.title)}`)}
       ${td(x.rendered ? 'yes' : `${dot('bad')}missing`, 'white-space:nowrap;' + (x.rendered ? '' : 'color:var(--bad)'))}
       ${td(esc((x.builtFrom || '—').slice(0, 7)), 'font-family:ui-monospace,Menlo,monospace;font-size:11.5px;color:var(--dim)')}
       ${td(`${bar(x)}<span style="color:var(--${_dot(x.state)})">${esc(x.label || x.state)}</span>`, 'white-space:nowrap')}

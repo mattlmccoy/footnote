@@ -395,3 +395,23 @@ test('collectGitHub reports an unmeasured budget as null, never a healthy-lookin
   assert.equal(g.rateRemaining, null);
   assert.equal(g.rateLimit, null);
 });
+
+// Appendices carry kind:'appendix' with their OWN n starting at 1 (verified in the real
+// chapters.json: appb..appf are kind=appendix n=1..5). Rendering a raw .n makes them look like
+// chapters 1-5 all over again — exactly what unitlabel.js warns against. The doc must carry `kind`
+// and the project its unit noun so render can use the shared unitLabel rule.
+test('collectProject: carries appendix kind + the project unit noun', async () => {
+  const project = { id: 'p1', name: 'P1', dataRepo: 'me/data', sourceRepo: 'me/src', dataPrefix: '', srcPrefix: '' };
+  const chapters = [{ id: 'ch1', n: 1, title: 'One', sourceFile: 'ch1.tex' },
+                    { id: 'appb', n: 1, title: 'Metrics', sourceFile: 'appb.tex', kind: 'appendix' }];
+  const routes = [
+    ['contents/chapters.json', { content: b64(chapters) }],
+    ['git/trees/main', { tree: [{ type: 'blob', path: 'content/ch1.html' }, { type: 'blob', path: 'content/appb.html' }] }],
+    ['commits/main', { sha: 'MAINSHA' }],
+    ['branches', []],
+  ];
+  const out = await collectProject('tok', { owner: 'me', dataRepo: 'me/hub', hubRepo: 'me/hub' }, [project], 'p1', fakeFetch(routes));
+  assert.equal(out.docs.find(d => d.id === 'appb').kind, 'appendix');
+  assert.equal(out.docs.find(d => d.id === 'ch1').kind, null, 'a normal chapter has no kind');
+  assert.equal(out.unitNoun, 'chapter', 'project carries its unit noun for labelling');
+});
