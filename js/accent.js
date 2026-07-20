@@ -153,8 +153,10 @@ const _mode = (d) => (d.documentElement.classList.contains('dark') ? 'dark' : 'l
 const _vals = (id, mode) => { const a = ACCENTS.find(x => x.id === id); return a && a[mode]; };
 
 function setInline(d, accent, bg) {
-  d.documentElement.style.setProperty('--accent', accent);
-  if (bg) d.documentElement.style.setProperty('--accent-bg', bg);
+  // 'important' so the sweep beats the palette's own `:root.ac-<id>{--accent:…!important}` rule —
+  // otherwise the animation is invisible whenever a static colour is selected.
+  d.documentElement.style.setProperty('--accent', accent, 'important');
+  if (bg) d.documentElement.style.setProperty('--accent-bg', bg, 'important');
   _inlineSet = true;
 }
 // Only clear what WE set, so an instance's inline brand accent isn't wiped.
