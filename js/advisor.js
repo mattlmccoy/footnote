@@ -1413,7 +1413,7 @@ function enterHome(){
   const appCard=a=>{ const r=JSON.parse(localStorage.getItem(localKey(a.id))||'null'); const n=r?.comments?.length||0;
     const homeMeta=a.home?chMeta(a.home):null;
     const sub=homeMeta?`attached to ${unitLabel(homeMeta, UNIT)}`:'open to review';
-    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
+    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:color-mix(in srgb,var(--accent) 9%,var(--bg-2))">
       <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
       <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
       <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${escapeHtml(sub)}</span>${typeof COUNTS[a.id]?.words==='number'?`<span style="color:var(--text-3)">${formatCount(COUNTS[a.id].words)}</span>`:''}${n?`<span style="margin-left:auto">${n} comment${n>1?'s':''}</span>`:''}</div></div>`; };
