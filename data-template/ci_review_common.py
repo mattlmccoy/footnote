@@ -413,6 +413,48 @@ def process_run_agents_job(job, review, outputs_by_agent, ts, idgen):
     return {**review, "comments": [*(review.get("comments") or []), *added]}
 
 
+def finding_to_comment(finding, cid):
+    """A review-agent finding as a Claude-authored proactive comment for reviews/<ch>.json. author/source
+    mark it so the owner renders it as a 'Claude · review' card and the reviewer portal filters it out. The
+    proposed edit (staged_edit + claude.response) is drafted by a later apply-edits pass, so the finding
+    arrives ready to Approve/Deny; this builder only makes the base comment. Accepts a nested anchor or a
+    flat {quote, section}. Pure — input not mutated."""
+    anchor = finding.get("anchor") or {"quote": finding.get("quote", ""), "section": finding.get("section", "")}
+    return {
+        "id": cid,
+        "author": "claude",
+        "source": "review",
+        "kind": "text",
+        "status": "open",
+        "anchor": {"quote": anchor.get("quote", ""), "section": anchor.get("section", ""),
+                   "synctex": None, "rects": [], "figure": None, "confirmed": False},
+        "tag": finding.get("tag", "wording"),
+        "body": finding.get("body", ""),
+        "claude": {"branch": None, "commit": None, "response": None, "resolved_line": None, "ts": None},
+    }
+
+
+def agent_findings_as_review(job, outputs_by_agent, ts, idgen, cap_total=None):
+    """Agent outputs → Claude-review comments for reviews/<ch>.json (each via finding_to_comment), capped
+    to cap_total across all agents, PLUS a follow-up apply-edits job that drafts a proposed edit per finding
+    so findings arrive STAGED (flag + proposed-edit-upfront). Returns (comments, followup_job|None). The
+    follow-up reuses the existing apply-edits machinery — no new drafting code. idgen(key) supplies ids
+    (int index for comments, 'apply' for the job). Pure; inputs not mutated."""
+    flat = []
+    for agent in (job.get("agents") or []):
+        for spec in (outputs_by_agent.get(agent) or []):
+            flat.append(spec)
+    if cap_total is not None:
+        flat = flat[:max(0, cap_total)]
+    comments = [finding_to_comment(spec, idgen(i)) for i, spec in enumerate(flat)]
+    followup = None
+    if comments:
+        followup = {"id": idgen("apply"), "type": "apply-edits", "chapter": job.get("chapter"),
+                    "comment_ids": [c["id"] for c in comments], "source": "review",
+                    "status": "queued", "requested_ts": ts}
+    return comments, followup
+
+
 def comment_source_edit(comment):
     """The {find, replacement} source edit for a comment, from ``edit`` (apply-direct) or
     ``source_edit`` (Claude apply-edits), or None if it carries neither."""

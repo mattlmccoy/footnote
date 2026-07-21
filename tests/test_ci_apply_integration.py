@@ -255,11 +255,16 @@ def test_merge_publishes_only_approved_edits(workspace_repo, monkeypatch, tmp_pa
     assert byid["c1"]["status"] == "merged" and byid["c2"]["status"] == "declined"
 
 
-def test_run_agents_appends_critique_comments(workspace_repo, monkeypatch):
-    """A run-agents job: each configured agent's read-only critique is appended to the review as
-    author-tagged comments; the queue drains. Mocked agents — no live model, no source change."""
+def test_run_agents_findings_become_claude_comments_with_upfront_edit(workspace_repo, monkeypatch):
+    """A run-agents job appends each finding to reviews/<ch>.json as a Claude-authored review comment
+    (author='claude', source='review') and enqueues a follow-up apply-edits job — so a second drain drafts
+    a proposed edit per finding and it arrives STAGED (flag + proposed-edit-upfront). Existing comments are
+    preserved (append-only). Mocked agents/writer — no live model."""
     data, bare = workspace_repo
-    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": []}))
+    # an existing live comment must be preserved when findings are appended
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": [
+        {"id": "keep1", "author": "you", "status": "open", "tag": "wording",
+         "anchor": {"quote": "keep me"}, "body": "existing comment"}]}))
     (data / "proj" / "jobs.json").write_text(json.dumps([
         {"id": "g1", "type": "run-agents", "chapter": "02-methods",
          "agents": ["adversary"], "status": "queued"}]))
@@ -274,20 +279,39 @@ def test_run_agents_appends_critique_comments(workspace_repo, monkeypatch):
     monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
     monkeypatch.delenv("SOURCE_REPO", raising=False)
-    n = ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
-    assert n == 1
+    monkeypatch.delenv("REVIEW_AGENTS", raising=False)
 
-    # findings land as the AI reviewer's SUBMITTED comments (accept/decline flow), not the owner review
-    comments = json.loads((data / "proj" / "advisor" / "ai-review-agents" / "02-methods.json").read_text())["comments"]
-    assert len(comments) == 1
-    assert comments[0]["author"] == "adversary"
-    assert comments[0]["body"] == "state the assumption behind alpha"
-    assert comments[0]["anchor"]["quote"] == "\\alpha" and comments[0]["status"] == "submitted"
-    reg = json.loads((data / "proj" / "advisors.json").read_text())
-    assert any(a["id"] == "ai-review-agents" and a["email"] == "" for a in reg["advisors"])  # invite-safe
-    assert json.loads((data / "proj" / "jobs.json").read_text()) == []
-    # agents never touch source
-    assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
+    # DRAIN 1: agents run → findings land in reviews/ as Claude comments + a follow-up apply-edits job queued
+    ci_apply.process_project("proj/", "owner/data", token="", agent_fn=fake_agent)
+    review = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())
+    comments = review["comments"]
+    assert [c["id"] for c in comments if c["author"] == "you"] == ["keep1"]   # existing comment preserved
+    findings = [c for c in comments if c.get("source") == "review"]
+    assert len(findings) == 1
+    f = findings[0]
+    assert f["author"] == "claude" and f["source"] == "review"
+    assert f["anchor"]["quote"] == "\\alpha" and f["body"] == "state the assumption behind alpha"
+    assert "staged_edit" not in f and f["status"] == "open"
+    # findings do NOT go to the old AI-reviewer advisor file
+    assert not (data / "proj" / "advisor" / "ai-review-agents" / "02-methods.json").exists()
+    jobs = json.loads((data / "proj" / "jobs.json").read_text())
+    followups = [j for j in jobs if j["type"] == "apply-edits" and j.get("source") == "review"]
+    assert len(followups) == 1 and followups[0]["comment_ids"] == [f["id"]]
+    assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"   # agents never touch source
+
+    # DRAIN 2: the follow-up drafts a proposed edit for the finding → it arrives STAGED with a response
+    def fake_writer(task):
+        cid = task["comments"][0]["id"]
+        return {cid: {"id": cid, "response": "State the alpha assumption explicitly.",
+                      "source_before": "\\alpha", "source_after": "\\alpha\\,(assumed constant)",
+                      "prose_before": "\\alpha", "prose_after": "\\alpha (assumed constant)"}}
+
+    ci_apply.process_project("proj/", "owner/data", token="", claude_fn=fake_writer)
+    f2 = [c for c in json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())["comments"]
+          if c.get("source") == "review"][0]
+    assert f2["status"] == "staged"
+    assert f2["claude"]["response"] == "State the alpha assumption explicitly."
+    assert f2["staged_edit"]["before"] and f2["staged_edit"]["after"]
 
 
 def test_apply_edits_agent_gate_rejects_and_emits_progress(workspace_repo, monkeypatch, tmp_path):

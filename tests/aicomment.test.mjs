@@ -1,7 +1,7 @@
 // tests/aicomment.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AI_REVIEWER_ID, isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from '../js/aicomment.js';
+import { AI_REVIEWER_ID, isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState, isClaudeReview, isOwnerOrReviewer } from '../js/aicomment.js';
 
 test('AI_REVIEWER_ID matches the engine reviewer id', () => {
   assert.equal(AI_REVIEWER_ID, 'ai-review-agents');
@@ -67,4 +67,17 @@ test('findingCardState reads per-comment acted/outcome state', () => {
     { acted: true, staged: true, conflict: false, dismissed: false, status: 'staged' });
   assert.equal(findingCardState({ status: 'queued', claude: { conflict: { reason: 'r' } } }).conflict, true);
   assert.equal(findingCardState({ resolution: { state: 'declined' } }).dismissed, true);
+});
+
+test('isClaudeReview detects a Claude-authored proactive review comment', () => {
+  assert.equal(isClaudeReview({ author: 'claude', source: 'review' }), true);
+  assert.equal(isClaudeReview({ author: 'claude', source: 'answer' }), false);
+  assert.equal(isClaudeReview({ author: 'you' }), false);
+  assert.equal(isClaudeReview(null), false);
+});
+
+test('isOwnerOrReviewer excludes Claude-review comments (neutral filter for the reviewer portal)', () => {
+  assert.equal(isOwnerOrReviewer({ author: 'you' }), true);
+  assert.equal(isOwnerOrReviewer({ author: 'jane', from_advisor: { id: 'jane' } }), true);
+  assert.equal(isOwnerOrReviewer({ author: 'claude', source: 'review' }), false);
 });
