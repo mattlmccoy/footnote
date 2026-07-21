@@ -51,6 +51,8 @@ button{font:inherit;color:inherit;background:none;border:none;cursor:pointer;pad
 .chip{font-size:11px;font-weight:500;padding:2px 9px;border-radius:20px;letter-spacing:.01em}
 .app{display:flex;flex-direction:column;height:100vh}
 .topbar{display:flex;align-items:center;gap:12px;height:56px;flex:0 0 56px;padding:0 16px;border-bottom:.5px solid var(--border);background:var(--bg-2)}
+/* the home logo fills its square with the accent; dark accents are tuned LIGHT (pink #ef83b1 etc), so a solid block glares — tone it down. CSS wins over the SVG fill="" attribute. */
+.dark .fn-mark rect{fill:color-mix(in srgb,var(--accent) 70%,#000)}
 .chsel{display:inline-flex;align-items:center;gap:8px;font-size:15px;font-weight:500;padding:5px 8px;border-radius:var(--r-md)}
 .chsel:hover{background:var(--bg-3)}
 .search{flex:1;max-width:440px;display:flex;align-items:center;gap:9px;height:38px;padding:0 13px;border:.5px solid var(--border);border-radius:var(--r-md);background:var(--bg);color:var(--text-3);font-size:13px}
