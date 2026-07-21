@@ -1430,7 +1430,7 @@ function enterHome(){
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Read the whole ${escapeHtml(DOC)}</div>
         <div style="font-size:11.5px;color:var(--text-2)">Every released ${escapeHtml(UNIT)} as one continuous read — comment anywhere</div></div>
         <span style="margin-left:auto;color:var(--text-2)"><i class="ti ti-chevron-right" style="vertical-align:-2px"></i></span></button>`:''}
-      ${HAS_OUTLINE ? `<button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:var(--accent-bg);cursor:pointer;font:inherit;color:var(--text)">
+      ${HAS_OUTLINE ? `<button id="outline-card" style="display:flex;align-items:center;gap:13px;width:100%;text-align:left;border:.5px solid var(--accent);border-radius:var(--r-lg);padding:14px 16px;margin-bottom:26px;background:color-mix(in srgb,var(--accent) 9%,var(--bg-2));cursor:pointer;font:inherit;color:var(--text)">
         <i class="ti ti-list-tree" style="font-size:22px;color:var(--accent)"></i>
         <div style="min-width:0"><div style="font-size:14px;font-weight:500">Proposed ${DOC} outline</div>
         <div style="font-size:11.5px;color:var(--text-2)">See the planned structure and comment on it, available before ${UNIT}s are released.</div></div>
