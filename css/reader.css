@@ -288,3 +288,5 @@ body.tour-active .popover,body.tour-active .figmk-back{z-index:10001}
 
 /* shared Footnote brand mark (reviewer Home + topbars) */
 .fn-mark{width:22px;height:22px;flex:0 0 auto}
+/* dark: the tuned accents are light (pink #ef83b1 etc); a solid logo block glares, so tone the fill down (CSS overrides the SVG fill="" presentation attribute) */
+.dark .fn-mark rect{fill:color-mix(in srgb,var(--accent) 70%,#000)}
