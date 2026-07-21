@@ -14,6 +14,7 @@ import { loadAgentCatalog, agentCatalogView, agentCatalogHtml, partitionCatalog,
 import { orderedUnits, mergeReviews, routeWrite, wrapUnit, stripSegmentId } from './wholedoc.js?v=80e01b5';
 import { buildRefsSection } from './wholerefs.js?v=4260d4d';   // consolidate scattered per-unit reference lists into one at the end of the whole-doc
 import { unitLabel, unitLabelWithTitle, unitTag } from './unitlabel.js?v=7d58e97';   // "Chapter 3"/"Appendix A", compact "3"/"A" — one label rule for both portals
+import { themeIconName } from './themeicon.js';   // theme toggle icon (sun in dark, moon in light)
 import { refTargetUnit } from './unitref.js?v=b29f577';   // "Section 3.1"/"Chapter 3" → the CHAPTER (never an appendix that shares the number)
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun, parseDocTitle, parseLatexOutline, parseDocxChapters, docxToXml, mergeChapters } from './docparse.js?v=c61fbc8';
 import { importFormat, stagingPath, sourceRepoSuggestion, ensureRepo, repoFileSha, commitSourceFile, commitSourceBinary, pickEntryTex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
@@ -268,7 +269,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
-      <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ti-moon"></i></button>
+      <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
       <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
@@ -327,7 +328,8 @@ function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorag
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar(); renderComments(); loadChapter(ch); }
 const selectChapter = enterChapter;
-function toggleTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); }
+function toggleTheme(){ document.documentElement.classList.toggle('dark'); localStorage.setItem('theme', document.documentElement.classList.contains('dark')?'dark':'light'); syncThemeIcon(); }
+function syncThemeIcon(){ const i = document.querySelector('#btn-theme i'); if (i) i.className = 'ti ' + themeIconName(document.documentElement.classList.contains('dark')); }
 if (localStorage.getItem('theme') === 'dark') document.documentElement.classList.add('dark');
 initAccent();   // apply the per-viewer accent (adds an ac-<id> class; the palette CSS handles light/dark)
 
@@ -2439,7 +2441,7 @@ function enterHome(){
      <button class="btn" id="btn-releases" style="padding:6px 12px"><i class="ti ti-users"></i>Reviewers</button>
      <button class="btn" id="btn-settings-h" style="padding:6px 12px"><i class="ti ti-settings"></i>Settings</button>
      <a class="icbtn" href="./index.html" title="Back to dashboard"><i class="ti ti-layout-dashboard"></i></a>
-     <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
+     <button class="icbtn" id="btn-theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>`;
   document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   document.getElementById('btn-releases').onclick = openReleasePanel;
   document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
@@ -2547,7 +2549,7 @@ async function loadOwnerOutline(){
     <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
     <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
     <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
-    <button class="icbtn" id="btn-theme"><i class="ti ti-moon"></i></button>`;
+    <button class="icbtn" id="btn-theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>`;
   document.getElementById('ol-back').onclick = enterHome;
   document.getElementById('btn-send').onclick = openSendMenu;   // structure comments → apply-edits on review-edits/__outline__ (parity with chapters)
   document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
@@ -3029,7 +3031,7 @@ function homeHtml(){
   const appCard = a => {
     const homeMeta = a.home ? chMeta(a.home) : null;
     const sub = homeMeta ? `attached to ${unitLabel(homeMeta, UNIT)}` : 'uncited';
-    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:var(--accent-bg)">
+    return `<div class="chcard" data-ch="${a.id}" style="border:.5px solid var(--border);border-radius:var(--r-lg);padding:14px 15px;cursor:pointer;background:color-mix(in srgb,var(--accent) 9%,var(--bg-2))">
         <div style="font-size:11.5px;color:var(--accent)">${unitLabel(a, UNIT)}</div>
         <div style="font-size:14px;font-weight:500;line-height:1.35;margin:3px 0 11px;min-height:38px">${shortTitle(a.title)}</div>
         <div style="font-size:11px;color:var(--text-2);display:flex;gap:8px"><span>${escapeHtml(sub)}</span>${COUNTS[a.id]?.words != null ? `<span style="margin-left:auto;color:var(--text-3)">${formatCount(COUNTS[a.id].words)}</span>` : ''}</div></div>`;
