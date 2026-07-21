@@ -38,6 +38,8 @@
   .fn-top{display:flex;align-items:center;height:78px;gap:12px}
   .fn-brand{display:inline-flex;align-items:center;gap:11px}
   .fn-mark{width:30px;height:30px;display:block;filter:drop-shadow(0 3px 8px rgba(44,100,196,.28))}
+  /* the logo fill is the full accent; in dark the tuned accents are LIGHT (e.g. pink #ef83b1) so a solid 30px block glares — tone it down. CSS wins over the SVG fill="" presentation attribute. */
+  .dark .fn-mark rect{fill:color-mix(in srgb,var(--accent) 70%,#000)}
   .fn-word{font-family:var(--serif);font-weight:600;font-size:22px;letter-spacing:-.01em}
   .fn-link{margin-left:auto;background:none;border:none;color:var(--muted);font-family:var(--sans);font-size:13px;cursor:pointer;text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line)}
   .fn-link:hover{color:var(--accent)}
