@@ -42,6 +42,7 @@ import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from './aicomment.js?v=c252c31';
+import { fetchSourceStatus } from './sourcestatusio.js?v=bdaa0e0';   // is the reading view behind the source repo HEAD?
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -267,6 +268,7 @@ function renderTopbar(){
     <button class="chsel" id="chsel"><i class="ti ti-book-2"></i><span>${current==='__whole__' ? 'Whole '+escapeHtml(DOC) : `${unitLabel(m, UNIT)} · ${shortTitle(m.title)}`}</span><i class="ti ti-chevron-down" style="font-size:15px;color:var(--text-3)"></i></button>
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT} · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
+      <button class="icbtn" id="src-fresh" data-compact="1" title="How current the reading view is vs your source repo. Click to re-check or rebuild." style="width:auto;padding:0 9px;gap:5px;font-size:12px;color:var(--text-3)"><i class="ti ti-git-branch"></i><span id="src-fresh-lbl">…</span></button>
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
@@ -284,6 +286,7 @@ function renderTopbar(){
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-more').onclick = openMoreMenu;
   document.getElementById('btn-settings').onclick = () => openSettingsPage();
+  mountSrcFresh();                          // source-freshness pill (compact); paints from cache on unit switch
   renderHelpFab();                          // body-level, so it outlives every view swap
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
@@ -446,6 +449,90 @@ async function cloudBuildReadingView(ch){
       say('Couldn’t build the reading view: ' + escapeHtml(e.message) + '. Check <b>⋯ → Settings</b>.');
     }
   }
+}
+
+// ---- Source freshness (owner): is the built reading view behind the source repo HEAD? ----------------
+// Footnote does not clone or auto-pull the source; it builds the reading view from the source LaTeX via CI
+// and the browser view can silently drift behind a push. This surfaces that drift on the owner home, with a
+// cheap re-check (bust the cached reads, no rebuild) and, when the source is genuinely ahead, an escalated
+// rebuild that reuses the existing render workflow (dispatchRender + renderRun). Provenance is the real
+// content/built.json marker (fetchSourceStatus), never the always-empty built_from_commit field.
+let _srcFresh = null;
+function _srcTone(state){
+  return state === 'uptodate' ? 'success'
+    : (state === 'behind' || state === 'notbuilt') ? 'warn'
+    : 'text-3';   // unknown / nosource: honest, never green
+}
+// Paint the current #src-fresh pill from a status object. A compact pill (reading topbar, tight on space)
+// shows the terse `short` label with the full label on hover; the home pill shows the full label.
+function _paintSrcFresh(s){
+  const lbl = document.getElementById('src-fresh-lbl'), btn = document.getElementById('src-fresh');
+  if (!lbl || !btn) return;
+  const compact = btn.dataset.compact === '1';
+  lbl.textContent = compact ? s.short : s.label;
+  btn.title = s.label;
+  btn.dataset.state = s.state;
+  btn.style.color = `var(--${_srcTone(s.state)})`;
+}
+async function refreshSourceFreshness(bust = false){
+  const lbl = document.getElementById('src-fresh-lbl'), btn = document.getElementById('src-fresh');
+  if (!lbl || !btn) return;
+  lbl.textContent = bust ? 're-checking…' : 'checking source…';
+  try {
+    _srcFresh = await fetchSourceStatus({ token: tok(), sourceRepo: _CFG.sourceRepo, dataRepo: DATA_REPO,
+      dataPrefix: _CFG.dataPrefix || '', bust });
+    _paintSrcFresh(_srcFresh);
+  } catch(e){ lbl.textContent = 'Source status unavailable'; btn.style.color = 'var(--text-3)'; }
+}
+// Wire the pill in whatever view just rendered it. Paint instantly from the cached status when we already
+// have it (chapter navigation), so switching units never re-hits GitHub; fetch once when we don't.
+function mountSrcFresh(){
+  const btn = document.getElementById('src-fresh'); if (!btn) return;
+  btn.onclick = openSourceFreshnessMenu;
+  if (_srcFresh) _paintSrcFresh(_srcFresh); else refreshSourceFreshness();
+}
+function openSourceFreshnessMenu(){
+  document.getElementById('srcfresh-menu')?.remove();
+  const btn = document.getElementById('src-fresh'); if (!btn) return;
+  const r = btn.getBoundingClientRect();
+  const menu = document.createElement('div'); menu.id = 'srcfresh-menu';
+  menu.style.cssText = `position:fixed;top:${r.bottom+6}px;left:${r.left}px;z-index:9999;background:var(--bg);border:.5px solid var(--border-2);border-radius:10px;box-shadow:0 12px 34px -12px rgba(20,24,48,.5);padding:5px;min-width:210px`;
+  const needsRebuild = !!(_srcFresh && _srcFresh.needsRebuild);
+  const item = (act, icon, title) => `<div class="mmi" data-act="${act}" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer"><i class="ti ti-${icon}"></i>${title}</div>`;
+  menu.innerHTML = item('recheck', 'refresh', 'Re-check source')
+    + (needsRebuild ? item('rebuild', 'cloud-upload', 'Rebuild reading view') : '');
+  document.body.appendChild(menu);
+  const acts = { recheck: () => refreshSourceFreshness(true), rebuild: rebuildReadingView };
+  menu.querySelectorAll('.mmi').forEach(el => {
+    el.onmouseenter = () => el.style.background = 'var(--bg-3)';
+    el.onmouseleave = () => el.style.background = 'transparent';
+    el.onclick = () => { menu.remove(); acts[el.dataset.act](); };
+  });
+  setTimeout(() => document.addEventListener('click', function h(e){ if (!menu.contains(e.target) && e.target.id !== 'src-fresh' && !e.target.closest('#src-fresh')){ menu.remove(); document.removeEventListener('click', h); } }), 0);
+}
+// Escalated: rebuild the reading view from source via the existing render workflow, then re-check. Polls
+// with the shared jobPollDelay ramp (like the cloud-job panels), easing off as the shared budget runs low.
+async function rebuildReadingView(){
+  const t = tok(); if (!t) return openSettingsPage('access');
+  try {
+    flash('Rebuilding the reading view from source…');
+    try { await ensureRenderPipeline(DATA_REPO, t); }
+    catch(e){ if (/workflow-scope/.test(e.message)){ flash('Your token needs the workflow permission to rebuild. Open ⋯ → Owner key.'); return; } }
+    await dispatchRender(t, _projectId);
+    flash('Rebuild started on your GitHub. This takes a couple of minutes.');
+    let polls = 0;
+    const poll = async () => {
+      const run = await renderRun(t).catch(() => null);
+      if (run && run.status === 'completed'){
+        flash(run.conclusion === 'success' ? 'Reading view rebuilt ✓' : 'Rebuild finished: ' + run.conclusion);
+        refreshSourceFreshness(true);
+        return;
+      }
+      polls++;
+      setTimeout(poll, jobPollDelay({ polls, hidden: document.hidden, factor: budgetFactor(budgetLevel(budgetSnapshot())) }));
+    };
+    setTimeout(poll, jobPollDelay({ polls: 0 }));
+  } catch(e){ flash('Rebuild failed: ' + (e && e.message || e)); }
 }
 
 function renderDoc(fragment){
@@ -2436,6 +2523,7 @@ function enterHome(){
   document.getElementById('comments').style.display = 'none';
   document.getElementById('topbar').innerHTML =
     `<a href="./index.html" title="Your projects" style="text-decoration:none;color:inherit;display:inline-flex;align-items:center;gap:8px">${brandMark('var(--accent)')}<strong style="font-size:16px;font-weight:600">${escapeHtml(_CFG.brand.name)}</strong></a>
+     <button class="btn" id="src-fresh" title="How current the reading view is vs your source repo. Click to re-check or rebuild." style="padding:5px 10px;font-size:12px;color:var(--text-3)"><i class="ti ti-git-branch"></i><span id="src-fresh-lbl">checking source…</span></button>
      ${_CFG.deadline ? `<span style="margin-left:auto;font-size:12.5px;color:var(--text-2);display:inline-flex;align-items:center;gap:6px"><i class="ti ti-flag"></i>${escapeHtml(_CFG.deadline.label || 'deadline')} in ${daysToDefense()} days</span>` : ''}
      <button class="btn" id="btn-outline" style="padding:6px 12px${_CFG.deadline?'':';margin-left:auto'}" title="Proposed outline (what reviewers see)"><i class="ti ti-list-tree"></i>Outline</button>
      <button class="btn" id="btn-export-menu" style="padding:6px 12px" title="Take your reviewers' comments to Overleaf, or into a response letter"><i class="ti ti-file-export"></i>Export<i class="ti ti-chevron-down" style="margin-left:3px;font-size:13px;color:var(--text-3)"></i></button>
@@ -2448,6 +2536,7 @@ function enterHome(){
   document.getElementById('btn-settings-h').onclick = () => openSettingsPage();
   document.getElementById('btn-export-menu').onclick = openExportMenu;
   document.getElementById('btn-outline').onclick = loadOwnerOutline;
+  mountSrcFresh();
   read.innerHTML = homeHtml();
   renderHelpFab();   // the landing page has its own banner (not renderTopbar), so create the help button here too
   paintDots();   // color the setup-card + inbox status dots to the current connection state
