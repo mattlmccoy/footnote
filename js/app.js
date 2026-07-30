@@ -3,7 +3,7 @@ import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // single source of truth for the Footnote logo (shared with the launcher + reviewer)
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=caae74b';
 import { PROVIDERS, detectProvider, genKey, getPublicKey, putSecret, setVariable, getVariable, dispatchInvite, latestRun, dispatchRender, renderRun, setAiSecrets, dispatchApply, applyRun, cancelRun, applyRunLabel, listSecretNames, claudeConnectionStatus, prefillFromGitHub, isScopeError, checkActionsAccess, permissionFromError } from './ghsecrets.js?v=d47929c';
-import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=c823c55';
+import { ensureRenderPipeline, ensureApplyEngine, ensureInvitePipeline } from './seed.js?v=3df6010';
 import { isOverleafLinked } from './overleaf.js?v=5e5b959';   // tokenless B1: recognize an Overleaf-bridge-linked project
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { isConfigured as ghAppConfigured, startDeviceLogin, pollForToken } from './ghauth.js?v=434b300';
@@ -539,7 +539,7 @@ async function rebuildReadingView(){
     };
     setTimeout(poll, jobPollDelay({ polls: 0 }));
   } catch(e){
-    if (/workflow-scope/.test(e && e.message || '')) flash('Your token needs the workflow permission to rebuild. Open ⋯ → Owner key.');
+    if (/workflow-scope/.test(e && e.message || '')) flash('Cannot cloud-rebuild here: your Owner key may lack the workflow permission (regenerate with repo + workflow via ⋯ → Owner key), or this project renders locally (rebuild there and push).');
     else flash('Rebuild failed: ' + (e && e.message || e));
   }
 }

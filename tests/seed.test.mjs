@@ -132,6 +132,32 @@ test('ensureRenderPipeline throws a clear workflow-scope error when GitHub block
   await assert.rejects(() => ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
 });
 
+// GitHub answers a workflow-file write with 404 (not 403) when the token lacks the workflow permission —
+// e.g. a fine-grained key missing "Workflows: write", or a hand-rendered repo with no render.yml. Contents
+// writes (reviews) still succeed, so a raw "seed ...: 404" must map to the same actionable workflow-scope hint.
+test('ensureRenderPipeline treats a 404 on the workflow write as workflow-scope, not a raw seed error', async () => {
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') {
+      return url.includes('.github/workflows/') ? { ok: false, status: 404 } : { ok: true, status: 201 };
+    }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: false, status: 404 };  // all absent
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  await assert.rejects(() => ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/'), /workflow-scope/);
+});
+
+// A non-workflow file that 404s on write is NOT a scope problem — keep the specific error so it isn't masked.
+test('ensureRenderPipeline surfaces a non-workflow 404 as its own error (not workflow-scope)', async () => {
+  const fake = async (url, opts) => {
+    if (opts && opts.method === 'PUT') {
+      return url.includes('ci_render.py') ? { ok: false, status: 404 } : { ok: true, status: 201 };
+    }
+    if (url.includes('api.github.com') && url.includes('/contents/')) return { ok: false, status: 404 };
+    return { ok: true, status: 200, text: async () => 'x' };
+  };
+  await assert.rejects(() => ensureRenderPipeline('alice/ws', 'tok', fake, 'http://x/'), /ci_render\.py: 404/);
+});
+
 // ---- ensureApplyEngine: idempotent self-heal for the Claude round-trip engine, so an EXISTING data
 //      repo (created before the engine, or where the first seed failed) gets it once, repo-level. ----
 test('APPLY_FILES is the apply-engine subset (ci_review_common, ci_apply, apply.yml)', () => {

@@ -118,7 +118,10 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
       body: JSON.stringify({ message: `${sha ? 'refresh' : 'seed'}: ${label} — ${dest}`, content, ...(sha ? { sha } : {}) }),
     });
     if (put && put.ok) { out.seeded.push(dest); continue; }
-    if (put && put.status === 403 && dest.startsWith('.github/workflows/')) throw new Error('workflow-scope');
+    // GitHub returns 403 OR 404 on a .github/workflows/ write when the token can't write workflows (a classic
+    // key without `workflow`, a fine-grained key without Workflows:write, or a repo the app renders by hand).
+    // Contents writes (reviews) still work, so map both to the actionable workflow-scope hint, not a raw code.
+    if (put && (put.status === 403 || put.status === 404) && dest.startsWith('.github/workflows/')) throw new Error('workflow-scope');
     throw new Error(`seed ${dest}: ${put ? put.status : 'no response'}`);
   }
   return out;
