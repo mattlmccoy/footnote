@@ -26,15 +26,23 @@ export function builtMarker(manifest) {
 //   rendered    whether the view is built at all (built.json non-empty)
 // State precedence keeps the data-contract rule: an unknown source never renders as healthy, and a state
 // we cannot verify never claims a rebuild is needed.
-export function staleness({ sourceRepo, builtSha, headSha, headDate, ahead, rendered } = {}) {
+export function staleness({ sourceRepo, builtSha, headSha, headDate, ahead, rendered, renderedAt, sourceAt } = {}) {
   const lastUpdated = headDate || null;
   const mk = (state, behind = null, needsRebuild = false) => ({ state, behind, lastUpdated, needsRebuild });
   if (!sourceRepo) return mk('nosource');
   if (!headSha) return mk('unknown');
-  if (!rendered || !builtSha) return mk('notbuilt', null, true);
-  if (builtSha === headSha || ahead === 0) return mk('uptodate');
-  const behind = typeof ahead === 'number' && ahead > 0 ? ahead : null;
-  return mk('behind', behind, true);
+  if (!rendered) return mk('notbuilt', null, true);          // genuinely no reading view (no content/*.html)
+  // Exact path: built.json recorded which source commit each unit was built from.
+  if (builtSha) {
+    if (builtSha === headSha || ahead === 0) return mk('uptodate');
+    const behind = typeof ahead === 'number' && ahead > 0 ? ahead : null;
+    return mk('behind', behind, true);
+  }
+  // Fallback: the view IS rendered but has no manifest (an older render pipeline built it). Compare when it
+  // was rendered against the source HEAD, the signal debug.js uses. We can't count commits, so behind = null.
+  const src = sourceAt || headDate;
+  if (renderedAt && src) return src > renderedAt ? mk('behind', null, true) : mk('uptodate');
+  return mk('unknown');                                       // rendered but unverifiable: honest, never green
 }
 
 // Owner copy for each state. No em dashes (house style). Honest for every non-healthy state.

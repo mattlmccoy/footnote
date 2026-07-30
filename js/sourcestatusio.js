@@ -8,7 +8,7 @@
 // collector when imported into a page that has a document.
 import { condApi, condInvalidate } from './condfetch.js?v=acd31f3';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
-import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort } from './sourcestatus.js?v=44f468a';
+import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort } from './sourcestatus.js?v=f018713';
 
 const API = 'https://api.github.com';
 
@@ -20,6 +20,7 @@ export function bustUrls({ sourceRepo, dataRepo, dataPrefix = '' } = {}) {
   return [
     `${API}/repos/${dataRepo}/contents/${dataPrefix}content/built.json`,
     `${API}/repos/${sourceRepo}/commits/main`,
+    `${API}/repos/${dataRepo}/commits?path=${dataPrefix}content&per_page=1`,   // render-time fallback read
   ];
 }
 const _b64json = content => JSON.parse(decodeURIComponent(escape(atob(String(content).replace(/\s/g, '')))));
@@ -60,14 +61,19 @@ export async function fetchSourceStatus({ token, sourceRepo, dataRepo, dataPrefi
   const headSha = mainR.json?.sha || '';
   const headDate = mainR.json?.commit?.committer?.date || null;
 
-  // Only ask GitHub how far behind when there IS a gap to measure (both shas known and different).
-  let ahead = null;
+  let ahead = null, rendered = builtCount > 0, renderedAt = null;
   if (builtSha && headSha && builtSha !== headSha) {
+    // Exact path: ask GitHub how many commits the source is ahead of the recorded build point.
     const cmp = await _get(token, `${API}/repos/${sourceRepo}/compare/${builtSha}...${headSha}`, fetchImpl);
     ahead = typeof cmp.json?.ahead_by === 'number' ? cmp.json.ahead_by : null;
+  } else if (!builtSha && headSha) {
+    // No manifest (an older render pipeline built the view without one). The last commit touching content/
+    // tells us both that the reading view IS rendered and when, so a rendered doc never reads "not built".
+    const cr = await _get(token, `${API}/repos/${dataRepo}/commits?path=${dataPrefix}content&per_page=1`, fetchImpl);
+    const c = Array.isArray(cr.json) ? cr.json[0] : null;
+    if (c) { rendered = true; renderedAt = c.commit?.committer?.date || null; }
   }
 
-  const rendered = builtCount > 0;
-  const s = staleness({ sourceRepo, builtSha, headSha, headDate, ahead, rendered });
-  return { ...s, headSha, builtSha, ahead, builtCount, label: sourceStatusLabel(s), short: sourceStatusShort(s) };
+  const s = staleness({ sourceRepo, builtSha, headSha, headDate, ahead, rendered, renderedAt, sourceAt: headDate });
+  return { ...s, headSha, builtSha, ahead, builtCount, rendered, renderedAt, label: sourceStatusLabel(s), short: sourceStatusShort(s) };
 }
