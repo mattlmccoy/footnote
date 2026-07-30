@@ -8,7 +8,7 @@
 // collector when imported into a page that has a document.
 import { condApi, condInvalidate } from './condfetch.js?v=acd31f3';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
-import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort } from './sourcestatus.js?v=f018713';
+import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort } from './sourcestatus.js?v=f4377bc';
 
 const API = 'https://api.github.com';
 

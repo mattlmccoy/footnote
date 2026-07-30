@@ -78,6 +78,20 @@ export function sourceStatusShort(status) {
   }
 }
 
+// What the rebuild control should do, given the freshness verdict and the project's processing mode.
+// 'none' (no rebuild needed), 'cloud' (dispatch the render workflow), or 'local' (this project renders via
+// the operator's own pipeline: guide them to render and push, never dispatch a cloud build that can't run).
+export function rebuildAction({ needsRebuild, mode } = {}) {
+  if (!needsRebuild) return 'none';
+  return mode === 'cloud' ? 'cloud' : 'local';
+}
+
+// Guidance for a local-render project. No em dashes.
+export function localRebuildHint(dataRepo) {
+  const where = dataRepo ? ` to ${dataRepo}` : '';
+  return `This project renders locally. Run your render pipeline and push the updated content/ files${where}, then Re-check.`;
+}
+
 // Deterministic short date ("Jul 30, 2026") so labels are locale-stable and testable. '' for missing/invalid
 // input so a broken date never renders as "Invalid Date".
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

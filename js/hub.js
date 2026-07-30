@@ -3,7 +3,7 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount, resolveProject } from './config.js?v=f58d6b0';
-import { fetchSourceStatus } from './sourcestatusio.js?v=4e8f17f';   // per-book "reading view behind source?" indicator
+import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // per-book "reading view behind source?" indicator
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=48fa24b';
 import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=d7cc02b';
 import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue, overleafSaveTargets, needsOverleafSeal, withSealedRepo } from './account.js?v=6246abd';
