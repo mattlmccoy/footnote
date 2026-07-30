@@ -42,7 +42,8 @@ import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from './aicomment.js?v=c252c31';
-import { fetchSourceStatus } from './sourcestatusio.js?v=4e8f17f';   // is the reading view behind the source repo HEAD?
+import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
+import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
 startNetWatch();
 showBuildTag(import.meta.url);
@@ -498,12 +499,19 @@ function openSourceFreshnessMenu(){
   const r = btn.getBoundingClientRect();
   const menu = document.createElement('div'); menu.id = 'srcfresh-menu';
   menu.style.cssText = `position:fixed;top:${r.bottom+6}px;left:${r.left}px;z-index:9999;background:var(--bg);border:.5px solid var(--border-2);border-radius:10px;box-shadow:0 12px 34px -12px rgba(20,24,48,.5);padding:5px;min-width:210px`;
-  const needsRebuild = !!(_srcFresh && _srcFresh.needsRebuild);
+  // A cloud-mode project can dispatch the render workflow; a local-mode project renders via the operator's
+  // own pipeline, so offer "how to update" guidance instead of a cloud rebuild that can't run here.
+  const action = rebuildAction({ needsRebuild: _srcFresh && _srcFresh.needsRebuild, mode: processingMode(_CFG) });
   const item = (act, icon, title) => `<div class="mmi" data-act="${act}" style="display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:7px;cursor:pointer"><i class="ti ti-${icon}"></i>${title}</div>`;
   menu.innerHTML = item('recheck', 'refresh', 'Re-check source')
-    + (needsRebuild ? item('rebuild', 'cloud-upload', 'Rebuild reading view') : '');
+    + (action === 'cloud' ? item('rebuild', 'cloud-upload', 'Rebuild reading view')
+      : action === 'local' ? item('localhelp', 'terminal-2', 'How to update this view') : '');
   document.body.appendChild(menu);
-  const acts = { recheck: () => refreshSourceFreshness(true), rebuild: rebuildReadingView };
+  const acts = {
+    recheck: () => refreshSourceFreshness(true),
+    rebuild: rebuildReadingView,
+    localhelp: () => flash(localRebuildHint(DATA_REPO)),
+  };
   menu.querySelectorAll('.mmi').forEach(el => {
     el.onmouseenter = () => el.style.background = 'var(--bg-3)';
     el.onmouseleave = () => el.style.background = 'transparent';

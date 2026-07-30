@@ -1,5 +1,5 @@
 import { test } from 'node:test'; import assert from 'node:assert/strict';
-import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort, fmtWhen } from '../js/sourcestatus.js';
+import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort, fmtWhen, rebuildAction, localRebuildHint } from '../js/sourcestatus.js';
 
 // ---------------- builtMarker: reduce content/built.json to the project's build ceiling ----------------
 // built.json (ci_render write_build_manifest / stamp_built) = { unitId: { sha, ts } }. The reading view is
@@ -149,6 +149,37 @@ test('sourceStatusShort: terse per state, no dates, no em dashes', () => {
   assert.equal(short(staleness({ ...base, rendered: false, builtSha: '' })), 'not built');
   assert.equal(short(staleness({ ...base, headSha: '' })), 'source ?');
   assert.equal(short(staleness({ ...base, sourceRepo: '' })), 'no source');
+});
+
+// ---------------- rebuildAction / localRebuildHint: cloud dispatch vs local-render guidance ----------------
+// A local-mode project (renders via the operator's own script, no Footnote render.yml) must NOT be offered a
+// cloud rebuild that would fail; it gets "render locally and push" guidance instead.
+
+test('rebuildAction: nothing to offer when a rebuild is not needed', () => {
+  assert.equal(rebuildAction({ needsRebuild: false, mode: 'cloud' }), 'none');
+  assert.equal(rebuildAction({ needsRebuild: false, mode: 'local' }), 'none');
+});
+
+test('rebuildAction: cloud mode offers the cloud rebuild', () => {
+  assert.equal(rebuildAction({ needsRebuild: true, mode: 'cloud' }), 'cloud');
+});
+
+test('rebuildAction: local (or unknown) mode offers local-render guidance, never a cloud dispatch', () => {
+  assert.equal(rebuildAction({ needsRebuild: true, mode: 'local' }), 'local');
+  assert.equal(rebuildAction({ needsRebuild: true, mode: undefined }), 'local');
+  assert.equal(rebuildAction({ needsRebuild: true, mode: 'whatever' }), 'local');
+});
+
+test('localRebuildHint: names where to push the rebuilt content, no em dash', () => {
+  const h = localRebuildHint('me/dissertation-tracker-data');
+  assert.ok(h.includes('me/dissertation-tracker-data'), h);
+  assert.ok(/content\//.test(h), h);
+  assert.ok(!h.includes('—'), h);
+});
+
+test('localRebuildHint: still reads sensibly with no repo', () => {
+  const h = localRebuildHint('');
+  assert.ok(h.length > 0 && !h.includes('undefined'), h);
 });
 
 // ---------------- fmtWhen: deterministic short date, no locale surprises ----------------
