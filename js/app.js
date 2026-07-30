@@ -43,6 +43,7 @@ import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_I
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from './aicomment.js?v=c252c31';
 import { fetchSourceStatus } from './sourcestatusio.js?v=bdaa0e0';   // is the reading view behind the source repo HEAD?
+import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -516,9 +517,14 @@ async function rebuildReadingView(){
   const t = tok(); if (!t) return openSettingsPage('access');
   try {
     flash('Rebuilding the reading view from source…');
-    try { await ensureRenderPipeline(DATA_REPO, t); }
-    catch(e){ if (/workflow-scope/.test(e.message)){ flash('Your token needs the workflow permission to rebuild. Open ⋯ → Owner key.'); return; } }
-    await dispatchRender(t, _projectId);
+    // ensure render.yml exists/current, then dispatch, tolerating GitHub not yet registering a freshly
+    // (re)seeded workflow_dispatch trigger (else the first rebuild 422s on a pre-trigger render.yml).
+    await resilientRenderDispatch({
+      dataRepo: DATA_REPO, projectId: _projectId,
+      ensure: r => ensureRenderPipeline(r, t),
+      dispatch: pid => dispatchRender(t, pid),
+      sleep: ms => new Promise(res => setTimeout(res, ms)),
+    });
     flash('Rebuild started on your GitHub. This takes a couple of minutes.');
     let polls = 0;
     const poll = async () => {
@@ -532,7 +538,10 @@ async function rebuildReadingView(){
       setTimeout(poll, jobPollDelay({ polls, hidden: document.hidden, factor: budgetFactor(budgetLevel(budgetSnapshot())) }));
     };
     setTimeout(poll, jobPollDelay({ polls: 0 }));
-  } catch(e){ flash('Rebuild failed: ' + (e && e.message || e)); }
+  } catch(e){
+    if (/workflow-scope/.test(e && e.message || '')) flash('Your token needs the workflow permission to rebuild. Open ⋯ → Owner key.');
+    else flash('Rebuild failed: ' + (e && e.message || e));
+  }
 }
 
 function renderDoc(fragment){
