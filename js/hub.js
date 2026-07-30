@@ -2,7 +2,8 @@
 // projects.json, lets them create a new one, and opens a project's reviewer. Serverless: all state is a
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
-import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount } from './config.js?v=f58d6b0';
+import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount, resolveProject } from './config.js?v=f58d6b0';
+import { fetchSourceStatus } from './sourcestatusio.js?v=bdaa0e0';   // per-book "reading view behind source?" indicator
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=48fa24b';
 import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=d7cc02b';
 import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue, overleafSaveTargets, needsOverleafSeal, withSealedRepo } from './account.js?v=6246abd';
@@ -498,8 +499,32 @@ export async function launch() {
         <span class="fn-book-type">${esc(texFileName(p.doc.noun).replace(/\.tex$/, ''))}<span class="fn-ext">.tex</span></span>
         <span class="fn-book-title">${esc(p.name)}</span>
         <span class="fn-book-repo" title="source">${esc(srcLine)}</span>
+        <span class="fn-book-src" data-src="${esc(p.id)}" title="How current the reading view is vs the source repo" style="font-size:10.5px;color:var(--muted,#5c6675);margin-top:2px">checking source…</span>
         ${badges}
         <span class="fn-book-go">open</span></a>`;
+  }
+
+  // Per-book source freshness (owner shelf). Footnote builds the reading view from the source LaTeX via CI
+  // and can silently drift behind a push, so each book shows whether its built view is current with its
+  // source repo HEAD. Reads are conditional (free when unchanged) and bounded so a big shelf never bursts.
+  const _srcTone = state => state === 'uptodate' ? 'var(--success,#2f8a4e)'
+    : (state === 'behind' || state === 'notbuilt') ? 'var(--warn,#b7791f)'
+    : 'var(--muted,#5c6675)';   // unknown / nosource stays neutral, never green
+  async function paintBookSource(p, list, bust = false){
+    const el = root.querySelector(`.fn-book-src[data-src="${cssId(p.id)}"]`);
+    if (!el) return;
+    if (bust) el.textContent = 're-checking…';
+    try {
+      const rp = resolveProject({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, list, p.id);
+      const s = await fetchSourceStatus({ token: tok(), sourceRepo: rp.sourceRepo, dataRepo: rp.dataRepo,
+        dataPrefix: rp.dataPrefix || '', bust });
+      el.textContent = s.label; el.style.color = _srcTone(s.state);
+    } catch(e){ el.textContent = 'Source status unavailable'; el.style.color = _srcTone('unknown'); }
+  }
+  async function fillBookSource(list){
+    let i = 0; const LIMIT = 4;
+    const worker = async () => { while (i < list.length){ const p = list[i++]; await paintBookSource(p, list); } };
+    await Promise.all(Array.from({ length: Math.min(LIMIT, Math.max(1, list.length)) }, worker));
   }
 
   async function projects() {
@@ -550,6 +575,7 @@ export async function launch() {
       const mb = root.querySelector(`.fn-book-manage[data-mid="${cssId(p.id)}"]`);
       if (mb) mb.onclick = e => { e.preventDefault(); e.stopPropagation(); openManageMenu(mb, p, list, account); };
     });
+    fillBookSource(list);   // async, best-effort: paint each book's source-freshness line after the shelf lands
   }
 
   function cssId(s) { return (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\]/g, '\\$&'); }
@@ -562,6 +588,7 @@ export async function launch() {
     // NB: `project.workspace` here is the STORAGE boolean (consolidated-repo flag), NOT the grouping label.
     const canMigrate = !project.workspace && hub() && project.dataRepo && project.dataRepo !== hub();
     menu.innerHTML = `<button class="fn-menu-item" data-act="edit">Edit details</button>
+      <button class="fn-menu-item" data-act="recheck">Re-check source</button>
       <button class="fn-menu-item" data-act="move">Move to workspace ▸</button>
       ${canMigrate ? `<button class="fn-menu-item" data-act="migrate">Move into workspace repo</button>` : ''}
       <button class="fn-menu-item fn-menu-danger" data-act="remove">Remove from library</button>`;
@@ -570,6 +597,7 @@ export async function launch() {
     menu.style.top = (r.bottom + 6) + 'px';
     menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
     menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
+    menu.querySelector('[data-act="recheck"]').onclick = () => { closeManageMenu(); paintBookSource(project, list, true); };
     // stopPropagation: showMoveTargets rebuilds this menu's innerHTML in place, which detaches the clicked
     // button; without this the document-level outside-click handler would then see a detached target and
     // close the menu before the targets pane is visible.
