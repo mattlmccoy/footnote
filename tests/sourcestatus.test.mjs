@@ -78,6 +78,31 @@ test('staleness: shas differ, ahead uncomputable -> behind with null count, stil
   assert.equal(s.needsRebuild, true);
 });
 
+// ---------------- staleness: timestamp fallback when the view is rendered but has no built.json ----------
+// Real repos built by an older render pipeline have content/*.html but no manifest. That must read as
+// rendered (up to date / behind by timestamps), never as "not built yet".
+
+test('staleness: rendered without a manifest, source newer than the render -> behind (not "not built")', () => {
+  const s = staleness({ sourceRepo: 'me/s', headSha: 'H', headDate: '2026-07-30T12:00:00Z',
+    builtSha: '', rendered: true, renderedAt: '2026-07-30T09:00:00Z', sourceAt: '2026-07-30T12:00:00Z' });
+  assert.equal(s.state, 'behind');
+  assert.equal(s.needsRebuild, true);
+  assert.equal(s.lastUpdated, '2026-07-30T12:00:00Z');
+});
+
+test('staleness: rendered without a manifest, render at/after the source -> uptodate', () => {
+  const s = staleness({ sourceRepo: 'me/s', headSha: 'H', headDate: '2026-07-30T09:00:00Z',
+    builtSha: '', rendered: true, renderedAt: '2026-07-30T12:00:00Z', sourceAt: '2026-07-30T09:00:00Z' });
+  assert.equal(s.state, 'uptodate');
+  assert.equal(s.needsRebuild, false);
+});
+
+test('staleness: rendered but no manifest and no timestamps -> unknown, never false-healthy', () => {
+  const s = staleness({ sourceRepo: 'me/s', headSha: 'H', headDate: null, builtSha: '', rendered: true });
+  assert.equal(s.state, 'unknown');
+  assert.equal(s.needsRebuild, false);
+});
+
 // ---------------- sourceStatusLabel: owner copy (NO em dashes anywhere) ----------------
 
 const noEmDash = s => assert.ok(!s.includes('—'), `label must not contain an em dash: ${s}`);

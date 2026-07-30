@@ -42,7 +42,7 @@ import { repoExplainerHtml } from './repoexplainer.js?v=2903d0f';
 import { MODELS as AI_MODELS, DEFAULT_MODEL as AI_DEFAULT_MODEL, INHERIT as AI_INHERIT } from './aimodels.js?v=4259b34';
 import { resolveReviewerName } from './reviewername.js?v=ee4ce53';
 import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCardState } from './aicomment.js?v=c252c31';
-import { fetchSourceStatus } from './sourcestatusio.js?v=bdaa0e0';   // is the reading view behind the source repo HEAD?
+import { fetchSourceStatus } from './sourcestatusio.js?v=4e8f17f';   // is the reading view behind the source repo HEAD?
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
 startNetWatch();
 showBuildTag(import.meta.url);
