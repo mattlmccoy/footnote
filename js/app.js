@@ -45,7 +45,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
-import { buildGallery, galleryHtml } from './figures.js?v=a74ea01';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
+import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure } from './figures.js?v=49cc329';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -1716,8 +1716,23 @@ function jumpToFigure(num, tries = 30){                     // poll: the target 
   if (el){ scrollFlash(el); return; }
   if (tries > 0) _figJumpTimer = setTimeout(() => jumpToFigure(num, tries - 1), 100);
 }
-function _figGalKey(e){ if (e.key === 'Escape') closeFiguresGallery(); }
-function closeFiguresGallery(){ document.getElementById('figgal-overlay')?.remove(); document.removeEventListener('keydown', _figGalKey); }
+function openDrawForFigure(ch, num, tries = 30){          // open the existing draw canvas on a figure once its chapter has rendered
+  const fig = _figByNumber(num);
+  if (fig){
+    const info = figureLabel(fig);
+    const anchor = { quote: info.label ? `${info.label}${info.quote ? ': ' + info.quote : ''}` : (info.quote || 'Figure'),
+                     kind: 'figure', figure: info.id, section: headingFor(fig), confirmed: true, rects: [], chapterId: null };
+    scrollFlash(fig); openFigureMarkup(fig, anchor); return;   // chapterId:null → routes to the now-current chapter's review
+  }
+  if (tries > 0) setTimeout(() => openDrawForFigure(ch, num, tries - 1), 100);
+}
+// owner-local sweep state (which figures you've reviewed), per data repo — UI progress, not shared review data.
+const _figReviewedKey = () => `figrev:done:${DATA_REPO || ''}`;
+function loadFigReviewed(){ try { return JSON.parse(localStorage.getItem(_figReviewedKey()) || '{}') || {}; } catch(e){ return {}; } }
+function saveFigReviewed(r){ try { localStorage.setItem(_figReviewedKey(), JSON.stringify(r || {})); } catch(e){} }
+
+let _figGalKeydown = null;
+function closeFiguresGallery(){ document.getElementById('figgal-overlay')?.remove(); if (_figGalKeydown){ document.removeEventListener('keydown', _figGalKeydown); _figGalKeydown = null; } }
 async function openFiguresGallery(){
   if (!assistantOn()) return;                              // gated (the button only exists when AI is on; guard anyway)
   closeFiguresGallery();
@@ -1727,7 +1742,7 @@ async function openFiguresGallery(){
   ov.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:.5px solid var(--border)">
       <i class="ti ti-photo" style="font-size:18px;color:var(--text-3)"></i>
       <div style="font-weight:600;font-size:15px">Figure review</div>
-      <div style="font-size:12px;color:var(--text-3)">every figure in ${escapeHtml(DOC)}, by ${escapeHtml(UNIT)} — click one to draw on it &amp; comment</div>
+      <div style="font-size:12px;color:var(--text-3)">every figure in ${escapeHtml(DOC)}, by ${escapeHtml(UNIT)} — Draw to annotate · Mark done to sweep · ←/→ navigate · n = next unreviewed</div>
       <button class="icbtn" id="figgal-x" title="Close (Esc)" style="margin-left:auto"><i class="ti ti-x"></i></button>
     </div>
     <div id="figgal-body" style="flex:1;overflow:auto;padding:20px;max-width:1100px;margin:0 auto;width:100%">
@@ -1735,7 +1750,6 @@ async function openFiguresGallery(){
     </div>`;
   document.body.appendChild(ov);
   document.getElementById('figgal-x').onclick = closeFiguresGallery;
-  document.addEventListener('keydown', _figGalKey);
   const body = () => document.getElementById('figgal-body');
   if (!units.length){ const b = body(); if (b) b.innerHTML = galleryHtml([]); return; }
   const t = tok(); const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
@@ -1752,11 +1766,45 @@ async function openFiguresGallery(){
   try { await loadAllReviews(units); } catch(e){}           // populate _reviews + _wholeAdv for the comment badges
   const commentsByChapter = {};
   units.forEach(u => { commentsByChapter[u.id] = [ ...((_reviews[u.id] && _reviews[u.id].comments) || []), ...((_wholeAdv[u.id]) || []) ]; });
-  const b = body(); if (!b) return;                         // overlay was closed while loading
-  b.innerHTML = galleryHtml(buildGallery(units, fragsById, commentsByChapter));
-  b.querySelectorAll('.figgal-card').forEach(cardEl => {
-    cardEl.onclick = () => { const ch = cardEl.dataset.figCh, num = cardEl.dataset.figNum; closeFiguresGallery(); enterChapter(ch); jumpToFigure(num); };
-  });
+  if (!document.getElementById('figgal-overlay')) return;   // overlay was closed while loading
+  const gallery = buildGallery(units, fragsById, commentsByChapter);
+  let reviewed = loadFigReviewed();
+  let focusKey = null;
+  const applyFocus = () => {
+    const root = body(); if (!root) return;
+    root.querySelectorAll('.figgal-card').forEach(c => { c.style.outline = (c.dataset.figKey === focusKey) ? '2px solid var(--accent,#2c64c4)' : ''; c.style.outlineOffset = '2px'; });
+    if (focusKey){ const el = root.querySelector(`.figgal-card[data-fig-key="${CSS.escape(focusKey)}"]`); el?.scrollIntoView({ block: 'nearest' }); }
+  };
+  const jump = (ch, num) => { closeFiguresGallery(); enterChapter(ch); jumpToFigure(num); };
+  const draw = (ch, num) => { closeFiguresGallery(); enterChapter(ch); openDrawForFigure(ch, num); };
+  const toggleDone = (key) => { reviewed = markReviewed(reviewed, key, !isReviewed(reviewed, key)); saveFigReviewed(reviewed); focusKey = key; renderBody(); };
+  function renderBody(){
+    const root = body(); if (!root) return;
+    root.innerHTML = galleryHtml(gallery, { reviewed });
+    root.querySelectorAll('.figgal-card').forEach(cardEl => {
+      const ch = cardEl.dataset.figCh, num = cardEl.dataset.figNum, key = cardEl.dataset.figKey;
+      cardEl.querySelector('[data-act="open"]')?.addEventListener('click', () => jump(ch, num));
+      cardEl.querySelector('[data-act="draw"]')?.addEventListener('click', (e) => { e.stopPropagation(); draw(ch, num); });
+      cardEl.querySelector('[data-act="done"]')?.addEventListener('click', (e) => { e.stopPropagation(); toggleDone(key); });
+    });
+    applyFocus();
+  }
+  renderBody();
+  _figGalKeydown = (e) => {
+    if (!document.getElementById('figgal-overlay')) return;
+    const k = e.key;
+    if (k === 'Escape'){ closeFiguresGallery(); return; }
+    if (k === 'ArrowRight' || k === 'ArrowDown'){ const nx = adjacentFigure(gallery, focusKey, 1); if (nx){ focusKey = nx.key; applyFocus(); } e.preventDefault(); }
+    else if (k === 'ArrowLeft' || k === 'ArrowUp'){ const pv = adjacentFigure(gallery, focusKey, -1); if (pv){ focusKey = pv.key; applyFocus(); } e.preventDefault(); }
+    else if (k === 'n' || k === 'N'){ const u = firstUnreviewedFigure(gallery, reviewed); if (u){ focusKey = u.key; applyFocus(); } }
+    else if (focusKey){
+      const hash = focusKey.indexOf('#'); const ch = focusKey.slice(0, hash), num = focusKey.slice(hash + 1);
+      if (k === 'Enter'){ jump(ch, num); }
+      else if (k === 'd' || k === 'D'){ draw(ch, num); }
+      else if (k === 'x' || k === 'X' || k === ' '){ toggleDone(focusKey); e.preventDefault(); }
+    }
+  };
+  document.addEventListener('keydown', _figGalKeydown);
 }
 // Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
 // of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
