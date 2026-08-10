@@ -11,6 +11,7 @@ import {
   figNumFromCaption, figLabelFromCaption, extractFigures, parseFiguresFromFragment,
   figureRefsInFragment, groupFiguresByChapter, figureAnchor, attachCommentCounts, describeRegion,
   buildGallery, galleryHtml,
+  figureKey, markReviewed, isReviewed, sweepProgress, flattenFigures, adjacentFigure, firstUnreviewedFigure,
 } from '../js/figures.js';
 import { newReview, addComment } from '../js/model.js';
 
@@ -203,6 +204,78 @@ test('galleryHtml escapes caption/heading content (no HTML injection)', () => {
   assert.match(html, /&quot;quoted&quot;|&quot;/);
   assert.match(html, /Intro &lt;x&gt;/);
   assert.doesNotMatch(html, /<b>bold<\/b>/);   // raw markup never emitted
+});
+
+// ================= Slice 3: sweep state + sequential nav + gallery review affordances =================
+
+test('figureKey is a stable per-figure key from chapter id + number', () => {
+  assert.equal(figureKey('ch_thermal', '3.1'), 'ch_thermal#3.1');
+  assert.equal(figureKey('ch_val', '4'), 'ch_val#4');
+});
+
+test('markReviewed / isReviewed toggle a figure done-state immutably', () => {
+  const a = markReviewed({}, 'ch_thermal#3.1', true);
+  assert.equal(isReviewed(a, 'ch_thermal#3.1'), true);
+  assert.equal(isReviewed(a, 'ch_thermal#3.2'), false);
+  const b = markReviewed(a, 'ch_thermal#3.1', false);   // un-mark
+  assert.equal(isReviewed(b, 'ch_thermal#3.1'), false);
+  assert.notEqual(a, b);                                // pure: new object each time
+  assert.equal(isReviewed(a, 'ch_thermal#3.1'), true);  // original untouched
+  assert.equal(isReviewed(null, 'x'), false);           // safe on missing state
+});
+
+test('sweepProgress counts reviewed vs total across all chapters', () => {
+  const g = buildGallery(UNITS, FRAGS, {});   // 3.1, 3.2, 4.1 → total 3
+  assert.deepEqual(sweepProgress(g, {}), { total: 3, done: 0, remaining: 3 });
+  const reviewed = markReviewed(markReviewed({}, 'ch_thermal#3.1', true), 'ch_val#4.1', true);
+  assert.deepEqual(sweepProgress(g, reviewed), { total: 3, done: 2, remaining: 1 });
+});
+
+test('flattenFigures yields every figure in reading order with its key', () => {
+  const g = buildGallery(UNITS, FRAGS, {});
+  const flat = flattenFigures(g);
+  assert.deepEqual(flat.map(f => f.key), ['ch_thermal#3.1', 'ch_thermal#3.2', 'ch_val#4.1']);
+  assert.equal(flat[0].chapterId, 'ch_thermal');
+  assert.equal(flat[0].fignum, '3.1');
+});
+
+test('adjacentFigure walks next/prev, clamps at the ends, and seeds from null', () => {
+  const g = buildGallery(UNITS, FRAGS, {});
+  assert.equal(adjacentFigure(g, null, 1).key, 'ch_thermal#3.1');           // no current → first
+  assert.equal(adjacentFigure(g, null, -1).key, 'ch_val#4.1');              // no current, back → last
+  assert.equal(adjacentFigure(g, 'ch_thermal#3.1', 1).key, 'ch_thermal#3.2');
+  assert.equal(adjacentFigure(g, 'ch_thermal#3.2', 1).key, 'ch_val#4.1');
+  assert.equal(adjacentFigure(g, 'ch_val#4.1', 1), null);                   // past the end
+  assert.equal(adjacentFigure(g, 'ch_thermal#3.1', -1), null);             // before the start
+});
+
+test('firstUnreviewedFigure returns the next figure needing a look, or null when the sweep is done', () => {
+  const g = buildGallery(UNITS, FRAGS, {});
+  assert.equal(firstUnreviewedFigure(g, {}).key, 'ch_thermal#3.1');
+  const some = markReviewed({}, 'ch_thermal#3.1', true);
+  assert.equal(firstUnreviewedFigure(g, some).key, 'ch_thermal#3.2');
+  let all = {}; flattenFigures(g).forEach(f => { all = markReviewed(all, f.key, true); });
+  assert.equal(firstUnreviewedFigure(g, all), null);
+});
+
+test('galleryHtml marks reviewed cards, shows sweep progress, and renders draw + done actions per card', () => {
+  const g = buildGallery(UNITS, FRAGS, {});
+  const reviewed = markReviewed({}, 'ch_thermal#3.1', true);
+  const html = galleryHtml(g, { reviewed });
+  assert.match(html, /data-fig-key="ch_thermal#3\.1"/);
+  assert.match(html, /data-act="draw"/);                 // draw-in-gallery affordance
+  assert.match(html, /data-act="done"/);                 // mark-reviewed toggle
+  assert.match(html, /figgal-progress/);                 // sweep progress header present
+  assert.match(html, /1 of 3 reviewed/i);
+  // exactly one card is flagged done (the reviewed 3.1), the other two are not
+  assert.equal((html.match(/figgal-done/g) || []).length, 1);
+});
+
+test('galleryHtml without a reviewed map still renders (back-compat) with no progress header and nothing marked done', () => {
+  const html = galleryHtml(buildGallery(UNITS, FRAGS, {}));
+  assert.match(html, /data-fig-num="3\.1"/);
+  assert.doesNotMatch(html, /figgal-progress/);
+  assert.equal((html.match(/figgal-done/g) || []).length, 0);
 });
 
 test('galleryHtml shows an empty state when the document has no figures, and skips figure-less chapters', () => {

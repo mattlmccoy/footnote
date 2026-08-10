@@ -239,9 +239,33 @@ Figure Drafter pipeline.
   data repo / arbitrary-localhost blocked). The pure logic + rendered markup are covered; the app wiring
   mirrors `loadWholeDoc`/`enterChapter` exactly but wants one real click-through.
 
+## 8c. Slice 3 — sweep + keyboard nav + draw-from-gallery (DONE)
+
+Turns the gallery into a fast bulk-pass surface:
+- **Sweep "done" state** — a per-figure reviewed marker, stored owner-local per data repo
+  (`localStorage 'figrev:done:<dataRepo>'`; UI progress, not shared review data). Reviewed cards show a
+  check + accent border; a **progress bar** ("N of M reviewed") sits at the top.
+- **Keyboard nav** — `←/→` (and `↑/↓`) move focus figure-to-figure in reading order, `n` jumps to the
+  next unreviewed, `x`/space toggles done, `Enter` opens the figure, `d` draws, `Esc` closes.
+- **Draw from the gallery** — each card's **Draw** button opens the *existing* annotation canvas
+  (`openFigureMarkup`) on that figure. Implementation: it navigates to the figure's chapter then opens
+  the canvas (`openDrawForFigure` polls for the rendered figure, builds the same anchor `wireFigures`
+  builds, calls `openFigureMarkup` with `chapterId:null` so the save routes to the now-current chapter's
+  review via the existing single-chapter path). This deliberately avoids the whole-doc repaint branch and
+  needs **no** change to `openFigureMarkup`. It is one click to annotate — not literally drawing inside
+  the overlay; true in-overlay drawing (staying in the gallery, with a gallery-scoped save/refresh) is a
+  further step, deferred because it requires parameterizing `openFigureMarkup`'s post-save repaint.
+
+- Pure/TDD'd in `js/figures.js`: `figureKey`, `markReviewed`/`isReviewed`, `sweepProgress`,
+  `flattenFigures`, `adjacentFigure`, `firstUnreviewedFigure`, and `galleryHtml(gallery,{reviewed})`
+  additions (progress header, done flag, Draw/Done actions, `data-fig-key`). 8 new tests (27 in the module).
+- Thin DOM glue in `js/app.js`: sweep persistence, action delegation, focus + keyboard handler.
+- **Verification:** `npm test` 898/898 green; `node --check js/app.js` clean; review affordances
+  screenshotted from real module output (light + dark). Same live real-data gate as slices 1–2.
+
 **Not yet (later PRs):**
-- Slice 3: per-figure "done" sweep state + keyboard nav + in-overlay drawing (reuse `openFigureMarkup`
-  in the overlay context instead of jumping back to the reader).
+- True in-overlay drawing (draw without leaving the gallery) — needs `openFigureMarkup` post-save
+  parameterized so a gallery-scoped save can refresh the card badge instead of repainting the reader.
 - Slice 4 (contract change): send composited PNG to Claude; extend job + engine + Figure Drafter.
 - Slice 5: export `label→number` sidecar from `preprocess.py` for a truly stable figure id (retires the
   img-src-tail heuristic).

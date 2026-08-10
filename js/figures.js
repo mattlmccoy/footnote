@@ -136,6 +136,54 @@ export function describeRegion(rects) {
   return `${row} ${col} region (~${pct(r.x)}–${pct(r.x + r.w)}% × ${pct(r.y)}–${pct(r.y + r.h)}% of the figure)`;
 }
 
+// ---- Slice 3: sweep state (per-figure "reviewed") + sequential navigation (pure) ----
+
+// Stable per-figure key for owner-local sweep tracking. chapter id + parsed number (both human-meaningful
+// and stable across rebuilds as long as numbering holds).
+export function figureKey(chapterId, fignum) { return `${chapterId}#${fignum}`; }
+
+// Immutable done-state map { key: true }. markReviewed(state, key, on) sets/clears; never mutates input.
+export function markReviewed(reviewed, key, on) {
+  const r = { ...(reviewed || {}) };
+  if (on) r[key] = true; else delete r[key];
+  return r;
+}
+export function isReviewed(reviewed, key) { return !!(reviewed && reviewed[key]); }
+
+// Every figure across all chapters in reading order, each tagged with its sweep key.
+export function flattenFigures(gallery) {
+  const out = [];
+  for (const g of gallery || []) {
+    const chId = g && g.chapter && g.chapter.id;
+    for (const f of (g && g.figures) || []) out.push({ ...f, chapterId: chId, key: figureKey(chId, f.fignum) });
+  }
+  return out;
+}
+
+// Sweep progress across the whole document.
+export function sweepProgress(gallery, reviewed) {
+  const flat = flattenFigures(gallery);
+  const done = flat.filter((f) => isReviewed(reviewed, f.key)).length;
+  return { total: flat.length, done, remaining: flat.length - done };
+}
+
+// Next/prev figure for keyboard nav. dir>0 forward, dir<0 back. A null/unknown currentKey seeds from the
+// first (forward) or last (back); walking past an end returns null (the caller decides whether to wrap).
+export function adjacentFigure(gallery, currentKey, dir) {
+  const flat = flattenFigures(gallery);
+  if (!flat.length) return null;
+  if (currentKey == null) return dir >= 0 ? flat[0] : flat[flat.length - 1];
+  const i = flat.findIndex((f) => f.key === currentKey);
+  if (i < 0) return dir >= 0 ? flat[0] : flat[flat.length - 1];
+  const j = i + (dir >= 0 ? 1 : -1);
+  return j >= 0 && j < flat.length ? flat[j] : null;
+}
+
+// The next figure that still needs a look (for a "jump to next unreviewed" control); null when swept.
+export function firstUnreviewedFigure(gallery, reviewed) {
+  return flattenFigures(gallery).find((f) => !isReviewed(reviewed, f.key)) || null;
+}
+
 // ---- Slice 2: the bulk-review gallery (view-model + renderer) ----
 
 const _esc = (s) => String(s == null ? '' : s)
@@ -156,27 +204,41 @@ export function buildGallery(units, fragmentsById, commentsByChapter) {
 }
 
 // Render the gallery as a self-contained, escaped HTML string (unit-testable; the DOM glue in app.js wires
-// the card clicks). Chapters with no figures are omitted; a document with no figures shows an empty state.
-// Each card carries data-fig-ch / data-fig-num so the reader can jump to that exact figure.
-export function galleryHtml(gallery) {
+// the actions). Chapters with no figures are omitted; a document with no figures shows an empty state.
+// opts.reviewed (a { key:true } sweep map) turns on the review affordances: a sweep-progress header, a
+// per-card "done" flag, and Draw / Mark-done actions. Each card carries data-fig-ch / data-fig-num /
+// data-fig-key so app.js can jump to the figure, open the draw overlay, or toggle its reviewed state.
+export function galleryHtml(gallery, opts) {
   const groups = (gallery || []).filter((g) => g && g.figures && g.figures.length);
   if (!groups.length) {
     return '<div class="figgal-empty" style="text-align:center;color:var(--text-3);padding:48px 16px;font-size:13.5px">' +
       'No figures found in this document yet. Figures appear here once your chapters are rendered.</div>';
   }
+  const reviewed = (opts && opts.reviewed) || null;
+  const abtn = 'font-size:10.5px;padding:3px 9px;border-radius:6px;border:.5px solid var(--border);background:var(--bg);color:var(--text-2,var(--text));cursor:pointer';
   const card = (chId, f) => {
+    const key = figureKey(chId, f.fignum);
+    const done = isReviewed(reviewed, key);
     const badge = f.activeComments > 0
       ? `<span class="figgal-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent,#2c64c4);color:#fff;font-size:10.5px;font-weight:600"> ${f.activeComments} </span>`
       : '';
+    const check = done ? '<span class="figgal-check" style="position:absolute;top:6px;right:6px;width:20px;height:20px;border-radius:50%;background:var(--accent,#2c64c4);color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px"><i class="ti ti-check"></i></span>' : '';
     const refs = (f.referencedIn && f.referencedIn.length)
       ? `Referenced in ${f.referencedIn.map(_esc).join(', ')}` : 'Not referenced in text';
-    return `<button class="figgal-card" data-fig-ch="${_esc(chId)}" data-fig-num="${_esc(f.fignum)}" style="display:flex;flex-direction:column;gap:7px;text-align:left;padding:9px;border:.5px solid var(--border);border-radius:9px;background:var(--bg);cursor:pointer">
-      <span class="figgal-thumb" style="display:block;aspect-ratio:16/10;overflow:hidden;border-radius:6px;background:var(--bg-3,#eef)"><img src="${_esc(f.imgSrc)}" alt="${_esc(f.caption)}" loading="lazy" style="width:100%;height:100%;object-fit:contain"></span>
-      <span class="figgal-cap" style="font-size:12px;line-height:1.4;color:var(--text);display:block">${_esc(f.caption)}</span>
-      <span class="figgal-meta" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:10.5px;color:var(--text-3)"><span>${refs}</span>${badge}</span>
-    </button>`;
+    const acts = reviewed
+      ? `<div class="figgal-acts" style="display:flex;gap:6px;margin-top:2px">
+          <button data-act="draw" title="Draw on this figure & comment" style="${abtn}"><i class="ti ti-scribble" aria-hidden="true"></i> Draw</button>
+          <button data-act="done" title="Mark this figure reviewed" style="${abtn}${done ? ';background:var(--accent-bg,#eef);color:var(--accent,#2c64c4)' : ''}">${done ? 'Reviewed' : 'Mark done'}</button>
+        </div>` : '';
+    return `<div class="figgal-card${done ? ' figgal-done' : ''}" data-fig-ch="${_esc(chId)}" data-fig-num="${_esc(f.fignum)}" data-fig-key="${_esc(key)}" style="display:flex;flex-direction:column;gap:7px;padding:9px;border:.5px solid ${done ? 'var(--accent,#2c64c4)' : 'var(--border)'};border-radius:9px;background:var(--bg)">
+      <div data-act="open" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;text-align:left">
+        <span class="figgal-thumb" style="position:relative;display:block;aspect-ratio:16/10;overflow:hidden;border-radius:6px;background:var(--bg-3,#eef)"><img src="${_esc(f.imgSrc)}" alt="${_esc(f.caption)}" loading="lazy" style="width:100%;height:100%;object-fit:contain">${check}</span>
+        <span class="figgal-cap" style="font-size:12px;line-height:1.4;color:var(--text);display:block">${_esc(f.caption)}</span>
+        <span class="figgal-meta" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:10.5px;color:var(--text-3)"><span>${refs}</span>${badge}</span>
+      </div>${acts}
+    </div>`;
   };
-  return groups.map((g) => {
+  const sections = groups.map((g) => {
     const title = g.chapter && g.chapter.title ? g.chapter.title : g.chapter && g.chapter.id;
     const n = g.chapter && (g.chapter.n != null) ? `${_esc(String(g.chapter.n))} · ` : '';
     return `<section class="figgal-ch" style="margin:0 0 22px">
@@ -184,4 +246,14 @@ export function galleryHtml(gallery) {
       <div class="figgal-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${g.figures.map((f) => card(g.chapter.id, f)).join('')}</div>
     </section>`;
   }).join('');
+  let header = '';
+  if (reviewed) {
+    const p = sweepProgress(gallery, reviewed);
+    const pct = p.total ? Math.round((p.done / p.total) * 100) : 0;
+    header = `<div class="figgal-progress" style="display:flex;align-items:center;gap:12px;margin:0 0 18px;font-size:12px;color:var(--text-3)">
+      <span>${p.done} of ${p.total} reviewed</span>
+      <span style="flex:1;height:5px;border-radius:3px;background:var(--bg-3,#eef);overflow:hidden"><span style="display:block;height:100%;width:${pct}%;background:var(--accent,#2c64c4)"></span></span>
+    </div>`;
+  }
+  return header + sections;
 }
