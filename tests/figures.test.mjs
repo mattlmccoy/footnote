@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import {
   figNumFromCaption, figLabelFromCaption, extractFigures, parseFiguresFromFragment,
   figureRefsInFragment, groupFiguresByChapter, figureAnchor, attachCommentCounts, describeRegion,
+  buildGallery, galleryHtml,
 } from '../js/figures.js';
 import { newReview, addComment } from '../js/model.js';
 
@@ -143,4 +144,74 @@ test('describeRegion names the grid zone of a normalized region', () => {
 test('describeRegion is empty for no region', () => {
   assert.equal(describeRegion([]), '');
   assert.equal(describeRegion(null), '');
+});
+
+// ================= Slice 2: gallery view-model + renderer (pure) =================
+
+const UNITS = [{ id: 'ch_thermal', n: 3, title: 'Thermal model' }, { id: 'ch_val', n: 4, title: 'Validation' }];
+const FRAGS = { ch_thermal: CH3, ch_val: CH4 };
+
+test('buildGallery composes figures, refs, thumbnails and active-comment counts per chapter', () => {
+  const commentsByChapter = {
+    ch_thermal: [
+      { kind: 'figure', status: 'open', anchor: { fignum: '3.1' } },
+      { kind: 'figure', status: 'merged', anchor: { fignum: '3.1' } },   // resolved → not counted
+    ],
+    ch_val: [],
+  };
+  const g = buildGallery(UNITS, FRAGS, commentsByChapter);
+  assert.deepEqual(g.map(x => x.chapter.id), ['ch_thermal', 'ch_val']);
+  const f31 = g[0].figures[0];
+  assert.equal(f31.fignum, '3.1');
+  assert.equal(f31.imgSrc, 'data:image/png;base64,AAAAmesh_of_the_domain_QQQQ');   // thumbnail source
+  assert.deepEqual(f31.referencedIn, ['Thermal model', 'Boundary conditions']);    // from figureRefsInFragment
+  assert.equal(f31.activeComments, 1);                                             // only the open one
+  assert.equal(g[0].count, 2);                                                     // 3.1 + 3.2
+  assert.equal(g[1].figures[0].fignum, '4.1');
+  assert.equal(g[1].figures[0].activeComments, 0);
+});
+
+test('buildGallery tolerates missing fragments / comments and preserves reading order', () => {
+  const g = buildGallery(UNITS, { ch_thermal: CH3 }, undefined);   // ch_val fragment + all comments missing
+  assert.deepEqual(g.map(x => x.chapter.id), ['ch_thermal', 'ch_val']);
+  assert.equal(g[1].figures.length, 0);
+  assert.equal(g[0].figures[0].activeComments, 0);
+});
+
+test('galleryHtml renders per-chapter sections with wireable cards (data-fig-ch / data-fig-num)', () => {
+  const g = buildGallery(UNITS, FRAGS, { ch_thermal: [{ kind: 'figure', status: 'open', anchor: { fignum: '3.1' } }] });
+  const html = galleryHtml(g);
+  assert.match(html, /data-fig-ch="ch_thermal"/);
+  assert.match(html, /data-fig-num="3\.1"/);
+  assert.match(html, /Thermal model/);                        // chapter header
+  assert.match(html, /Finite-element mesh of the build domain/); // caption text
+  assert.match(html, /Referenced in/i);                       // where-referenced line
+  assert.match(html, /data:image\/png;base64,AAAA/);          // thumbnail img src
+  // active-comment badge shows the count for 3.1 but 3.2 (no comments) has none
+  assert.match(html, /figgal-badge[^>]*>\s*1\s*</);
+});
+
+test('galleryHtml escapes caption/heading content (no HTML injection)', () => {
+  const gallery = [{
+    chapter: { id: 'c1', n: 1, title: 'Intro <x>' },
+    count: 1,
+    figures: [{ fignum: '1.1', caption: 'A <b>bold</b> & "quoted" caption', imgSrc: 'data:x', imgSrcTail: 'x', referencedIn: [], activeComments: 0 }],
+  }];
+  const html = galleryHtml(gallery);
+  assert.match(html, /&lt;b&gt;bold&lt;\/b&gt;/);
+  assert.match(html, /&amp;/);
+  assert.match(html, /&quot;quoted&quot;|&quot;/);
+  assert.match(html, /Intro &lt;x&gt;/);
+  assert.doesNotMatch(html, /<b>bold<\/b>/);   // raw markup never emitted
+});
+
+test('galleryHtml shows an empty state when the document has no figures, and skips figure-less chapters', () => {
+  const empty = galleryHtml(buildGallery([{ id: 'c1', n: 1, title: 'Prose' }], { c1: '<p>no figures</p>' }, {}));
+  assert.match(empty, /no figures/i);
+  // a chapter with zero figures is not rendered as a section when others have figures
+  const mixed = galleryHtml(buildGallery(
+    [{ id: 'c1', n: 1, title: 'Prose only' }, { id: 'ch_val', n: 4, title: 'Validation' }],
+    { c1: '<p>none</p>', ch_val: CH4 }, {}));
+  assert.doesNotMatch(mixed, /Prose only/);
+  assert.match(mixed, /Validation/);
 });

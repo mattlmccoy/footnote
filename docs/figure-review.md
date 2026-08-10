@@ -217,10 +217,31 @@ are the gate — no DOM/browser needed. Per the reproducibility rule, also do **
 `parseFiguresFromFragment` against a real captured chapter fragment and print the rows, to prove the
 fixtures match reality (the exact trap the data-contract rule exists for).
 
-**Not in Slice 1 (needs Matt's sign-off, separate PRs):**
-- Slice 2: gallery UI in `app.js` behind `assistantOn()` + wire "Send to Claude" via `buildAdvisorClaudeJob`.
-  (DOM/visual → verification is a browser check + screenshot, not unit tests.)
-- Slice 3: per-figure "done" sweep state + keyboard nav.
+## 8b. Slice 2 — the gallery (DONE)
+
+Owner-only, AI-gated **Figures** top-bar button (`#btn-figures`, rendered only when `assistantOn()`,
+[`js/app.js` renderTopbar](../js/app.js)) opens a full-screen **gallery overlay**: every figure in the
+document, grouped by chapter, each card showing thumbnail + caption + "referenced in §…" + an
+active-comment badge. Clicking a card closes the overlay, opens that chapter, and scroll-flashes the
+figure — where the **existing** figure popover + "Draw on the figure" + comment + Send-to-Claude
+machinery takes over. No parallel comment system; figure comments ride the existing `apply-edits` →
+Figure Drafter pipeline.
+
+- Pure, TDD'd: `buildGallery(units, fragmentsById, commentsByChapter)` + `galleryHtml(gallery)` in
+  `js/figures.js` (escaped, empty-state, badge, figure-less chapters skipped). 5 new tests.
+- Thin DOM glue: `openFiguresGallery()` reuses the whole-doc fetch (`fetchFrag`) + `loadAllReviews`
+  (so badges count owner **and** advisor figure comments), then `jumpToFigure` via `figTableMaps` +
+  `scrollFlash`.
+- **Verification:** `npm test` 890/890 green (19 figures tests); `node --check js/app.js` clean; the
+  rendered gallery markup was screenshotted from real module output (light + dark).
+- **Owed before merge (same real-data gate as Slice 1):** an authenticated in-app run against a real
+  data repo — the live button→fetch→overlay→jump path can't be exercised in the sandbox (no auth / no
+  data repo / arbitrary-localhost blocked). The pure logic + rendered markup are covered; the app wiring
+  mirrors `loadWholeDoc`/`enterChapter` exactly but wants one real click-through.
+
+**Not yet (later PRs):**
+- Slice 3: per-figure "done" sweep state + keyboard nav + in-overlay drawing (reuse `openFigureMarkup`
+  in the overlay context instead of jumping back to the reader).
 - Slice 4 (contract change): send composited PNG to Claude; extend job + engine + Figure Drafter.
 - Slice 5: export `label→number` sidecar from `preprocess.py` for a truly stable figure id (retires the
   img-src-tail heuristic).

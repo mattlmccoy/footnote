@@ -12,7 +12,7 @@
 // text ("Figure 3.1. ") and anchor.figure is the last 40 chars of the img src. We key on the parsed caption
 // NUMBER and keep the img-src tail for back-compat with the existing painter.
 
-import { isActiveComment } from './model.js?v=fig1';
+import { isActiveComment } from './model.js?v=c284b81';
 
 const FIG_NUM_RE   = /^\s*Figure\s+(\d+(?:\.\d+)*)\./;              // figTableMaps: trailing period REQUIRED
 const FIG_LABEL_RE = /^(Figure|Fig\.?|Table)\s*[\d.]+/i;           // figureLabel: leading label token
@@ -134,4 +134,54 @@ export function describeRegion(rects) {
   const row = cy < 1 / 3 ? 'upper' : cy < 2 / 3 ? 'middle' : 'lower';
   const pct = (v) => Math.round(v * 100);
   return `${row} ${col} region (~${pct(r.x)}–${pct(r.x + r.w)}% × ${pct(r.y)}–${pct(r.y + r.h)}% of the figure)`;
+}
+
+// ---- Slice 2: the bulk-review gallery (view-model + renderer) ----
+
+const _esc = (s) => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+  .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+
+// Compose the whole-document figure gallery view-model from the same inputs the reader already has:
+// the ordered units, each unit's rendered HTML fragment, and each unit's comments (owner + advisor).
+// Pure — returns [{ chapter, count, figures:[{fignum,caption,label,imgSrc,imgSrcTail,referencedIn,activeComments}] }].
+export function buildGallery(units, fragmentsById, commentsByChapter) {
+  const frags = fragmentsById || {}, byCh = commentsByChapter || {};
+  return groupFiguresByChapter(units, frags).map(({ chapter, figures }) => {
+    const refs = figureRefsInFragment(frags[chapter.id] || '');
+    const withRefs = figures.map((f) => ({ ...f, referencedIn: refs[f.fignum] || [] }));
+    const withCounts = attachCommentCounts(withRefs, byCh[chapter.id] || []);
+    return { chapter, count: withCounts.length, figures: withCounts };
+  });
+}
+
+// Render the gallery as a self-contained, escaped HTML string (unit-testable; the DOM glue in app.js wires
+// the card clicks). Chapters with no figures are omitted; a document with no figures shows an empty state.
+// Each card carries data-fig-ch / data-fig-num so the reader can jump to that exact figure.
+export function galleryHtml(gallery) {
+  const groups = (gallery || []).filter((g) => g && g.figures && g.figures.length);
+  if (!groups.length) {
+    return '<div class="figgal-empty" style="text-align:center;color:var(--text-3);padding:48px 16px;font-size:13.5px">' +
+      'No figures found in this document yet. Figures appear here once your chapters are rendered.</div>';
+  }
+  const card = (chId, f) => {
+    const badge = f.activeComments > 0
+      ? `<span class="figgal-badge" style="display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--accent,#2c64c4);color:#fff;font-size:10.5px;font-weight:600"> ${f.activeComments} </span>`
+      : '';
+    const refs = (f.referencedIn && f.referencedIn.length)
+      ? `Referenced in ${f.referencedIn.map(_esc).join(', ')}` : 'Not referenced in text';
+    return `<button class="figgal-card" data-fig-ch="${_esc(chId)}" data-fig-num="${_esc(f.fignum)}" style="display:flex;flex-direction:column;gap:7px;text-align:left;padding:9px;border:.5px solid var(--border);border-radius:9px;background:var(--bg);cursor:pointer">
+      <span class="figgal-thumb" style="display:block;aspect-ratio:16/10;overflow:hidden;border-radius:6px;background:var(--bg-3,#eef)"><img src="${_esc(f.imgSrc)}" alt="${_esc(f.caption)}" loading="lazy" style="width:100%;height:100%;object-fit:contain"></span>
+      <span class="figgal-cap" style="font-size:12px;line-height:1.4;color:var(--text);display:block">${_esc(f.caption)}</span>
+      <span class="figgal-meta" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:10.5px;color:var(--text-3)"><span>${refs}</span>${badge}</span>
+    </button>`;
+  };
+  return groups.map((g) => {
+    const title = g.chapter && g.chapter.title ? g.chapter.title : g.chapter && g.chapter.id;
+    const n = g.chapter && (g.chapter.n != null) ? `${_esc(String(g.chapter.n))} · ` : '';
+    return `<section class="figgal-ch" style="margin:0 0 22px">
+      <h3 style="font-size:13px;font-weight:600;color:var(--text-2,var(--text));margin:0 0 10px;position:sticky;top:0;background:var(--bg);padding:6px 0">${n}${_esc(title)} <span style="color:var(--text-3);font-weight:400">· ${g.figures.length} figure${g.figures.length === 1 ? '' : 's'}</span></h3>
+      <div class="figgal-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${g.figures.map((f) => card(g.chapter.id, f)).join('')}</div>
+    </section>`;
+  }).join('');
 }
