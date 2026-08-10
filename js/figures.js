@@ -226,13 +226,13 @@ export function galleryHtml(gallery, opts) {
     const refs = (f.referencedIn && f.referencedIn.length)
       ? `Referenced in ${f.referencedIn.map(_esc).join(', ')}` : 'Not referenced in text';
     const acts = reviewed
-      ? `<div class="figgal-acts" style="display:flex;gap:6px;margin-top:2px">
-          <button data-act="draw" title="Draw on this figure & comment" style="${abtn}"><i class="ti ti-scribble" aria-hidden="true"></i> Draw</button>
-          <button data-act="done" title="Mark this figure reviewed" style="${abtn}${done ? ';background:var(--accent-bg,#eef);color:var(--accent,#2c64c4)' : ''}">${done ? 'Reviewed' : 'Mark done'}</button>
+      ? `<div class="figgal-acts" style="display:flex;gap:6px;align-items:center;margin-top:2px">
+          <button data-act="context" title="See this figure in its chapter" style="${abtn}"><i class="ti ti-arrow-up-right" aria-hidden="true"></i> View in chapter</button>
+          <button data-act="done" title="Mark this figure reviewed" style="${abtn}${done ? ';background:var(--accent-bg,#eef);color:var(--accent,#2c64c4)' : ''};margin-left:auto">${done ? 'Reviewed' : 'Mark done'}</button>
         </div>` : '';
     return `<div class="figgal-card${done ? ' figgal-done' : ''}" data-fig-ch="${_esc(chId)}" data-fig-num="${_esc(f.fignum)}" data-fig-key="${_esc(key)}" style="display:flex;flex-direction:column;gap:7px;padding:9px;border:.5px solid ${done ? 'var(--accent,#2c64c4)' : 'var(--border)'};border-radius:9px;background:var(--bg)">
-      <div data-act="open" style="display:flex;flex-direction:column;gap:7px;cursor:pointer;text-align:left">
-        <span class="figgal-thumb" style="position:relative;display:block;aspect-ratio:16/10;overflow:hidden;border-radius:6px;background:var(--bg-3,#eef)"><img src="${_esc(f.imgSrc)}" alt="${_esc(f.caption)}" loading="lazy" style="width:100%;height:100%;object-fit:contain">${check}</span>
+      <div data-act="draw" title="Click to draw on this figure &amp; comment" style="display:flex;flex-direction:column;gap:7px;cursor:crosshair;text-align:left">
+        <span class="figgal-thumb" style="position:relative;display:block;aspect-ratio:16/10;overflow:hidden;border-radius:6px;background:var(--bg-3,#eef)"><img src="${_esc(f.imgSrc)}" alt="${_esc(f.caption)}" loading="lazy" style="width:100%;height:100%;object-fit:contain">${check}<span class="figgal-drawhint" style="position:absolute;left:6px;bottom:6px;display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:6px;background:rgba(0,0,0,.55);color:#fff;font-size:10px"><i class="ti ti-scribble" aria-hidden="true"></i>Draw</span></span>
         <span class="figgal-cap" style="font-size:12px;line-height:1.4;color:var(--text);display:block">${_esc(f.caption)}</span>
         <span class="figgal-meta" style="display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:10.5px;color:var(--text-3)"><span>${refs}</span>${badge}</span>
       </div>${acts}

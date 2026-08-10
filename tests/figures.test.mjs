@@ -263,7 +263,8 @@ test('galleryHtml marks reviewed cards, shows sweep progress, and renders draw +
   const reviewed = markReviewed({}, 'ch_thermal#3.1', true);
   const html = galleryHtml(g, { reviewed });
   assert.match(html, /data-fig-key="ch_thermal#3\.1"/);
-  assert.match(html, /data-act="draw"/);                 // draw-in-gallery affordance
+  assert.match(html, /data-act="draw"/);                 // the figure area itself = open the draw canvas (primary click)
+  assert.match(html, /data-act="context"/);              // secondary "view in chapter" link
   assert.match(html, /data-act="done"/);                 // mark-reviewed toggle
   assert.match(html, /figgal-progress/);                 // sweep progress header present
   assert.match(html, /1 of 3 reviewed/i);

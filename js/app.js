@@ -45,7 +45,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
-import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure } from './figures.js?v=49cc329';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
+import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure } from './figures.js?v=2f9701a';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -1783,8 +1783,8 @@ async function openFiguresGallery(){
     root.innerHTML = galleryHtml(gallery, { reviewed });
     root.querySelectorAll('.figgal-card').forEach(cardEl => {
       const ch = cardEl.dataset.figCh, num = cardEl.dataset.figNum, key = cardEl.dataset.figKey;
-      cardEl.querySelector('[data-act="open"]')?.addEventListener('click', () => jump(ch, num));
-      cardEl.querySelector('[data-act="draw"]')?.addEventListener('click', (e) => { e.stopPropagation(); draw(ch, num); });
+      cardEl.querySelector('[data-act="draw"]')?.addEventListener('click', () => draw(ch, num));         // click the figure → draw on it
+      cardEl.querySelector('[data-act="context"]')?.addEventListener('click', (e) => { e.stopPropagation(); jump(ch, num); });   // secondary → view in chapter
       cardEl.querySelector('[data-act="done"]')?.addEventListener('click', (e) => { e.stopPropagation(); toggleDone(key); });
     });
     applyFocus();
@@ -1799,8 +1799,8 @@ async function openFiguresGallery(){
     else if (k === 'n' || k === 'N'){ const u = firstUnreviewedFigure(gallery, reviewed); if (u){ focusKey = u.key; applyFocus(); } }
     else if (focusKey){
       const hash = focusKey.indexOf('#'); const ch = focusKey.slice(0, hash), num = focusKey.slice(hash + 1);
-      if (k === 'Enter'){ jump(ch, num); }
-      else if (k === 'd' || k === 'D'){ draw(ch, num); }
+      if (k === 'Enter' || k === 'd' || k === 'D'){ draw(ch, num); }        // primary: draw on the focused figure
+      else if (k === 'v' || k === 'V'){ jump(ch, num); }                    // secondary: view it in the chapter
       else if (k === 'x' || k === 'X' || k === ' '){ toggleDone(focusKey); e.preventDefault(); }
     }
   };
