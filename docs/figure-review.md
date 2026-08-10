@@ -247,7 +247,11 @@ Turns the gallery into a fast bulk-pass surface:
   check + accent border; a **progress bar** ("N of M reviewed") sits at the top.
 - **Keyboard nav** — `←/→` (and `↑/↓`) move focus figure-to-figure in reading order, `n` jumps to the
   next unreviewed, `x`/space toggles done, `Enter` opens the figure, `d` draws, `Esc` closes.
-- **Draw from the gallery** — each card's **Draw** button opens the *existing* annotation canvas
+- **Click a figure to draw** (updated) — the figure image itself is the primary click: it opens the
+  annotation canvas on that figure (crosshair cursor + a "Draw" hint chip). "View in chapter" is a small
+  secondary link; keyboard `Enter`/`d` = draw, `v` = view in chapter. (Originally the click jumped to the
+  chapter and Draw was a separate button; reversed per owner feedback — drawing is the point of the sweep.)
+- **Draw mechanics** — opens the *existing* annotation canvas
   (`openFigureMarkup`) on that figure. Implementation: it navigates to the figure's chapter then opens
   the canvas (`openDrawForFigure` polls for the rendered figure, builds the same anchor `wireFigures`
   builds, calls `openFigureMarkup` with `chapterId:null` so the save routes to the now-current chapter's
