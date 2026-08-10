@@ -1,0 +1,30 @@
+<!--
+  Shape-faithful fixture for the figure-index parser (Slice 1).
+
+  PROVENANCE (data-contract rule): this reproduces the pandoc LaTeX->HTML5 fragment shape that the
+  Footnote render pipeline emits and that the live reader parses today:
+    - figures are <figure><img><figcaption>Figure N. ...</figcaption></figure>  (canonical in-repo
+      sample: js/advisor.js:45; number injected as caption text by data-template/preprocess.py:448)
+    - cross-references are FLATTENED to plain text "Figure N" (data-template/preprocess.py:337 resolve_cref)
+    - sections are <h2>/<h3> (buildNav reads these: js/app.js:986)
+  The figure-number regex the parser mirrors is figTableMaps (js/app.js:811):
+    /^\s*Figure\s+(\d+(?:\.\d+)*)\./ on the figcaption text.
+
+  This is a SHAPE fixture, not a real rendered dissertation chapter (no data repo is present in this
+  source repo). A real-data run of parseFiguresFromFragment against an actual content/<id>.html is
+  still owed before Slice 2 ships — see docs/figure-review.md section 8.
+-->
+<h2>Thermal model</h2>
+<p>We solve the steady heat equation. The mesh is shown in Figure 3.1, and the
+boundary layout follows the same convention used later in Figure 3.2.</p>
+<figure>
+<img src="data:image/png;base64,AAAAmesh_of_the_domain_QQQQ" alt="mesh">
+<figcaption>Figure 3.1. Finite-element mesh of the build domain.</figcaption>
+</figure>
+<h3>Boundary conditions</h3>
+<p>The convective boundary is applied on the top face. Figure 3.1 again clarifies
+which face is heated, while the temperature field is plotted in Figure 3.2.</p>
+<figure>
+<img src="data:image/png;base64,BBBBtemperature_field_ZZZZ" alt="temperature field">
+<figcaption>Figure 3.2. Steady-state temperature field at t = 600 s.</figcaption>
+</figure>
