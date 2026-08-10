@@ -45,6 +45,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
+import { buildGallery, galleryHtml } from './figures.js?v=a74ea01';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -275,6 +276,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>
+      ${assistantOn() ? '<button class="icbtn" id="btn-figures" title="Figure review — every figure in the document, by chapter"><i class="ti ti-photo"></i></button>' : ''}
       <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
       <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
@@ -284,6 +286,7 @@ function renderTopbar(){
   document.getElementById('chsel').onclick = openChapterMenu;
   document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   document.getElementById('btn-send').onclick = openSendMenu;
+  { const bf = document.getElementById('btn-figures'); if (bf) bf.onclick = openFiguresGallery; }
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
   document.getElementById('btn-more').onclick = openMoreMenu;
@@ -1700,6 +1703,60 @@ async function loadWholeDoc(){
   await loadAllReviews(_wholeUnits);
   buildNavWhole(); paintWholeHighlights(); renderWholeComments(); restoreCursor();
   if (totalWords(COUNTS)){ const _d = read.querySelector('#doc'); if (_d){ const _t = document.createElement('div'); _t.style.cssText = 'color:var(--text-3);font-size:12px;margin:0 0 14px'; _t.textContent = formatCount(totalWords(COUNTS)); _d.prepend(_t); } }
+}
+// ---- Figure Review (Slice 2): the bulk figure gallery. Owner-only + AI-gated — #btn-figures only exists
+// when assistantOn(). It reuses the whole-doc fetch + loadAllReviews, enumerates figures via js/figures.js,
+// and on a card click JUMPS to that figure in the reader, where the existing figure popover + "Draw on the
+// figure" + comment + Send-to-Claude machinery takes over (no parallel comment system). ----
+let _figJumpTimer = null;
+function _figByNumber(num){ const doc = document.getElementById('doc'); return doc ? (figTableMaps(doc).fig[num] || null) : null; }
+function jumpToFigure(num, tries = 30){                     // poll: the target chapter may still be rendering
+  clearTimeout(_figJumpTimer);
+  const el = _figByNumber(num);
+  if (el){ scrollFlash(el); return; }
+  if (tries > 0) _figJumpTimer = setTimeout(() => jumpToFigure(num, tries - 1), 100);
+}
+function _figGalKey(e){ if (e.key === 'Escape') closeFiguresGallery(); }
+function closeFiguresGallery(){ document.getElementById('figgal-overlay')?.remove(); document.removeEventListener('keydown', _figGalKey); }
+async function openFiguresGallery(){
+  if (!assistantOn()) return;                              // gated (the button only exists when AI is on; guard anyway)
+  closeFiguresGallery();
+  const units = orderedUnits(CHAPTERS);
+  const ov = document.createElement('div'); ov.id = 'figgal-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;flex-direction:column';
+  ov.innerHTML = `<div style="display:flex;align-items:center;gap:10px;padding:14px 20px;border-bottom:.5px solid var(--border)">
+      <i class="ti ti-photo" style="font-size:18px;color:var(--text-3)"></i>
+      <div style="font-weight:600;font-size:15px">Figure review</div>
+      <div style="font-size:12px;color:var(--text-3)">every figure in ${escapeHtml(DOC)}, by ${escapeHtml(UNIT)} — click one to draw on it &amp; comment</div>
+      <button class="icbtn" id="figgal-x" title="Close (Esc)" style="margin-left:auto"><i class="ti ti-x"></i></button>
+    </div>
+    <div id="figgal-body" style="flex:1;overflow:auto;padding:20px;max-width:1100px;margin:0 auto;width:100%">
+      <div style="text-align:center;color:var(--text-3);padding:48px"><i class="ti ti-loader-2" style="font-size:22px"></i><div style="margin-top:8px">Gathering figures…</div></div>
+    </div>`;
+  document.body.appendChild(ov);
+  document.getElementById('figgal-x').onclick = closeFiguresGallery;
+  document.addEventListener('keydown', _figGalKey);
+  const body = () => document.getElementById('figgal-body');
+  if (!units.length){ const b = body(); if (b) b.innerHTML = galleryHtml([]); return; }
+  const t = tok(); const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  if (!dev && !t){ const b = body(); if (b) b.innerHTML = '<div style="text-align:center;color:var(--text-3);padding:48px">Connect your repo to load figures.</div>'; return; }
+  const fetchFrag = async (u) => {                          // mirrors loadWholeDoc's per-unit fetch
+    try {
+      if (dev){ const r = await fetch(`./chapters/${u.id}.html`); if (r.ok) return await r.text(); }
+      else { const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+u.id+'.html')}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' } }); if (r.ok) return await r.text(); }
+    } catch(e){}
+    return null;
+  };
+  const frags = await Promise.all(units.map(fetchFrag));
+  const fragsById = {}; units.forEach((u, i) => { fragsById[u.id] = frags[i] || ''; });
+  try { await loadAllReviews(units); } catch(e){}           // populate _reviews + _wholeAdv for the comment badges
+  const commentsByChapter = {};
+  units.forEach(u => { commentsByChapter[u.id] = [ ...((_reviews[u.id] && _reviews[u.id].comments) || []), ...((_wholeAdv[u.id]) || []) ]; });
+  const b = body(); if (!b) return;                         // overlay was closed while loading
+  b.innerHTML = galleryHtml(buildGallery(units, fragsById, commentsByChapter));
+  b.querySelectorAll('.figgal-card').forEach(cardEl => {
+    cardEl.onclick = () => { const ch = cardEl.dataset.figCh, num = cardEl.dataset.figNum; closeFiguresGallery(); enterChapter(ch); jumpToFigure(num); };
+  });
 }
 // Whole-doc only: collapse each unit's own citeproc #refs block into ONE References section at the end
 // of #doc (dedup by ref key; also removes the duplicate ids the concatenation would otherwise create).
