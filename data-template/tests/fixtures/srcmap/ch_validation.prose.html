@@ -1,0 +1,120 @@
+<h1>Experimental Validation</h1>
+<p>The compensation results of this dissertation are simulation-based
+(section 9.2.2), and every quantitative heating magnitude is
+model-relative pending characterization of the deployed ink. The
+functionally graded maps of section 5.1, the chamber-keyed
+anisotropic-shrinkage pre-warp transform of section 5.2, and their
+combination (section 5.3) are predictions of a verified solver, not
+measurements of fused parts. This chapter specifies the experiment that
+decides whether those predictions survive contact with hardware. It is a
+<em>plan</em>: the experiments are lab-gated and not yet run, and
+nothing here adds a measured number. Its value is to state, before the
+fact, the exact tests and the falsifiable criteria by which each
+simulation claim would stand or fall, and to structure those tests so
+that whatever fraction of the rig is operational by the defense, the
+program still yields a defensible chapter.</p>
+<p>The single decision on which the whole program rests is the choice of
+response variable. The primary uniformity response is <em>not</em> the
+absolute temperature spread <span class="math inline">\sigma_T</span> of
+a graded part, but the <em>paired within-geometry difference</em> <span class="math display">\begin{equation}
+  \Delta\sigma_T \;=\; \sigma_T(\text{uniform}) \;-\;
+\sigma_T(\text{compensated}),
+  \label{eq:val_paired}
+\tag{6.1}
+\end{equation}</span> measured on a uniform and a compensated coupon of
+the <em>same</em> cross-section, printed in the same batch and sintered
+back-to-back. Pairing within geometry cancels the part-to-part nuisance
+variation, ink-batch drift, ambient conditions, electrode seating, and
+emissivity drift, that would otherwise swamp a moderate bench budget;
+the print batch is the blocking variable, so the design is a randomized
+complete block design (randomized complete block design (RCBD)). It is
+this pairing that makes a few dozen coupons sufficient where an
+absolute-<span class="math inline">\sigma_T</span> comparison would
+demand far more.</p>
+<p>The pairing is sound only if the uniform control and the compensated
+coupon receive the same <em>dose</em>. In this process they do, by
+construction. Dose is set by the deposited carbon-black mask, which the
+binder-jet printer controls deterministically: the FGM coupon carries
+the spatially graded mask, and its paired uniform control carries a
+<em>constant-gray</em> mask printed at the FGM mask’s spatial-mean gray
+level. The two masks therefore deposit the same total dopant by
+construction, exact up to printer repeatability. The dose-as-covariate
+hedge of an earlier draft is unnecessary and is dropped: matched dose is
+a property of the mask pair, not a regression adjustment. The one
+residual exposure is that the pairing now rests on the printer realizing
+a flat constant-gray field faithfully, which the measurement-system plan
+addresses with a one-time mask-realization check (section 6.6.2).</p>
+<p>The 13.56 MHz sintering rig is not yet fully functional (section
+3.2.1.1), and the program is therefore structured as three
+<em>alternative</em> execution routes of decreasing rig dependence.
+Tier 1 assumes a fully functioning rig and validates full-part
+compensation. Tier 2 assumes a partially functioning rig that can heat
+coupon-scale specimens but not reliably fuse full parts, and validates
+the physics <em>modules</em> rather than full-part compensation. Tier 3
+assumes no working rig at all and validates the model <em>inputs</em> by
+material characterization on bench instruments. These are candidate
+routes, not campaigns to be run in series: the validation program runs
+the <em>most capable</em> tier that the rig availability and time budget
+support at the time of the campaign, and executes that one. Selecting a
+lower tier is a graceful fallback, not a failure, because each tier is
+self-contained and still yields a coherent, defensible chapter on its
+own.</p>
+<p>Step 0, the impedance spectroscopy of the deployed ink (section
+6.1.3), is <em>common to all three tiers</em>. It is the prerequisite
+that anchors every absolute magnitude, and it requires no sintering rig,
+so it is executable regardless of which tier the hardware ultimately
+supports.</p>
+<p>The prerequisite to every other measurement is impedance spectroscopy
+of the deployed Nazdar 25 %-by-weight carbon-black/IPA ink at 13.56 MHz
+and 27.12 MHz. As noted in section 9.2.2, HEATR currently uses Allison’s
+30 %-by-weight graphite-in-nylon data <span class="citation" data-cites="allisonDissertation">[1]</span> as a stand-in, so all
+simulation magnitudes are model-relative until the real ink’s
+conductivity, permittivity, and percolation state are measured. Without
+Step 0, the program below can test <em>trends</em> but cannot anchor
+<em>absolute magnitudes</em>. The 13.56 MHz measurement in particular is
+the highest-leverage single measurement in the entire program, and
+section 6.4 elevates it accordingly.</p>
+<p>The deployed ink fixes one operating point; it does not, by itself,
+show how the material’s electromagnetic response varies with dopant
+loading. Before the tiered program, a companion bench sweep therefore
+characterizes the bulk electromagnetic response as a function of dopant
+loading. Specimens are prepared at a graded series of
+carbon-black-in-PA12 filler fractions, spanning from below the
+percolation onset to well above the estimated as-printed part loading
+(<span class="math inline">W_{\mathrm{full}}\approx15</span>–<span class="math inline">18</span> wt%). The range is set by the process, not
+by any literature curve: below the onset the composite is matrix-like
+and does not heat, and above <span class="math inline">W_{\mathrm{full}}</span> the sweep buys headroom
+around the loading the printer actually deposits. The deployed Nazdar
+ink is 25 wt% carbon black in its IPA carrier, a distinct quantity; the
+saturation-to-filler mapping that connects the two is one of the things
+this sweep pins down. For each specimen the vector network analyzer
+(VNA) measures the effective conductivity <span class="math inline">\sigma_{\mathrm{eff}}(f)</span> and relative
+permittivity <span class="math inline">\varepsilon_r(f)</span> at both
+13.56  and 27.12 MHz. Because the volumetric RF heating scales as <span class="math inline">Q_{\mathrm{rf}}\propto\sigma\lvert\mathbf{E}\rvert^2</span>
+(equation (4.2)), those two curves supply the per-loading material
+inputs that, fed to HEATR, predict the heating response and locate the
+loading that maximizes absorbed power for a given applicator excitation.
+Prior volumetric-RFAM work locates that optimum, in COMSOL, at <span class="math inline">\sigma\approx0.0425\,S/m</span> for graphite-doped
+PA12 at 27.12 MHz <span class="citation" data-cites="allison2022computational">[2, p. 1482]</span>; the
+dissertation already tabulates the graphite conductivity-versus-loading
+envelope in table 2.1, and this sweep establishes the carbon-black
+analogue. Mapping conductivity, permittivity, and the derived
+absorbed-power estimate against loading gives the rest of the program
+its material inputs before any coupon is sintered: it supplies the
+conductivity-versus-filler curve against which the Step 0 single-point
+ink measurement fixes <span class="math inline">W_{\mathrm{full}}</span>. The sweep needs no
+sintering rig, so like the single-point measurement above it is
+executable regardless of tier. It is planned setup work; no envelope
+values are asserted here.</p>
+<p>Tier 1 is a part-level design of experiments executed when the rig
+fully sinters parts. Throughput governs its size: at roughly ten coupons
+per week, a defense-scale campaign must fit in about five weeks. The
+design is therefore power-ranked and trimmed to <span class="math inline">53</span> coupons (<span class="math inline">\approx5.3</span> weeks), concentrating the budget
+on the contrasts with the largest predicted effect and deferring or
+dropping the sub-floor arms. The coupon ledger sums explicitly:
+S1a <span class="math inline">12</span>, S1b <span class="math inline">18</span>, S2 <span class="math inline">16</span>,
+S3 <span class="math inline">4</span>, and the multi-part sub-study
+(H5) <span class="math inline">3</span>, for <span class="math inline">12+18+16+4+3 = 53</span> coupons. The trim order is
+explicit: if the budget tightens, the classification screen (S1b) drops
+from <span class="math inline">b=3</span> to <span class="math inline">b=2</span> blocks first; the headline FGM screen
+(S1a) and the shrinkage-anisotropy contrast (S2) are never touched.</p>

@@ -1,0 +1,379 @@
+% ============================================================================
+% export/shim.tex — prepended to a reading unit before pandoc so it can digest
+% siunitx units and neutralize \ensuremath. Document-agnostic: it hardcodes NO
+% adopter preamble. Custom math macros, if the adopter has a preamble/macros.tex
+% (or macros.tex), are appended after this shim by chapter-html.sh. Glossaries
+% (\gls) and cleveref (\cref) are handled upstream in preprocess.py.
+% ============================================================================
+\renewcommand{\ensuremath}[1]{#1}  % neutralize \ensuremath so pandoc's math reader
+                                   % doesn't choke on \bar\ensuremath{...} etc.
+
+% --- siunitx (v2 \SI/\si and v3 \qty/\unit) -> plain text -------------------
+\makeatletter
+\newcommand{\SI}[2]{#1\,#2}
+\newcommand{\si}[1]{#1}
+\newcommand{\num}[1]{#1}
+\newcommand{\qty}[2]{#1\,#2}
+\newcommand{\unit}[1]{#1}
+\newcommand{\SIrange}[3]{#1--#2\,#3}
+\newcommand{\qtyrange}[3]{#1--#2\,#3}
+\newcommand{\numrange}[2]{#1--#2}
+\newcommand{\numlist}[1]{#1}
+\newcommand{\SIlist}[2]{#1\,#2}
+\newcommand{\ang}[1]{#1\degsym}
+\makeatother
+
+% --- SI prefixes ------------------------------------------------------------
+\newcommand{\kilo}{k}\newcommand{\mega}{M}\newcommand{\giga}{G}\newcommand{\tera}{T}
+\newcommand{\milli}{m}\newcommand{\micro}{µ}\newcommand{\nano}{n}\newcommand{\pico}{p}
+\newcommand{\centi}{c}\newcommand{\deci}{d}\newcommand{\deca}{da}\newcommand{\hecto}{h}
+% --- units ------------------------------------------------------------------
+\newcommand{\hertz}{Hz}\newcommand{\meter}{m}\newcommand{\metre}{m}\newcommand{\second}{s}
+\newcommand{\watt}{W}\newcommand{\volt}{V}\newcommand{\ampere}{A}\newcommand{\ohm}{Ω}
+\newcommand{\siemens}{S}\newcommand{\pascal}{Pa}\newcommand{\joule}{J}\newcommand{\kelvin}{K}
+\newcommand{\celsius}{°C}\newcommand{\degsym}{°}\newcommand{\gram}{g}\newcommand{\kilogram}{kg}
+\newcommand{\poise}{P}\newcommand{\percent}{\%}\newcommand{\radian}{rad}\newcommand{\liter}{L}
+\newcommand{\litre}{L}\newcommand{\minute}{min}\newcommand{\hour}{h}\newcommand{\newton}{N}
+\newcommand{\mole}{mol}\newcommand{\mol}{mol}
+\newcommand{\per}{/}\newcommand{\square}[1]{#1²}\newcommand{\cubic}[1]{#1³}
+\newcommand{\squared}{²}\newcommand{\cubed}{³}
+%==============================================================================
+%  preamble/macros.tex — shared math macros used across chapters.
+%  These are the canonical definitions; section files (e.g. the HEATR methods)
+%  \providecommand the same names, so those guards no-op when included here.
+%==============================================================================
+
+% --- RFAM / HEATR physics ---
+% \ensuremath so these are safe in BOTH text and math mode (e.g. "\Tphi snapshot"
+% in a caption no longer triggers "Missing $ inserted").
+\newcommand{\Qrf}{\ensuremath{Q_{\mathrm{rf}}}}
+\newcommand{\Tphi}{\ensuremath{T_{\varphi_{0.90}}}}
+\newcommand{\sigT}{\ensuremath{\sigma_T}}
+\newcommand{\rhorel}{\ensuremath{\rho_{\mathrm{rel}}}}
+\newcommand{\phimelt}{\ensuremath{\varphi}}
+\newcommand{\satmap}{\ensuremath{s(x,y)}}
+\newcommand{\Tpc}{\ensuremath{T_{\mathrm{pc}}}}
+\newcommand{\bndstd}{\ensuremath{\sigma_{\mathrm{bnd}}}}
+
+% --- Geometry / compensation ---
+\newcommand{\EPE}{\ensuremath{\mathrm{EPE}}}
+\newcommand{\Leff}{\ensuremath{L_{\mathrm{eff}}}}
+\newcommand{\RMSE}{\ensuremath{\mathrm{RMSE}}}
+
+% --- Figure placeholder (TODO art still to be produced) ---
+% Visible boxed placeholder so missing figures are obvious in the compiled PDF
+% and greppable in source. Swap \figtodo{...} for \includegraphics when ready.
+% Usage: inside a figure env, \figtodo{what to show + source path}.
+\newcommand{\figtodo}[1]{%
+  \setlength{\fboxsep}{10pt}%
+  \fbox{\begin{minipage}[c][0.30\textheight][c]{0.86\linewidth}%
+    \centering\itshape\small \textbf{TODO (figure):}\\[0.4em] #1%
+  \end{minipage}}}
+
+% --- Notation helpers ---
+\newcommand{\vect}[1]{\boldsymbol{#1}}
+\newcommand{\nhat}{\hat{\vect{n}}}
+\newcommand{\half}{\tfrac{1}{2}}
+\newcommand{\iter}[1]{\textnormal{iter-}#1}
+\newcommand{\degC}{$^\circ$C}
+\DeclareMathOperator*{\clip}{clip}
+\chapter{Introduction}
+\label{ch:intro}
+
+% Seeded from PhD proposal Introduction (v10) with citations resolved against
+% references.bib. Target 35-45 pp. Expand the background review (sec:intro_background)
+% by drawing on the PDFs staged in proposal/writing/ch1_intro/.
+
+\section{Motivation}
+\label{sec:intro_motivation}
+
+Additive manufacturing (AM) builds complex geometries directly from a digital model, enabling
+rapid prototyping and distributed production through increasingly accessible
+machines and materials~\cite{gibson2015additive,Beaman2020AdditiveMR,Yang2015AdditiveMD,yao2016cost,debroy2018additive,bahruni2018technology}.
+It also gives designers the freedom to tailor each part to an individual
+customer's requirements~\cite{ko2015design}.
+Among powder-bed fusion techniques, selective laser sintering (SLS)
+is widely adopted for polymer AM for its geometric flexibility and robust
+mechanical performance~\cite{deckard1989method,jabri2023comprehensive,lupone2021process}.
+
+SLS nonetheless presents considerable limitations. The process is
+energy-inefficient: only a small fraction of the supplied thermal energy
+directly contributes to part formation, while the majority heats unused
+surrounding powder~\cite{jabri2023comprehensive,peyre2015sls,lupone2021process}.
+Prolonged exposure of the powder to high temperature also degrades polymers such
+as polyamide 12 (PA12), commonly known as Nylon~12, which can withstand only roughly
+five to seven thermal cycles without powder refreshing before exhibiting reduced
+mechanical strength, ductility, and
+reliability~\cite{verbelen2016characterization,zhao2018crystallization,pham2008deterioration,choren2001sls,gornet2002characterization,zarringhalam2006effects}.
+Maintaining a uniformly elevated build-chamber temperature further amplifies
+energy losses while creating inconsistent thermal gradients that drive residual
+stresses and warping~\cite{bourell2014performance,jabri2023comprehensive}. These
+thermal side effects also lead to powder caking and semi-sintered boundaries,
+increasing post-processing effort~\cite{xiao2024sls}.
+
+Production throughput is similarly constrained. Build rate in SLS is limited
+by the time required to expose every voxel with a scanned
+laser~\cite{deckard1995improved}. Increasing speed requires either higher laser
+power or multiple lasers, both of which introduce practical limitations. Excessive
+energy density risks material degradation or ablation unless scan speed is raised,
+but this is bounded by galvanometer performance. Adding lasers can increase
+throughput, yet it also raises system cost and complexity
+significantly~\cite{bourell2014performance,xiao2024sls}.
+
+These limitations are not only technical; they carry significant economic
+penalties. Machine depreciation, not raw material or tooling, dominates part cost
+in SLS~\cite{lindemann2012lifecyclecosts,rickenbacher2013slmcostmodel}.
+Capital equipment often exceeds
+\$250{,}000,\footnote{Reported polymer powder-bed fusion system prices exceed
+\$250{,}000; see \textcite{khajavi2014spareparts}.} yet builds are slow, producing
+on the order of tens of parts per week for large, low-utilization builds, and
+capacity utilization strongly governs the resulting per-part
+cost~\cite{baumers2011capacityutilization}. To recover the capital
+investment over a typical five-year lifespan, each part must carry a substantial
+depreciation burden. Under this illustrative throughput, that burden works out to
+more than \$100 per part on its own. Increasing build
+rate is therefore not merely a matter of saving time, but of reducing part cost.
+Faster, more efficient build processes are needed, and radio frequency additive manufacturing (RFAM) offers a
+fundamentally different approach.
+
+\section{The Radio-Frequency Additive Manufacturing (RFAM) Process}
+\label{sec:intro_rfam}
+
+RFAM volumetrically couples radio-frequency energy into doped regions of a
+powder bed, selectively melting targeted areas without meaningfully raising the
+temperature of the surrounding
+material~\cite{allisonDissertation,allison2022volumetric,allison2022computational}.
+RFAM uses a single additive, typically carbon black or graphite, in two roles at
+once: it is the material patterned into the powder bed to define the part, and it is the
+RF \emph{susceptor}, the phase that dissipates the applied field as heat. A binder-jet printhead deposits this susceptor
+dopant layer by layer; the
+resulting green part, the shaped but unsintered powder body, is then exposed to an radio frequency (RF) field for sintering. The
+sintering mechanism is summarized in figure 1.1: the doped regions
+couple to the field and dissipate energy through Joule heating, while the virgin
+nylon remains nearly transparent at RF frequencies, so heat is generated only
+within the patterned volume. The simulations in this work are exercised at the \SI{27.12}{\mega\hertz}
+industrial, scientific, and medical (ISM) band, at which the available feedstock dielectric
+data were measured; the hardware itself operates at \SI{13.56}{\mega\hertz}, whose
+consequences for achievable resolution are weighed in chapter 7.
+
+\begin{figure}[tb]
+  \centering
+  \includegraphics[width=\linewidth]{../build/figs/figures_ch1_rfam_process_overview.pdf.png}
+  \caption{Figure 1.1. The RFAM sintering mechanism. Carbon/graphite-doped nylon powder is
+  exposed to an RF field between parallel copper electrodes; the dopant
+  selectively absorbs RF energy, melting the surrounding nylon and driving
+  particle coalescence and part densification.}
+  \label{fig:rfam_process}
+\end{figure}
+
+Decoupling energy input from surface scanning yields several advantages. Because
+the entire doped cross-section is energized simultaneously rather than rastered,
+throughput improves and thermal waste is reduced, and far fewer powder particles
+are thermally cycled. Volumetric heating is also expected to improve material
+homogeneity and reduce residual stress by eliminating the interlayer reheating
+intrinsic to laser sintering~\cite{wudy2016filled}. The absence of heat in
+non-targeted regions minimizes sintered artifacts in the surrounding powder and
+reduces post-processing. Separately, the elimination of precision scanning optics allows
+the architecture to scale without a corresponding rise in system complexity. The
+underlying use of RF and microwave energy to heat lossy and doped materials is
+well established outside of AM~\cite{wroe1998rfmicrowave,ferdous2017rfheating}.
+
+Despite this potential, RFAM remains in its early stages, with open
+questions around process control, achievable precision, and adaptability to
+material systems beyond standard polymer/dopant combinations. This dissertation
+addresses those questions by advancing RFAM process control, simulation, and
+material extensibility.
+
+\section{Background and Related Work}
+\label{sec:intro_background}
+
+\subsection{Polymer Powder-Bed Sintering}
+\label{sec:intro_bg_sls}
+
+Powder-bed fusion of polymers is dominated by selective laser sintering
+(SLS), introduced by Deckard in the late 1980s~\cite{deckard1989method} and
+since developed into a mature production
+process~\cite{gibson2015additive,Beaman2020AdditiveMR,lupone2021process}. In
+SLS, a scanned laser fuses successive powder layers held just below the
+polymer melt temperature; the resulting parts have strong, isotropic mechanical
+performance and good geometric flexibility~\cite{jabri2023comprehensive,peyre2015sls,xiao2024sls}.
+The degree of particle melt achieved in the powder bed is the principal determinant
+of final SLS part quality~\cite{Zarringhalam2009}. The
+process is nonetheless constrained on three fronts. Energetically, only a small
+fraction of supplied heat forms the part while the bulk maintains the elevated
+chamber temperature, and the scanned exposure caps throughput~\cite{lupone2021process,deckard1995improved}.
+Thermally, the elevated bed and repeated heating drive residual stress, warping,
+and powder caking~\cite{bourell2014performance}.
+Economically, slow builds on capital-intensive machines make depreciation the
+dominant per-part cost~\cite{khajavi2014spareparts,baumers2011capacityutilization,lindemann2012lifecyclecosts,rickenbacher2013slmcostmodel,yao2016cost}.
+These limitations (quantified in section 1.1) motivate the
+volumetric, non-scanned alternative pursued in this dissertation.
+
+\subsection{Thermal and Material Behavior of Polyamide-12}
+\label{sec:intro_bg_pa12}
+
+The processability of Nylon-12 (PA12), the workhorse SLS polymer and the
+matrix used here, is governed by its semicrystalline thermal behavior. A narrow
+window between melt-onset and recrystallization, characterized by differential
+scanning calorimetry (differential scanning calorimetry (DSC)), defines the usable processing
+range~\cite{zhao2018crystallization,affolter2001interlaboratory}, and the polymer
+degrades after only a few thermal cycles, losing strength and ductility as powder
+ages~\cite{verbelen2016characterization,zarringhalam2006effects,pham2008deterioration,choren2001sls,gornet2002characterization}.
+Particle size and packing further govern layer uniformity and final
+density~\cite{mokrane2018process}. These same DSC-measured transitions
+(onset \SI{171}{\celsius}, peak \SI{180.8}{\celsius}, latent heat
+\SI{101.7}{\kilo\joule\per\kilogram}, from the RFAM feedstock characterization of
+Allison~\cite{allisonDissertation}) parameterize the apparent-heat-capacity melt
+model used in the RFAM simulations of chapter 4, making PA12's
+material thermodynamics a thread that runs through the entire work.
+
+\subsection{Volumetric and Radio-Frequency Heating}
+\label{sec:intro_bg_rf}
+
+RFAM belongs to a broader shift away from serial, point-by-point energy delivery
+toward parallel exposure of an entire region, in which the deposited energy field is
+treated as a designed quantity. Tomographic volumetric additive manufacturing is the
+clearest expression of that shift, solving for a set of projections before exposure so
+that a whole volume solidifies at once~\cite{kelly2019volumetric}, and it now extends
+to high-temperature inorganic parts through a subsequent furnace sinter step, a
+conceptual parallel to RFAM's print-then-fuse sequence rather than the same
+field-driven mechanism~\cite{toombs2022silica,madridwolff2023vamreview}.
+Using radio-frequency and microwave energy to heat lossy and doped materials is
+long established outside additive
+manufacturing~\cite{wroe1998rfmicrowave,ferdous2017rfheating}, and within AM,
+volumetric fusion of graphite-doped Nylon-12 under an RF field was demonstrated by
+Allison and co-workers~\cite{allison2022volumetric,allisonDissertation}, whose
+\SI{27.12}{\mega\hertz} material-property data the present simulations build on. The
+governing physics, the prior RFAM results, and where recent microwave
+volumetric-heating work sits relative to them are developed in chapter 2;
+this dissertation advances that line by coupling a custom hardware platform
+(section 3.1) with a predictive electromagnetic--thermal model and
+simulation-guided compensation (chapter 5). RFAM draws on three research
+lines, the volumetric-fusion paradigm~\cite{kelly2019volumetric}, concentration-tunable
+RF and dielectric heating~\cite{vashisth2021rfsusceptors}, and coupled multiphysics
+modeling of field-driven sintering~\cite{maniere2017coupled}.
+
+\subsection{Binder Jetting and Dopant Deposition}
+\label{sec:intro_bg_bjam}
+
+In RFAM the susceptor dopant is patterned by binder jetting (selectively jetting
+liquid onto a powder bed), a process introduced at MIT in the early 1990s and now
+applied across metals, ceramics, and
+polymers~\cite{mostafaei2021binderjetting,miyanaji2016porcelainBJ,du2020ceramicbj}.
+Print fidelity is governed by droplet--powder interaction: a droplet impacts at
+several meters per second, spreads, and infiltrates the pore network following
+Washburn-type capillary flow, with the balance between spreading and infiltration
+set by binder viscosity, surface tension, and powder
+packing~\cite{Derby2010InkjetReview,colton2021droplet,holman2002spreading,barui2020inkpowder}.
+High-speed X-ray imaging has resolved these dynamics in real
+time~\cite{parab2019xray}. Small placement and volume errors accumulate into
+banding, edge growth, and dimensional drift~\cite{Zhao2023BinderJetDefects,zago2024mbjaccuracy,Thalheim2023DropPlacement},
+which is precisely what the metrology pipeline of section 3.3 is designed
+to quantify.
+
+\subsection{Process Compensation and Inverse Methods}
+\label{sec:intro_bg_compensation}
+
+Correcting process-induced non-uniformity is the core of chapter 5.
+The primary designed strategy is \emph{functional grading} of dopant
+concentration, which tunes local conductivity to flatten the heating field,
+recasting the heuristic conductivity-tuning idea of prior RFAM
+modeling~\cite{allison2022computational} as an explicit inverse of a verified
+forward solver. Two further levers are characterized and
+bounded rather than recommended for deployment. A second software lever, \emph{geometry pre-warp},
+holds the dopant uniform and pre-distorts the part boundary by adjoint inverse
+design; a transfer accounting reduces it to one narrow surviving role, a
+chamber-keyed anisotropic shrinkage transform complementary to grading. On the
+\emph{hardware} axis, turntable field averaging is the strongest lever in simulation
+but is ruled out by the contact-coupling constraint, motivating a multi-stage
+switchable-electrode system as the buildable path (chapter 5).
+
+\subsection{Metrology for Additive Manufacturing}
+\label{sec:intro_bg_metrology}
+
+Quantitative, low-cost diagnostics underpin the characterization pipeline of
+section 3.3. Flatbed scanners have been calibrated as traceable
+two-coordinate measuring instruments~\cite{devicente2015scanner} and used for AM
+layer-contour verification~\cite{blanco2020layercontour}, with print-quality
+measurement standardized in the graphics industry~\cite{ISO24790}. Benchmark
+test artifacts (the NIST artifact~\cite{moylan2014testartifact},
+ISO/ASTM~52902~\cite{ISOASTM52902}, and the reviews of Rebaioli and
+Fassi~\cite{rebaioli2017benchmark} and de Pastre et
+al.~\cite{depastre2020testartefacts}) define dimensional-capability assessment,
+while in-line approaches span fringe-projection
+profilometry~\cite{zhang2016fringeprofilometry}, piezoelectric
+self-sensing~\cite{wang2020piezoselfsensing}, and deep-learning image-based defect
+detection~\cite{li2024deeplearningAM,kim2023imagefaultsurvey}. The present work
+targets the on-substrate jetting outcome itself, before sintering, at commodity
+cost (section 3.3.1).
+
+\section{Research Questions and Dissertation Structure}
+\label{sec:intro_rqs}
+
+This work is organized around three tasks, each forming a chapter.
+
+\begin{description}[leftmargin=0em,style=nextline]
+  \item[Task~1: Design and characterization of a custom RFAM platform
+  (sections 3.1 and 3.3).] Two questions follow. (i)~How can a modular
+  RF additive manufacturing system integrate binder-jet dopant deposition,
+  multi-axis motion, high-viscosity ink delivery, and volumetric RF heating?
+  (ii)~How do low-cost, ex-situ diagnostics compare with specialized
+  instrumentation for assessing jetting fidelity and dopant distribution?
+  \item[Task~2: Toward ideal parts via computational and hardware compensation
+  (chapters 4, 5 and 7).] Two questions follow.
+  (i)~How can coupled electromagnetic--thermal models predict RF heating
+  non-uniformity, and how can functionally graded doping be designed from those
+  models as the primary compensation lever, with geometry pre-warp and turntable
+  field averaging characterized and bounded rather than recommended for
+  deployment? (ii)~What process-capability envelope and design-for-RFAM rules
+  follow once those models are inverted (chapter 7)?
+  \item[Task~3: Material and modality extensibility (chapter 8).]
+  What dielectric and thermal criteria make a material RF-responsive, and how far
+  can RFAM extend beyond powder beds, to bath-printed silicones, RF-foamed
+  elastomers, and programmable deformation?
+\end{description}
+
+\section{Contributions}
+\label{sec:intro_contributions}
+
+At a high level, this dissertation contributes: (i) a custom, modular RFAM
+platform and a low-cost scanner-based diagnostic pipeline (sections 3.1 and 3.3);
+(ii) the high-frequency electrothermal additive thermal resolver (HEATR) coupled electromagnetic--thermal simulation framework and
+simulation-guided compensation: functionally graded dopant maps that flatten the
+RF heating field as the primary software lever. The contribution here is
+\emph{computational and mechanistic}, and it is delineated carefully against prior
+work. Song et al.~\cite{Song2025RFAMUniformity} demonstrated functional grading in
+RFAM experimentally; the contribution here is not that experimental demonstration
+but the inverse-design formulation that recasts the heuristic conductivity-tuning
+idea of Allison's RFAM modeling~\cite{allison2022computational} as an explicit
+inverse of a \emph{verified} forward solver, together with the mechanistic theory that
+explains the method: the fixed-point ``glass-ceiling'' convergence analysis, the
+integral-mode escape, and a method-selection framework that systematizes when grading
+is the right lever. A retrospective \emph{validation} that the prior heuristic and
+experimental work did not perform then calibrates that solver against Allison's own recovered
+IR thermography (section 4.3.1). A second, distinct software
+lever delivered here is \emph{geometry pre-warp} by adjoint-based inverse design:
+holding the dopant uniform and pre-distorting the input geometry so that the
+as-built part lands on the fixed nominal target. The boundary perturbations are
+driven by gradients obtained from an adjoint through the coupled transient solver,
+and verified end-to-end against finite differences. Its merit is that this gradient
+route converges where prior \texttt{fmincon}-based attempts at the same problem did
+not, and its one deployable role is a chamber-keyed anisotropic
+densification-shrinkage transform complementary to grading; its limit, shared with FGM, is
+the reentrant field-shadow case, where no
+boundary pre-distortion (and no dopant grading) can back-fill heating energy into a
+self-shadowed recess: a genuine negative result that bounds what compensation can
+reach, not an unfinished one. On the \emph{hardware} axis,
+turntable field averaging is the strongest lever in simulation but is ruled out by
+the contact-coupling constraint, motivating the multi-stage switchable-electrode
+path. A geometry-driven rule, validated across an 18-geometry method-selection
+campaign, predicts which lever applies to a given part
+(chapters 4 and 5); (iii) a
+physics-derived capability envelope and a design-for-RFAM rule set, with the binding
+minimum-section-thickness constraint demonstrated in-engine and the remaining limits
+physics-derived, synthesizing the Task-2 results into what RFAM can and cannot build
+(chapter 7); and (iv) a forward-looking reframing of
+computationally programmed RF heating as a platform for spatially-graded material
+transformation, with candidate applications (chapter 8).
+Each contribution is stated in detail at the end of its chapter, after the
+necessary terms and methods have been introduced.

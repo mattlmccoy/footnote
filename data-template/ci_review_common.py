@@ -108,11 +108,15 @@ def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
     stub files ("5") over real chapters because the build exited 0 but produced garbage — the
     exit code cannot catch that; only inspecting the OUTPUT can. A build is degenerate when:
       - it is empty / whitespace-only, or
-      - a last-good version exists and the new output lost more than ``max_shrink`` of it
-        (the incident: KB/MB chapter -> 253 bytes), or
+      - a last-good version exists and the new output lost more than ``max_shrink`` of its
+        VISIBLE PROSE (the incident: KB/MB chapter -> 253 bytes), or
       - there is no last-good and the output has NO rendered content — no heading and no
         non-empty text/figure block. (A byte floor is the WRONG proxy: a legitimately short
         unit — a heading + one sentence ≈ 143 bytes — is valid and must not vanish. F1, 2026-07-14.)
+    Shrink is measured on visible prose, NOT raw bytes: a chapter that legitimately drops an
+    embedded figure loses megabytes of data-URI while its reading content is intact, and must not
+    be flagged (2026-08-10: ch_validation fell 726K->69K purely because its IR figures moved to
+    another chapter). A prose collapse still shrinks the visible text, so real garbage is caught.
     A similar-size or larger rebuild is never degenerate. ``min_bytes`` is retained for API
     compatibility (callers/tests may pass it) but is no longer a hard floor. Pure — the caller
     does build-to-temp then swap-or-keep.
@@ -122,13 +126,22 @@ def is_degenerate_content(new_text, prev_text, min_bytes=200, max_shrink=0.6):
         return True, "empty output"
     prev = prev_text or ""
     if prev.strip():
-        floor = len(prev) * (1.0 - max_shrink)
-        if len(new) < floor:
-            pct = int((1.0 - len(new) / len(prev)) * 100)
-            return True, f"shrank {pct}% (from {len(prev)} to {len(new)} bytes) vs last-good"
+        new_vis, prev_vis = _visible_text(new), _visible_text(prev)
+        floor = len(prev_vis) * (1.0 - max_shrink)
+        if len(new_vis) < floor:
+            pct = int((1.0 - len(new_vis) / max(1, len(prev_vis))) * 100)
+            return True, (f"prose shrank {pct}% (from {len(prev_vis)} to {len(new_vis)} visible "
+                          f"chars) vs last-good")
     elif not _has_rendered_content(new):
         return True, f"no rendered content (heading or text) in {len(new)}-byte first build"
     return False, ""
+
+
+def _visible_text(html):
+    """Visible prose of an HTML fragment: tags dropped, whitespace collapsed. Embedded figures
+    are data:-URIs inside tag attributes, so stripping tags removes them — the length reflects
+    the READING content, not how many megabytes of base64 figures ride along."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html or "")).strip()
 
 
 def _has_rendered_content(html):

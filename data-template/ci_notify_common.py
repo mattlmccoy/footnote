@@ -124,6 +124,11 @@ def email_shell(title, subtitle, inner_rows, width=520):
     """Wrap table-rows (inner_rows) in the standard card: cool canvas, white card, accent top-bar, header."""
     E = EMAIL
     sub = f'<div style="font-size:13px;color:{E["text3"]};margin-top:3px;">{esc(subtitle)}</div>' if subtitle else ""
+    # Logo cell only when a hosted URL is configured (BRAND_LOGO is empty without PORTAL_BASE);
+    # an empty <img src=""> renders as a broken-image icon, so fall back to the wordmark alone.
+    logo_cell = (f'<td style="vertical-align:middle;"><img src="{BRAND_LOGO}" width="26" height="26" '
+                 f'alt="{BRAND_NAME}" style="display:block;border:0;border-radius:6px;"></td>') if BRAND_LOGO else ""
+    wordmark_pad = "padding-left:9px;" if BRAND_LOGO else ""
     return (f'<!DOCTYPE html><html><head><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1"></head>'
             f'<body style="margin:0;padding:24px 0;background:{E["bg"]};'
@@ -134,9 +139,8 @@ def email_shell(title, subtitle, inner_rows, width=520):
             f'<tr><td style="height:4px;background:{E["accent"]};font-size:0;line-height:0;">&nbsp;</td></tr>'
             f'<tr><td style="padding:16px 24px 2px;">'
             f'<table role="presentation" cellpadding="0" cellspacing="0"><tr>'
-            f'<td style="vertical-align:middle;"><img src="{BRAND_LOGO}" width="26" height="26" alt="{BRAND_NAME}" '
-            f'style="display:block;border:0;border-radius:6px;"></td>'
-            f'<td style="vertical-align:middle;padding-left:9px;font-size:16px;font-weight:600;'
+            f'{logo_cell}'
+            f'<td style="vertical-align:middle;{wordmark_pad}font-size:16px;font-weight:600;'
             f'letter-spacing:-0.5px;color:{E["text"]};">{BRAND_NAME}</td>'
             f'</tr></table></td></tr>'
             f'<tr><td style="padding:8px 24px 14px;"><div style="font-size:17px;font-weight:600;color:{E["text"]};">{title}</div>{sub}</td></tr>'
