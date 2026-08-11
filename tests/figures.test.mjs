@@ -12,6 +12,7 @@ import {
   figureRefsInFragment, groupFiguresByChapter, figureAnchor, attachCommentCounts, describeRegion,
   buildGallery, galleryHtml,
   figureKey, markReviewed, isReviewed, sweepProgress, flattenFigures, adjacentFigure, firstUnreviewedFigure,
+  normalizedBBox,
 } from '../js/figures.js';
 import { newReview, addComment } from '../js/model.js';
 
@@ -145,6 +146,27 @@ test('describeRegion names the grid zone of a normalized region', () => {
 test('describeRegion is empty for no region', () => {
   assert.equal(describeRegion([]), '');
   assert.equal(describeRegion(null), '');
+});
+
+// normalizedBBox: canvas-pixel drawn shapes → one 0..1 bounding box, feeding describeRegion (Slice 4 bridge)
+test('normalizedBBox reduces drawn shapes to a normalized bounding box', () => {
+  assert.deepEqual(normalizedBBox([{ type: 'rect', x: 80, y: 10, w: 30, h: 40 }], 100, 100),
+    [{ x: 0.8, y: 0.1, w: 0.3, h: 0.4 }]);
+  // freehand points + a rect → the union bbox, normalized and clamped to [0,1]
+  const bb = normalizedBBox([
+    { type: 'free', points: [[10, 20], [40, 60]] },
+    { type: 'rect', x: 50, y: 10, w: 40, h: 20 },
+  ], 100, 100)[0];
+  assert.equal(bb.x, 0.1); assert.equal(bb.y, 0.1);
+  assert.equal(Math.round(bb.w * 100), 80); assert.equal(Math.round(bb.h * 100), 50);
+  // pipes into describeRegion to yield a human/Claude phrase
+  assert.match(describeRegion(normalizedBBox([{ type: 'rect', x: 80, y: 5, w: 15, h: 20 }], 100, 100)), /upper.*right/i);
+});
+
+test('normalizedBBox is empty for no shapes / bad dims', () => {
+  assert.deepEqual(normalizedBBox([], 100, 100), []);
+  assert.deepEqual(normalizedBBox([{ type: 'rect', x: 1, y: 1, w: 1, h: 1 }], 0, 0), []);
+  assert.deepEqual(normalizedBBox(null, 100, 100), []);
 });
 
 // ================= Slice 2: gallery view-model + renderer (pure) =================
