@@ -17,7 +17,30 @@ import {
 import { newReview, addComment } from '../js/model.js';
 
 const fx = (name) => readFileSync(fileURLToPath(new URL(`./fixtures/figures/${name}`, import.meta.url)), 'utf8');
-const CH3 = fx('ch3.html'), CH4 = fx('ch4.html');
+const CH3 = fx('ch3.html'), CH4 = fx('ch4.html'), APPX = fx('appendixA.html');
+
+// ---- appendix figures: captions are letter-numbered "Figure A.1." (preprocess.py _letter), must be indexed ----
+test('figNumFromCaption reads appendix letter numbers, not just chapter digits', () => {
+  assert.equal(figNumFromCaption('Figure A.1. Full expansion.'), 'A.1');
+  assert.equal(figNumFromCaption('Figure AA.2. Wide appendix.'), 'AA.2');   // 27th appendix → AA
+  assert.equal(figNumFromCaption('Figure 3.1. Chapter figure.'), '3.1');    // still works
+  assert.equal(figNumFromCaption('Figure A without a number'), null);
+});
+
+test('figLabelFromCaption / figureRefsInFragment / parse handle appendix figures', () => {
+  assert.equal(figLabelFromCaption('Figure A.1. Full expansion.'), 'Figure A.1.');
+  const rows = parseFiguresFromFragment(APPX, 'appendix_a');
+  assert.deepEqual(rows.map(r => r.fignum), ['A.1', 'A.2']);
+  const refs = figureRefsInFragment(APPX);
+  assert.deepEqual(refs['A.1'], ['Supplementary derivations', 'Edge cases']);
+});
+
+test('groupFiguresByChapter includes an appendix unit and its lettered figures', () => {
+  const units = [{ id: 'ch_thermal', n: 3, title: 'Thermal' }, { id: 'appendix_a', n: 1, kind: 'appendix', title: 'Derivations' }];
+  const groups = groupFiguresByChapter(units, { ch_thermal: CH3, appendix_a: APPX });
+  assert.deepEqual(groups.map(g => g.chapter.id), ['ch_thermal', 'appendix_a']);
+  assert.deepEqual(groups[1].figures.map(f => f.fignum), ['A.1', 'A.2']);   // appendix figures present, not dropped
+});
 
 // ---- figNumFromCaption: mirror /^\s*Figure\s+(\d+(?:\.\d+)*)\./ (trailing period REQUIRED) ----
 test('figNumFromCaption pulls the dotted number, requires the trailing period', () => {

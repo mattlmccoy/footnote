@@ -45,7 +45,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
-import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure, figureAnchor, describeRegion, normalizedBBox } from './figures.js?v=d5b7af7';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
+import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure, figureAnchor, describeRegion, normalizedBBox } from './figures.js?v=891c668';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -814,11 +814,11 @@ function sectionNumberMap(doc){
 function figTableMaps(doc){   // read the real number from the numbered caption (robust to pandoc's nested subfigures)
   const fig = {}, tab = {};
   doc.querySelectorAll('figure').forEach(f => {
-    const m = (f.querySelector(':scope > figcaption')?.textContent || '').match(/^\s*Figure\s+(\d+(?:\.\d+)*)\./);
+    const m = (f.querySelector(':scope > figcaption')?.textContent || '').match(/^\s*Figure\s+([A-Z]+(?:\.\d+)+|\d+(?:\.\d+)*)\./);   // digit (chapter) or letter (appendix) number
     if (m) fig[m[1]] = f;
   });
   doc.querySelectorAll('table caption, figcaption').forEach(c => {
-    const m = c.textContent.match(/^\s*Table\s+(\d+(?:\.\d+)*)\./);
+    const m = c.textContent.match(/^\s*Table\s+([A-Z]+(?:\.\d+)+|\d+(?:\.\d+)*)\./);   // digit (chapter) or letter (appendix) number
     if (m) tab[m[1]] = c.closest('figure') || c.closest('table') || c;
   });
   return { fig, tab };

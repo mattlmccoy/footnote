@@ -14,9 +14,11 @@
 
 import { isActiveComment } from './model.js?v=c284b81';
 
-const FIG_NUM_RE   = /^\s*Figure\s+(\d+(?:\.\d+)*)\./;              // figTableMaps: trailing period REQUIRED
-const FIG_LABEL_RE = /^(Figure|Fig\.?|Table)\s*[\d.]+/i;           // figureLabel: leading label token
-const REF_RE       = /\bFigure\s+(\d+(?:\.\d+)*)/g;                // an in-prose reference "Figure 3.1" (no period needed)
+// A figure number is either a chapter digit form ("3", "3.1") OR an appendix letter form ("A.1", "AA.2") —
+// appendix top-level numbers render as letters (preprocess.py _letter). Trailing period REQUIRED (figTableMaps).
+const FIG_NUM_RE   = /^\s*Figure\s+([A-Z]+(?:\.\d+)+|\d+(?:\.\d+)*)\./;
+const FIG_LABEL_RE = /^(Figure|Fig\.?|Table)\s*[A-Za-z]*[\d.]+/i;  // figureLabel: leading label token (incl. appendix letter)
+const REF_RE       = /\bFigure\s+([A-Z]+\.\d+(?:\.\d+)*|\d+(?:\.\d+)*)/g;   // in-prose ref "Figure 3.1" / "Figure A.1"
 
 // HTML comments are not content — strip them before parsing so a comment that happens to contain
 // figure/heading-like markup (provenance notes, pandoc's own comments) never leaks into the index.
