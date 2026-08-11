@@ -57,6 +57,11 @@ pandoc "$BUILD/$UNIT.full.tex" \
 SIZE="$(du -h "$OUT" | cut -f1)"
 echo "wrote $OUT [$SIZE]"
 
-# paragraph -> source map for the reviewer's in-context direct editor (best-effort alignment)
-python3 "$EXPORT_DIR/srcmap.py" "$UNIT" "$BUILD/$UNIT.full.tex" "$OUT" "${OUT%.html}.srcmap.json" \
+# paragraph -> source map for the reviewer's in-context direct editor (best-effort alignment).
+# Align against the SOURCE-ONLY pre.tex, never full.tex: full.tex prepends this shim + the
+# adopter's preamble/macros.tex, whose blank-line-separated \newcommand/\Declare blocks survive
+# srcmap's strip_tex as leading pseudo-paragraphs and starve the aligner (2026-08-10 empty-srcmap
+# incident: every map went to []). pre.tex is the flattened chapter body, so its blocks are
+# locatable in the real source files on apply — exactly what srcmap.py's contract expects.
+python3 "$EXPORT_DIR/srcmap.py" "$UNIT" "$BUILD/$UNIT.pre.tex" "$OUT" "${OUT%.html}.srcmap.json" \
   || echo "  (srcmap skipped)"

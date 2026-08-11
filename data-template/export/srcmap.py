@@ -53,12 +53,21 @@ def html_paragraphs(htmltext):
             paras.append(txt.lower())
     return paras
 
-def align(hps, tps):
-    """Greedy in-order alignment: each HTML paragraph -> best nearby source block."""
+def align(hps, tps, window=12):
+    """Greedy in-order alignment: each HTML paragraph -> best source block in a forward window.
+
+    The window is a SKIP tolerance, not just a match radius: ``j`` only advances when a block
+    matches (>= 0.6), so any run of non-prose source blocks — the shim/preamble macros prepended
+    ahead of the first paragraph, or a figure/table/equation float mid-chapter that emits no HTML
+    paragraph — must fit inside ``window`` for the aligner to step over it. The original width of
+    4 starved whenever >=4 such blocks stacked up (2026-08-10: grown preamble macros pushed the
+    first real prose to source index 5, so ``j`` never left 0 and every unit mapped to []). 12
+    clears the injected preamble and typical float runs while staying local enough to avoid
+    matching a distant repeated paragraph."""
     out, j = [], 0
     for i, h in enumerate(hps):
         best, bj = 0.0, -1
-        for k in range(j, min(j + 4, len(tps))):         # small forward window
+        for k in range(j, min(j + window, len(tps))):
             r = SequenceMatcher(None, h, tps[k]["plain"]).ratio()
             if r > best:
                 best, bj = r, k

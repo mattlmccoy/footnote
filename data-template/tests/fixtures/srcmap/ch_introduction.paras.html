@@ -1,0 +1,187 @@
+<p>Additive manufacturing (AM) builds complex geometries directly from a
+digital model, enabling rapid prototyping and distributed production
+through increasingly accessible machines and materials <span class="citation" data-cites="gibson2015additive Beaman2020AdditiveMR Yang2015AdditiveMD yao2016cost debroy2018additive bahruni2018technology">[1],
+[2], [3], [4], [5], [6]</span>. It also gives designers the freedom to
+tailor each part to an individual customer’s requirements <span class="citation" data-cites="ko2015design">[7]</span>. Among powder-bed
+fusion techniques, selective laser sintering (SLS) is widely adopted for
+polymer AM for its geometric flexibility and robust mechanical
+performance <span class="citation" data-cites="deckard1989method jabri2023comprehensive lupone2021process">[8],
+[9], [10]</span>.</p>
+<p>SLS nonetheless presents considerable limitations. The process is
+energy-inefficient: only a small fraction of the supplied thermal energy
+directly contributes to part formation, while the majority heats unused
+surrounding powder <span class="citation" data-cites="jabri2023comprehensive peyre2015sls lupone2021process">[9],
+[10], [11]</span>. Prolonged exposure of the powder to high temperature
+also degrades polymers such as polyamide 12 (PA12), commonly known as
+Nylon 12, which can withstand only roughly five to seven thermal cycles
+without powder refreshing before exhibiting reduced mechanical strength,
+ductility, and reliability <span class="citation" data-cites="verbelen2016characterization zhao2018crystallization pham2008deterioration choren2001sls gornet2002characterization zarringhalam2006effects">[12],
+[13], [14], [15], [16], [17]</span>. Maintaining a uniformly elevated
+build-chamber temperature further amplifies energy losses while creating
+inconsistent thermal gradients that drive residual stresses and
+warping <span class="citation" data-cites="bourell2014performance jabri2023comprehensive">[9],
+[18]</span>. These thermal side effects also lead to powder caking and
+semi-sintered boundaries, increasing post-processing effort <span class="citation" data-cites="xiao2024sls">[19]</span>.</p>
+<p>Production throughput is similarly constrained. Build rate in SLS is
+limited by the time required to expose every voxel with a scanned
+laser <span class="citation" data-cites="deckard1995improved">[20]</span>. Increasing speed requires
+either higher laser power or multiple lasers, both of which introduce
+practical limitations. Excessive energy density risks material
+degradation or ablation unless scan speed is raised, but this is bounded
+by galvanometer performance. Adding lasers can increase throughput, yet
+it also raises system cost and complexity significantly <span class="citation" data-cites="bourell2014performance xiao2024sls">[18],
+[19]</span>.</p>
+<p>These limitations are not only technical; they carry significant
+economic penalties. Machine depreciation, not raw material or tooling,
+dominates part cost in SLS <span class="citation" data-cites="lindemann2012lifecyclecosts rickenbacher2013slmcostmodel">[21],
+[22]</span>. Capital equipment often exceeds $250<span>,</span>000,<a href="#fn1" class="footnote-ref" id="fnref1" role="doc-noteref"><sup>1</sup></a> yet builds are slow, producing on
+the order of tens of parts per week for large, low-utilization builds,
+and capacity utilization strongly governs the resulting per-part
+cost <span class="citation" data-cites="baumers2011capacityutilization">[24]</span>. To recover the
+capital investment over a typical five-year lifespan, each part must
+carry a substantial depreciation burden. Under this illustrative
+throughput, that burden works out to more than $100 per part on its own.
+Increasing build rate is therefore not merely a matter of saving time,
+but of reducing part cost. Faster, more efficient build processes are
+needed, and radio frequency additive manufacturing (RFAM) offers a
+fundamentally different approach.</p>
+<p>RFAM volumetrically couples radio-frequency energy into doped regions
+of a powder bed, selectively melting targeted areas without meaningfully
+raising the temperature of the surrounding material <span class="citation" data-cites="allisonDissertation allison2022volumetric allison2022computational">[25],
+[26], [27]</span>. RFAM uses a single additive, typically carbon black
+or graphite, in two roles at once: it is the material patterned into the
+powder bed to define the part, and it is the RF <em>susceptor</em>, the
+phase that dissipates the applied field as heat. A binder-jet printhead
+deposits this susceptor dopant layer by layer; the resulting green part,
+the shaped but unsintered powder body, is then exposed to an radio
+frequency (RF) field for sintering. The sintering mechanism is
+summarized in figure 1.1: the doped regions couple to the field and
+dissipate energy through Joule heating, while the virgin nylon remains
+nearly transparent at RF frequencies, so heat is generated only within
+the patterned volume. The simulations in this work are exercised at the
+27.12 MHz industrial, scientific, and medical (ISM) band, at which the
+available feedstock dielectric data were measured; the hardware itself
+operates at 13.56 MHz, whose consequences for achievable resolution are
+weighed in chapter 7.</p>
+<p>Decoupling energy input from surface scanning yields several
+advantages. Because the entire doped cross-section is energized
+simultaneously rather than rastered, throughput improves and thermal
+waste is reduced, and far fewer powder particles are thermally cycled.
+Volumetric heating is also expected to improve material homogeneity and
+reduce residual stress by eliminating the interlayer reheating intrinsic
+to laser sintering <span class="citation" data-cites="wudy2016filled">[28]</span>. The absence of heat in
+non-targeted regions minimizes sintered artifacts in the surrounding
+powder and reduces post-processing. Separately, the elimination of
+precision scanning optics allows the architecture to scale without a
+corresponding rise in system complexity. The underlying use of RF and
+microwave energy to heat lossy and doped materials is well established
+outside of AM <span class="citation" data-cites="wroe1998rfmicrowave ferdous2017rfheating">[29],
+[30]</span>.</p>
+<p>Despite this potential, RFAM remains in its early stages, with open
+questions around process control, achievable precision, and adaptability
+to material systems beyond standard polymer/dopant combinations. This
+dissertation addresses those questions by advancing RFAM process
+control, simulation, and material extensibility.</p>
+<p>Powder-bed fusion of polymers is dominated by selective laser
+sintering (SLS), introduced by Deckard in the late 1980s <span class="citation" data-cites="deckard1989method">[8]</span> and since
+developed into a mature production process <span class="citation" data-cites="gibson2015additive Beaman2020AdditiveMR lupone2021process">[1],
+[2], [10]</span>. In SLS, a scanned laser fuses successive powder layers
+held just below the polymer melt temperature; the resulting parts have
+strong, isotropic mechanical performance and good geometric
+flexibility <span class="citation" data-cites="jabri2023comprehensive peyre2015sls xiao2024sls">[9], [11],
+[19]</span>. The degree of particle melt achieved in the powder bed is
+the principal determinant of final SLS part quality <span class="citation" data-cites="Zarringhalam2009">[31]</span>. The process
+is nonetheless constrained on three fronts. Energetically, only a small
+fraction of supplied heat forms the part while the bulk maintains the
+elevated chamber temperature, and the scanned exposure caps
+throughput <span class="citation" data-cites="lupone2021process deckard1995improved">[10], [20]</span>.
+Thermally, the elevated bed and repeated heating drive residual stress,
+warping, and powder caking <span class="citation" data-cites="bourell2014performance">[18]</span>. Economically, slow
+builds on capital-intensive machines make depreciation the dominant
+per-part cost <span class="citation" data-cites="khajavi2014spareparts baumers2011capacityutilization lindemann2012lifecyclecosts rickenbacher2013slmcostmodel yao2016cost">[4],
+[21], [22], [23], [24]</span>. These limitations (quantified in section
+1.1) motivate the volumetric, non-scanned alternative pursued in this
+dissertation.</p>
+<p>The processability of Nylon-12 (PA12), the workhorse SLS polymer and
+the matrix used here, is governed by its semicrystalline thermal
+behavior. A narrow window between melt-onset and recrystallization,
+characterized by differential scanning calorimetry (differential
+scanning calorimetry (DSC)), defines the usable processing range <span class="citation" data-cites="zhao2018crystallization affolter2001interlaboratory">[13],
+[32]</span>, and the polymer degrades after only a few thermal cycles,
+losing strength and ductility as powder ages <span class="citation" data-cites="verbelen2016characterization zarringhalam2006effects pham2008deterioration choren2001sls gornet2002characterization">[12],
+[14], [15], [16], [17]</span>. Particle size and packing further govern
+layer uniformity and final density <span class="citation" data-cites="mokrane2018process">[33]</span>. These same DSC-measured
+transitions (onset 171 °C, peak 180.8 °C, latent heat 101.7 kJ/kg, from
+the RFAM feedstock characterization of Allison <span class="citation" data-cites="allisonDissertation">[25]</span>) parameterize the
+apparent-heat-capacity melt model used in the RFAM simulations of
+chapter 4, making PA12’s material thermodynamics a thread that runs
+through the entire work.</p>
+<p>RFAM belongs to a broader shift away from serial, point-by-point
+energy delivery toward parallel exposure of an entire region, in which
+the deposited energy field is treated as a designed quantity.
+Tomographic volumetric additive manufacturing is the clearest expression
+of that shift, solving for a set of projections before exposure so that
+a whole volume solidifies at once <span class="citation" data-cites="kelly2019volumetric">[34]</span>, and it now extends to
+high-temperature inorganic parts through a subsequent furnace sinter
+step, a conceptual parallel to RFAM’s print-then-fuse sequence rather
+than the same field-driven mechanism <span class="citation" data-cites="toombs2022silica madridwolff2023vamreview">[35],
+[36]</span>. Using radio-frequency and microwave energy to heat lossy
+and doped materials is long established outside additive
+manufacturing <span class="citation" data-cites="wroe1998rfmicrowave ferdous2017rfheating">[29], [30]</span>,
+and within AM, volumetric fusion of graphite-doped Nylon-12 under an RF
+field was demonstrated by Allison and co-workers <span class="citation" data-cites="allison2022volumetric allisonDissertation">[25],
+[26]</span>, whose 27.12 MHz material-property data the present
+simulations build on. The governing physics, the prior RFAM results, and
+where recent microwave volumetric-heating work sits relative to them are
+developed in chapter 2; this dissertation advances that line by coupling
+a custom hardware platform (section 3.1) with a predictive
+electromagnetic–thermal model and simulation-guided compensation
+(chapter 5). RFAM draws on three research lines, the volumetric-fusion
+paradigm <span class="citation" data-cites="kelly2019volumetric">[34]</span>, concentration-tunable RF
+and dielectric heating <span class="citation" data-cites="vashisth2021rfsusceptors">[37]</span>, and coupled
+multiphysics modeling of field-driven sintering <span class="citation" data-cites="maniere2017coupled">[38]</span>.</p>
+<p>In RFAM the susceptor dopant is patterned by binder jetting
+(selectively jetting liquid onto a powder bed), a process introduced at
+MIT in the early 1990s and now applied across metals, ceramics, and
+polymers <span class="citation" data-cites="mostafaei2021binderjetting miyanaji2016porcelainBJ du2020ceramicbj">[39],
+[40], [41]</span>. Print fidelity is governed by droplet–powder
+interaction: a droplet impacts at several meters per second, spreads,
+and infiltrates the pore network following Washburn-type capillary flow,
+with the balance between spreading and infiltration set by binder
+viscosity, surface tension, and powder packing <span class="citation" data-cites="Derby2010InkjetReview colton2021droplet holman2002spreading barui2020inkpowder">[42],
+[43], [44], [45]</span>. High-speed X-ray imaging has resolved these
+dynamics in real time <span class="citation" data-cites="parab2019xray">[46]</span>. Small placement and volume
+errors accumulate into banding, edge growth, and dimensional drift <span class="citation" data-cites="Zhao2023BinderJetDefects zago2024mbjaccuracy Thalheim2023DropPlacement">[47],
+[48], [49]</span>, which is precisely what the metrology pipeline of
+section 3.3 is designed to quantify.</p>
+<p>Correcting process-induced non-uniformity is the core of chapter 5.
+The primary designed strategy is <em>functional grading</em> of dopant
+concentration, which tunes local conductivity to flatten the heating
+field, recasting the heuristic conductivity-tuning idea of prior RFAM
+modeling <span class="citation" data-cites="allison2022computational">[27]</span> as an explicit inverse
+of a verified forward solver. Two further levers are characterized and
+bounded rather than recommended for deployment. A second software lever,
+<em>geometry pre-warp</em>, holds the dopant uniform and pre-distorts
+the part boundary by adjoint inverse design; a transfer accounting
+reduces it to one narrow surviving role, a chamber-keyed anisotropic
+shrinkage transform complementary to grading. On the <em>hardware</em>
+axis, turntable field averaging is the strongest lever in simulation but
+is ruled out by the contact-coupling constraint, motivating a
+multi-stage switchable-electrode system as the buildable path (chapter
+5).</p>
+<p>Quantitative, low-cost diagnostics underpin the characterization
+pipeline of section 3.3. Flatbed scanners have been calibrated as
+traceable two-coordinate measuring instruments <span class="citation" data-cites="devicente2015scanner">[50]</span> and used for AM
+layer-contour verification <span class="citation" data-cites="blanco2020layercontour">[51]</span>, with print-quality
+measurement standardized in the graphics industry <span class="citation" data-cites="ISO24790">[52]</span>. Benchmark test artifacts (the NIST
+artifact <span class="citation" data-cites="moylan2014testartifact">[53]</span>, ISO/ASTM 52902 <span class="citation" data-cites="ISOASTM52902">[54]</span>, and the reviews
+of Rebaioli and Fassi <span class="citation" data-cites="rebaioli2017benchmark">[55]</span> and de Pastre et
+al. <span class="citation" data-cites="depastre2020testartefacts">[56]</span>) define
+dimensional-capability assessment, while in-line approaches span
+fringe-projection profilometry <span class="citation" data-cites="zhang2016fringeprofilometry">[57]</span>, piezoelectric
+self-sensing <span class="citation" data-cites="wang2020piezoselfsensing">[58]</span>, and deep-learning
+image-based defect detection <span class="citation" data-cites="li2024deeplearningAM kim2023imagefaultsurvey">[59],
+[60]</span>. The present work targets the on-substrate jetting outcome
+itself, before sintering, at commodity cost (section 3.3.1).</p>
+<p>This work is organized around three tasks, each forming a
+chapter.</p>
