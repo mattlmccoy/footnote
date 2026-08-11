@@ -247,10 +247,16 @@ Turns the gallery into a fast bulk-pass surface:
   check + accent border; a **progress bar** ("N of M reviewed") sits at the top.
 - **Keyboard nav** — `←/→` (and `↑/↓`) move focus figure-to-figure in reading order, `n` jumps to the
   next unreviewed, `x`/space toggles done, `Enter` opens the figure, `d` draws, `Esc` closes.
-- **Click a figure to draw** (updated) — the figure image itself is the primary click: it opens the
-  annotation canvas on that figure (crosshair cursor + a "Draw" hint chip). "View in chapter" is a small
-  secondary link; keyboard `Enter`/`d` = draw, `v` = view in chapter. (Originally the click jumped to the
-  chapter and Draw was a separate button; reversed per owner feedback — drawing is the point of the sweep.)
+- **Click a figure to draw, in place** (updated twice) — the figure image is the primary click: it opens
+  the annotation canvas **over the gallery figure without leaving the gallery** (`openFigureMarkup(imgEl,
+  anchor, { targetChapterId, sizeFromNatural, onSaved })`). The saved comment routes to that figure's own
+  chapter review; on save the gallery refreshes in place (optimistic badge bump) — no reader navigation.
+  The canvas is sized from the image's natural resolution (capped) so a thumbnail still annotates crisply.
+  "View in chapter" is a small secondary link; keyboard `Enter`/`d` = draw in place, `v` = view in chapter.
+  (First shipped as jump-to-chapter, then click-to-draw; now true in-overlay drawing per owner feedback.)
+- **Region → text bridge** — every markup save folds *where you drew* into the comment body via
+  `describeRegion(normalizedBBox(shapes, W, H))` (e.g. "Drawn annotation: upper right region (~80–95% ×
+  10–35% of the figure)."), so Claude knows the location even before the image itself ships (Slice 4).
 - **Draw mechanics** — opens the *existing* annotation canvas
   (`openFigureMarkup`) on that figure. Implementation: it navigates to the figure's chapter then opens
   the canvas (`openDrawForFigure` polls for the rendered figure, builds the same anchor `wireFigures`
@@ -267,9 +273,36 @@ Turns the gallery into a fast bulk-pass surface:
 - **Verification:** `npm test` 898/898 green; `node --check js/app.js` clean; review affordances
   screenshotted from real module output (light + dark). Same live real-data gate as slices 1–2.
 
+## 8d. Slice 4 — send the drawing to Claude (PLANNED, engine change)
+
+Goal: the Figure Drafter edits the figure based on **what it sees**, not just the comment text. The engine
+mapping (grounded in `data-template/`) fixes the shape:
+
+- The engine calls Claude via the **`claude` CLI** — `subprocess.run(["claude","-p",directive], input=context,
+  text=True)` (`data-template/ci_apply.py:263`). Text-only: an argv directive + a stdin JSON string. There is
+  **no** message-content list, so an Anthropic-SDK `{type:'image',...}` block is not expressible without
+  swapping the transport (and its auth/usage/error handling).
+- The markup PNG is already committed to the data repo at `<prefix>markups/<commentId>.png` and is **on disk
+  in the engine's checkout** at job time; `comment.markup.path` is present in the raw comment dict at
+  `writer_call` (`ci_apply.py:732`). `read_text_files`/`author_source` deliberately drop binaries, so it
+  never reaches Claude today.
+
+**Route A (recommended, minimal, no transport swap):** use the Claude Code CLI's own agentic **Read** tool.
+When `_is_fig(comment)` and `comment.markup.path` exists, put the on-disk markup path into the task JSON and
+add one line to the Figure Drafter directive: *"A hand-drawn markup of this figure is at `<path>` — Read it
+and edit based on what you see."* Run `claude -p` with `cwd=repo_dir` so the path resolves. Touch points:
+`_run_claude` / `run_writer_cli` / the `writer_call`+`_is_fig` block (`ci_apply.py:256,322,1033-1038`) + one
+directive line (`ci_agents.py:310`). No `author_source`/`read_text_files` change.
+**Risk to verify on the real pipeline:** headless `claude -p` must have Read-tool access to image files
+(confirm tools aren't disabled). **Route B** (Anthropic SDK multimodal) is cleaner but a much larger change
+(auth model, usage parsing, error semantics) — deferred.
+
+Slice 4 is engine-side and **cannot be verified in this sandbox** (no auth, and the dissertation renders
+local-mode); it ships as its own PR and needs a real render/apply run to confirm.
+
 **Not yet (later PRs):**
-- True in-overlay drawing (draw without leaving the gallery) — needs `openFigureMarkup` post-save
-  parameterized so a gallery-scoped save can refresh the card badge instead of repainting the reader.
+- Slice 4 engine change per §8d (Route A).
+- Slice 5: stable figure-id sidecar from `preprocess.py` (retire the img-src-tail heuristic).
 - Slice 4 (contract change): send composited PNG to Claude; extend job + engine + Figure Drafter.
 - Slice 5: export `label→number` sidecar from `preprocess.py` for a truly stable figure id (retires the
   img-src-tail heuristic).

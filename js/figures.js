@@ -136,6 +136,22 @@ export function describeRegion(rects) {
   return `${row} ${col} region (~${pct(r.x)}–${pct(r.x + r.w)}% × ${pct(r.y)}–${pct(r.y + r.h)}% of the figure)`;
 }
 
+// Reduce drawn markup shapes (canvas pixels: rects {x,y,w,h} and freehand {points:[[x,y]…]}) to a single
+// 0..1 bounding box over the W×H canvas — the input describeRegion turns into the "where I drew" phrase that
+// the comment body carries to Claude. [] when there is nothing drawn or the canvas has no size.
+export function normalizedBBox(shapes, W, H) {
+  if (!shapes || !shapes.length || !W || !H) return [];
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const s of shapes) {
+    if (!s) continue;
+    if (s.type === 'rect') { x0 = Math.min(x0, s.x); y0 = Math.min(y0, s.y); x1 = Math.max(x1, s.x + s.w); y1 = Math.max(y1, s.y + s.h); }
+    else if (s.points) { for (const p of s.points) { x0 = Math.min(x0, p[0]); y0 = Math.min(y0, p[1]); x1 = Math.max(x1, p[0]); y1 = Math.max(y1, p[1]); } }
+  }
+  if (!isFinite(x0)) return [];
+  const clamp = (v) => Math.max(0, Math.min(1, v));
+  return [{ x: clamp(x0 / W), y: clamp(y0 / H), w: clamp((x1 - x0) / W), h: clamp((y1 - y0) / H) }];
+}
+
 // ---- Slice 3: sweep state (per-figure "reviewed") + sequential navigation (pure) ----
 
 // Stable per-figure key for owner-local sweep tracking. chapter id + parsed number (both human-meaningful

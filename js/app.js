@@ -45,7 +45,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
-import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure } from './figures.js?v=2f9701a';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
+import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure, figureAnchor, describeRegion, normalizedBBox } from './figures.js?v=d5b7af7';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -1094,12 +1094,17 @@ function showPopover(anchor, rects, defaultTag='claim', figEl=null){
 }
 // ---------- draw-on-figure markup (capture-only: composites figure + strokes → PNG) ----------
 const markupCache = {};   // path -> dataURL, so a freshly-drawn markup shows instantly
-function openFigureMarkup(fig, anchor){
-  if (WHOLE && !anchor.chapterId){ flash(`Couldn't tell which ${UNIT} this figure is in — reopen it and try again.`); return; }   // whole-doc: the markup routes to anchor.chapterId's review
+function openFigureMarkup(fig, anchor, opts = {}){
+  if (WHOLE && !anchor.chapterId && !opts.targetChapterId){ flash(`Couldn't tell which ${UNIT} this figure is in — reopen it and try again.`); return; }   // whole-doc: the markup routes to anchor.chapterId's review
   document.getElementById('pop')?.remove();
   const img = fig.querySelector('img') || fig;
   const ir = img.getBoundingClientRect();
-  const W = Math.max(40, Math.round(ir.width)), H = Math.max(40, Math.round(ir.height));
+  let W, H;
+  if (opts.sizeFromNatural && (img.naturalWidth || 0) > 0){        // gallery: a thumbnail is tiny — annotate at the source resolution (capped)
+    const nw = img.naturalWidth, nh = img.naturalHeight || Math.round(nw * 0.66);
+    const scale = Math.min(1, 900 / nw);
+    W = Math.max(40, Math.round(nw * scale)); H = Math.max(40, Math.round(nh * scale));
+  } else { W = Math.max(40, Math.round(ir.width)); H = Math.max(40, Math.round(ir.height)); }
   const ov = document.createElement('div'); ov.id = 'figmk'; ov.className = 'figmk-back';
   ov.innerHTML = `<div class="figmk-modal">
     <div class="figmk-tools">
@@ -1137,17 +1142,34 @@ function openFigureMarkup(fig, anchor){
   ov.querySelector('.figmk-save').onclick = async () => {
     if (!shapes.length){ flash('Mark the figure first (Box or Draw), or Cancel.'); return; }
     const note = ov.querySelector('.figmk-note').value.trim();
+    // Fold WHERE you drew into the comment text so Claude knows the location even before the image path ships.
+    const region = describeRegion(normalizedBBox(shapes, W, H));
+    const body = note ? (region ? `${note}\n\n(Drawn annotation: ${region}.)` : note) : (region ? `Drawn annotation: ${region}.` : '');
     let b64 = null;
     try { const ex = document.createElement('canvas'); ex.width=W; ex.height=H; const ec = ex.getContext('2d');
       ec.drawImage(ov.querySelector('.figmk-img'), 0,0, W,H); ec.drawImage(canvas, 0,0);
       const dataUrl = ex.toDataURL('image/png'); b64 = dataUrl.split(',')[1];
+      const t = tok();
+      // Gallery (no-jump) mode: route to the figure's own chapter, save + upload, refresh the gallery — no reader repaint.
+      if (opts.onSaved && opts.targetChapterId){
+        const gch = opts.targetChapterId;
+        let grev = addComment(routeWrite(_reviews, gch, id => loadLocalReview(id)), { anchor, kind:'figure', tag:'figure', body });
+        const gc = grev.comments[grev.comments.length-1];
+        const gpath = `markups/${gc.id}.png`; markupCache[gpath] = dataUrl;
+        grev = updateComment(grev, gc.id, { markup:{ path:gpath, ts:new Date().toISOString() } });
+        _reviews[gch] = grev; localStorage.setItem('review:'+gch, JSON.stringify(grev));
+        ov.remove();
+        if (t){ await putFile(t, gpath, b64, `markup: figure comment ${gc.id}`); await pushChapterReview(gch); flash('Markup saved.'); }
+        else flash('Markup saved locally — connect to upload it.');
+        try { opts.onSaved(gc); } catch(e){}
+        return;
+      }
       // whole-doc: route the markup comment to the figure's OWN chapter review; else the current chapter.
       const chId = WHOLE ? anchor.chapterId : null;
-      let rev = addComment(chId ? routeWrite(_reviews, chId, id => loadLocalReview(id)) : review, { anchor, kind:'figure', tag:'figure', body:note });
+      let rev = addComment(chId ? routeWrite(_reviews, chId, id => loadLocalReview(id)) : review, { anchor, kind:'figure', tag:'figure', body });
       const c = rev.comments[rev.comments.length-1];
       const path = `markups/${c.id}.png`; markupCache[path] = dataUrl;
       rev = updateComment(rev, c.id, { markup:{ path, ts:new Date().toISOString() } });
-      const t = tok();
       if (chId){
         _reviews[chId] = rev; localStorage.setItem('review:'+chId, JSON.stringify(rev));
         paintWholeHighlights(); buildNavWhole(); renderWholeComments(); ov.remove();
@@ -1716,16 +1738,6 @@ function jumpToFigure(num, tries = 30){                     // poll: the target 
   if (el){ scrollFlash(el); return; }
   if (tries > 0) _figJumpTimer = setTimeout(() => jumpToFigure(num, tries - 1), 100);
 }
-function openDrawForFigure(ch, num, tries = 30){          // open the existing draw canvas on a figure once its chapter has rendered
-  const fig = _figByNumber(num);
-  if (fig){
-    const info = figureLabel(fig);
-    const anchor = { quote: info.label ? `${info.label}${info.quote ? ': ' + info.quote : ''}` : (info.quote || 'Figure'),
-                     kind: 'figure', figure: info.id, section: headingFor(fig), confirmed: true, rects: [], chapterId: null };
-    scrollFlash(fig); openFigureMarkup(fig, anchor); return;   // chapterId:null → routes to the now-current chapter's review
-  }
-  if (tries > 0) setTimeout(() => openDrawForFigure(ch, num, tries - 1), 100);
-}
 // owner-local sweep state (which figures you've reviewed), per data repo — UI progress, not shared review data.
 const _figReviewedKey = () => `figrev:done:${DATA_REPO || ''}`;
 function loadFigReviewed(){ try { return JSON.parse(localStorage.getItem(_figReviewedKey()) || '{}') || {}; } catch(e){ return {}; } }
@@ -1768,6 +1780,8 @@ async function openFiguresGallery(){
   units.forEach(u => { commentsByChapter[u.id] = [ ...((_reviews[u.id] && _reviews[u.id].comments) || []), ...((_wholeAdv[u.id]) || []) ]; });
   if (!document.getElementById('figgal-overlay')) return;   // overlay was closed while loading
   const gallery = buildGallery(units, fragsById, commentsByChapter);
+  const byKey = new Map();   // key → the REAL gallery figure object (so an optimistic badge bump re-renders)
+  for (const g of gallery) for (const fig of g.figures) byKey.set(`${g.chapter.id}#${fig.fignum}`, { fig, chapterId: g.chapter.id });
   let reviewed = loadFigReviewed();
   let focusKey = null;
   const applyFocus = () => {
@@ -1776,14 +1790,26 @@ async function openFiguresGallery(){
     if (focusKey){ const el = root.querySelector(`.figgal-card[data-fig-key="${CSS.escape(focusKey)}"]`); el?.scrollIntoView({ block: 'nearest' }); }
   };
   const jump = (ch, num) => { closeFiguresGallery(); enterChapter(ch); jumpToFigure(num); };
-  const draw = (ch, num) => { closeFiguresGallery(); enterChapter(ch); openDrawForFigure(ch, num); };
+  // Draw WITHOUT leaving the gallery: open the annotation canvas over the card's figure image, route the
+  // saved comment to that figure's own chapter, then refresh the gallery in place (no reader navigation).
+  const draw = (key) => {
+    const entry = byKey.get(key); if (!entry) return;
+    const cardEl = body()?.querySelector(`.figgal-card[data-fig-key="${CSS.escape(key)}"]`);
+    const imgEl = cardEl?.querySelector('img'); if (!imgEl) return;
+    focusKey = key;
+    const anchor = { ...figureAnchor(entry.fig, ''), chapterId: entry.chapterId };
+    openFigureMarkup(imgEl, anchor, {
+      targetChapterId: entry.chapterId, sizeFromNatural: true,
+      onSaved: () => { entry.fig.activeComments = (entry.fig.activeComments || 0) + 1; renderBody(); },
+    });
+  };
   const toggleDone = (key) => { reviewed = markReviewed(reviewed, key, !isReviewed(reviewed, key)); saveFigReviewed(reviewed); focusKey = key; renderBody(); };
   function renderBody(){
     const root = body(); if (!root) return;
     root.innerHTML = galleryHtml(gallery, { reviewed });
     root.querySelectorAll('.figgal-card').forEach(cardEl => {
       const ch = cardEl.dataset.figCh, num = cardEl.dataset.figNum, key = cardEl.dataset.figKey;
-      cardEl.querySelector('[data-act="draw"]')?.addEventListener('click', () => draw(ch, num));         // click the figure → draw on it
+      cardEl.querySelector('[data-act="draw"]')?.addEventListener('click', () => draw(key));             // click the figure → draw on it, in place
       cardEl.querySelector('[data-act="context"]')?.addEventListener('click', (e) => { e.stopPropagation(); jump(ch, num); });   // secondary → view in chapter
       cardEl.querySelector('[data-act="done"]')?.addEventListener('click', (e) => { e.stopPropagation(); toggleDone(key); });
     });
@@ -1799,7 +1825,7 @@ async function openFiguresGallery(){
     else if (k === 'n' || k === 'N'){ const u = firstUnreviewedFigure(gallery, reviewed); if (u){ focusKey = u.key; applyFocus(); } }
     else if (focusKey){
       const hash = focusKey.indexOf('#'); const ch = focusKey.slice(0, hash), num = focusKey.slice(hash + 1);
-      if (k === 'Enter' || k === 'd' || k === 'D'){ draw(ch, num); }        // primary: draw on the focused figure
+      if (k === 'Enter' || k === 'd' || k === 'D'){ draw(focusKey); }       // primary: draw on the focused figure, in place
       else if (k === 'v' || k === 'V'){ jump(ch, num); }                    // secondary: view it in the chapter
       else if (k === 'x' || k === 'X' || k === ' '){ toggleDone(focusKey); e.preventDefault(); }
     }
