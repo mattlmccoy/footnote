@@ -69,10 +69,30 @@ test('condJson: a rate-limit error still classifies as rateLimited', async () =>
     e => classifyGitHubError(e).rateLimited === true);
 });
 
-test('condJson: empty content is rejected, not cached as valid', async () => {
+test('condJson: empty content with no sha is rejected, not cached as valid', async () => {
   condReset();
-  const f = stub(res(200, { content: '   ', sha: 's' }, { etag: 'W/"e"' }));
+  const f = stub(res(200, { content: '   ', sha: '' }, { etag: 'W/"e"' }));   // no sha => not the >1MB case, a genuine degenerate response
   await assert.rejects(() => condJson(U, { token: 't', fetchImpl: f }), /empty content/);
+});
+
+test('condJson: >1MB file (empty inline content, sha present) falls back to the blobs API', async () => {
+  condReset();
+  const payload = { comments: [{ id: 'x' }] };
+  const f = async (url) => {
+    if (String(url).includes('/git/blobs/abc123'))
+      return res(200, { content: b64(JSON.stringify(payload)), encoding: 'base64', sha: 'abc123' });
+    return res(200, { content: '', sha: 'abc123', size: 2_000_000 }, { etag: 'W/"e1"' });
+  };
+  const r = await condJson(U, { token: 't', fetchImpl: f });
+  assert.deepEqual(r, { json: payload, sha: 'abc123' });
+});
+
+test('condJson: fast path (inline content) never hits the blobs API', async () => {
+  condReset();
+  const seen = [];
+  const f = async (url) => { seen.push(String(url)); return contentRes({ comments: [1] }, 'sha1', 'W/"e1"'); };
+  await condJson(U, { token: 't', fetchImpl: f });
+  assert.equal(seen.some(u => u.includes('/git/blobs/')), false);
 });
 
 test('condRaw: 200 returns text; 304 replays the cached text', async () => {

@@ -32,8 +32,22 @@ export async function condJson(url, { headers = {}, token, fetchImpl, ctx, _retr
   if (r.status === 404){ condDrop(url); return { json: null, sha: null }; }
   if (!r.ok) throw _err(r, ctx);
   const d = await r.json();
-  if (typeof d.content !== 'string' || !d.content.trim()) throw new Error('empty content');
-  const text = decodeURIComponent(escape(atob(d.content.replace(/\s/g, ''))));   // GitHub wraps base64 in newlines
+  let text;
+  if (typeof d.content === 'string' && d.content.trim()){
+    text = decodeURIComponent(escape(atob(d.content.replace(/\s/g, ''))));   // GitHub wraps base64 in newlines
+  } else if (typeof d.sha === 'string' && d.sha){
+    // GitHub returns empty inline content for files >1MB; the Blobs API serves the bytes up to 100MB.
+    // Derive the blob URL from the contents URL (same origin + repo slug), swapping /contents/<path> for /git/blobs/<sha>.
+    const bUrl = url.replace(/\/contents\/.*$/, '/git/blobs/' + d.sha);
+    const b = await _f(fetchImpl)(bUrl, { headers, cache: 'no-store' });
+    observeBudget(b.headers);
+    if (!b.ok) throw _err(b, ctx);
+    const bd = await b.json();
+    if (typeof bd.content !== 'string' || !bd.content.trim()) throw new Error('empty blob');
+    text = decodeURIComponent(escape(atob(bd.content.replace(/\s/g, ''))));
+  } else {
+    throw new Error('empty content');
+  }
   condPut(url, r.headers.get('etag'), { text, sha: d.sha });
   return { json: JSON.parse(text), sha: d.sha };
 }
