@@ -35,6 +35,7 @@ import { annotateAttachments, attachmentsView } from './appattach.js?v=3a4f618';
 import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
 import { readingViewState } from './setupstatus.js?v=8716f90';   // distinguish a failed tree read from genuinely-not-built
+import { readingSource, showPreviewToggle } from './previewsource.js';   // gated, opt-in "Preview staged edits" decision logic (default view stays merged content)
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=cf28223';
@@ -213,6 +214,9 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 const read = document.getElementById('read');
 let current = 'ch_modeling';
 let review = loadLocalReview(current);
+// "Preview staged edits" (opt-in): does a branch render preview/<current>.html exist, and has this unit
+// been probed yet. Reset per chapter. The default reading view stays content/<id>.html regardless.
+let _previewExists = false, _previewProbedFor = null, _previewBannerDismissed = false;
 
 function loadLocalReview(ch){ return JSON.parse(localStorage.getItem('review:'+ch) || 'null') || newReview(ch, ''); }
 const save = () => localStorage.setItem('review:'+current, JSON.stringify(review));
@@ -334,6 +338,7 @@ function enterChapter(ch){ if (ch === '__outline__'){ WHOLE = false; localStorag
   if (ch === '__whole__'){ localStorage.setItem('lastChapter', ch); loadWholeDoc(); return; }   // the whole-document view assembles every unit; it isn't a single fetch
   WHOLE = false;
   current = ch; review = loadLocalReview(ch); localStorage.setItem('lastChapter', ch);
+  _previewExists = false; _previewProbedFor = null; _previewBannerDismissed = false;   // re-probe the branch preview per unit
   document.getElementById('nav').style.display = ''; document.getElementById('comments').style.display = '';
   renderTopbar(); renderComments(); loadChapter(ch); }
 const selectChapter = enterChapter;
@@ -2043,25 +2048,46 @@ function showApproveBar(){
   document.getElementById('approvebar')?.remove();
   const staged = (review.comments||[]).filter(c => ['staged','approved'].includes(c.status));   // any staged change, inline-diff or not
   if (!staged.length) return;
+  probePreviewExists(current);   // opt-in preview is gated on the branch render actually existing; probe once per unit
   const p = partitionByDecision(review.comments);
   const counts = `<b>${p.approved.length}</b> approved · ${p.rejected.length} rejected · ${p.undecided.length} to decide${p.revise.length?` · ${p.revise.length} to revise`:''}${p.queued.length?` · <b>${p.queued.length}</b> queued for merge`:''}`;
   const inlineN = staged.filter(c => c.staged_edit).length;
   const note = inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
              : inlineN ? `${inlineN} shown inline; figure/structure changes need a preview`
-             : `figure or structure changes — preview to see them rendered`;
+             : `figure or structure changes, preview to see them rendered`;
   const bar = document.createElement('div'); bar.id = 'approvebar'; bar.className = 'approvebar';
   const left = previewing
     ? `<i class="ti ti-eye"></i><span><b>Previewing the rendered staged version</b> — figures and text as they'll look after merge. Nothing is merged yet.</span>`
     : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} — ${counts}. ${note}.</span>`;
+  // The "Preview staged edits" control is shown ONLY when a branch render exists (showPreviewToggle);
+  // while previewing, the Exit control always shows so the owner can get back to the merged view.
+  const canPreview = showPreviewToggle({ hasStaged: staged.length > 0, previewExists: _previewExists });
   const prevBtn = previewing
     ? `<button class="btn btn-primary" id="preview-btn" style="margin-left:auto"><i class="ti ti-arrow-back-up"></i>Exit preview</button>`
-    : `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview rendered</button>`;
+    : canPreview
+      ? `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview staged edits</button>`
+      : '';
   const decided = p.approved.length + p.rejected.length + p.revise.length;
   const applyLabel = decided ? `Apply ${decided} decision${decided>1?'s':''}` : 'Apply decisions';
-  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${decided?'':'disabled'}>${applyLabel}</button>`;
+  const mergeMargin = prevBtn ? '' : 'style="margin-left:auto"';   // keep Apply right-aligned when no preview button
+  bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${mergeMargin} ${decided?'':'disabled'}>${applyLabel}</button>`;
   read.prepend(bar);
   bar.querySelector('#merge-approved').onclick = approveChapter;
-  bar.querySelector('#preview-btn').onclick = () => togglePreview(current);
+  bar.querySelector('#preview-btn')?.addEventListener('click', () => togglePreview(current));
+}
+// Probe whether the branch render preview/<ch>.html exists (once per unit), then re-render the approve bar
+// so the "Preview staged edits" control appears only when there is something to preview. Uses the existing
+// repo-tree read (ghTree, prefix-stripped, conditionally cached), never a hand-rolled fetch. A failed/blocked
+// tree read leaves _previewExists false: the control stays hidden rather than dead-clicking.
+async function probePreviewExists(ch){
+  if (_previewProbedFor === ch) return;   // already probed this unit
+  _previewProbedFor = ch;
+  const dev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+  try {
+    if (dev){ const r = await fetch(`./preview/${ch}.html`); _previewExists = r.ok; }
+    else { const t = tok(); if (!t) return; const set = new Set(await ghTree(t)); _previewExists = set.has('preview/' + ch + '.html'); }
+  } catch(e){ _previewExists = false; }   // couldn't check → keep the control hidden
+  if (ch === current && !previewing && document.getElementById('doc')) showApproveBar();   // reveal the control if it now qualifies
 }
 async function approveChapter(){
   const t = tok(); if (!t){ flash('Add your access token first.'); return; }
@@ -2125,16 +2151,36 @@ async function watchApplyRun(t){
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;
 async function togglePreview(ch){
-  if (previewing){ previewing = false; loadChapter(ch); return; }
+  if (previewing){ previewing = false; _previewBannerDismissed = false; loadChapter(ch); return; }   // back to the merged content view
   const t = tok(); const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
+  // The path is decided by readingSource: it returns preview/<ch>.html ONLY with a staged edit, a built
+  // preview, and the toggle on, so the merged view can never be swapped by accident. If it declines
+  // (preview missing), fall back to content and keep the control honest.
+  const path = readingSource({ unitId: ch, hasStaged: true, previewExists: _previewExists, previewOn: true });
+  if (!path.startsWith('preview/')){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }
   flash('Loading the rendered staged version…');
   try {
     let html = null;
-    if (dev){ const r = await fetch('./preview/'+ch+'.html'); if (r.ok) html = await r.text(); }
-    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('preview/'+ch+'.html')}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
-    if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }
-    previewing = true; renderDoc(html);
+    if (dev){ const r = await fetch('./'+path); if (r.ok) html = await r.text(); }
+    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath(path)}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
+    if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }   // fetch failed/absent → stay on merged content
+    previewing = true; renderDoc(html); showStagedPreviewBanner(ch);
   } catch(e){ flash('Preview failed: '+e.message); }
+}
+// A dismissible banner at the top of the reading pane while previewing, so the branch render is never
+// mistaken for the live merged text. Names the source branch (review-edits/<ch>) so the state is explicit.
+function showStagedPreviewBanner(ch){
+  if (_previewBannerDismissed) return;
+  const doc = document.getElementById('doc'); if (!doc) return;
+  document.getElementById('staged-preview-banner')?.remove();
+  const b = document.createElement('div');
+  b.id = 'staged-preview-banner';
+  b.style.cssText = 'display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:11px 14px;border:.5px solid var(--info);border-radius:var(--r-md,10px);background:var(--info-bg);font-size:13px;line-height:1.5;color:var(--text-1)';
+  b.innerHTML = `<i class="ti ti-git-branch" style="font-size:18px;color:var(--info);flex:0 0 auto"></i>`
+    + `<span style="flex:1">Showing staged edits from <code>review-edits/${escapeHtml(ch)}</code>, not yet merged. Approve to make them live.</span>`
+    + `<button class="icbtn" id="staged-preview-dismiss" title="Dismiss this note" style="flex:0 0 auto"><i class="ti ti-x"></i></button>`;
+  doc.prepend(b);
+  document.getElementById('staged-preview-dismiss')?.addEventListener('click', () => { _previewBannerDismissed = true; b.remove(); });
 }
 function markFigure(doc, c){
   const figs = [...doc.querySelectorAll('figure')];
