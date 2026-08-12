@@ -11,7 +11,7 @@ import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './se
 import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=d47929c';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=5e5b959';
-import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
+import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath, rediscoverChaptersFromRepo, chaptersChanged } from './importdoc.js?v=8f01361';
 import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse.js?v=c61fbc8';
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
@@ -526,6 +526,35 @@ export async function launch() {
     const worker = async () => { while (i < list.length){ const p = list[i++]; await paintBookSource(p, list); } };
     await Promise.all(Array.from({ length: Math.min(LIMIT, Math.max(1, list.length)) }, worker));
   }
+  // Read one project's stored chapters.json (the reading-unit manifest). null on any error/absence.
+  async function readChaptersManifest(dataRepo, dataPrefix){
+    try {
+      const r = await fetch(`https://api.github.com/repos/${dataRepo}/contents/${dataPrefix || ''}chapters.json?t=${Date.now()}`,
+        { headers: { Authorization: `Bearer ${tok()}`, Accept: 'application/vnd.github.raw' }, cache: 'no-store' });
+      return r.ok ? JSON.parse(await r.text()) : null;
+    } catch { return null; }
+  }
+  // "Re-check source" (owner shelf ⋯ menu): refresh the freshness label AND re-run chapter discovery so a
+  // source push that added/renamed a chapter or appendix appears in the reader. chapters.json was previously
+  // only ever seeded at import, so the unit list went stale (e.g. merged appendices never showed). Re-discovery
+  // is id-PRESERVING (comments/content stay mapped) and commits only when the manifest materially changed.
+  // Best-effort and fully guarded: any failure leaves the existing manifest and the label untouched.
+  async function recheckSource(project, list){
+    await paintBookSource(project, list, true);
+    const el = root.querySelector(`.fn-book-src[data-src="${cssId(project.id)}"]`);
+    try {
+      const rp = resolveProject({ ...cfg, hubRepo: hub(), workspaceRepo: hub() }, list, project.id);
+      if (!rp.sourceRepo) return;                                  // no source to re-discover from
+      const existing = await readChaptersManifest(rp.dataRepo, rp.dataPrefix);
+      if (existing == null) return;                               // couldn't read the manifest → do not touch it
+      const next = await rediscoverChaptersFromRepo({ sourceRepo: rp.sourceRepo, srcPrefix: rp.srcPrefix || '',
+        existing, token: tok() });
+      if (!chaptersChanged(existing, next)) return;               // no material change → no data-repo churn
+      await commitSourceFile(rp.dataRepo, `${rp.dataPrefix || ''}chapters.json`,
+        JSON.stringify(next, null, 2), tok(), `re-discover: ${next.length} units`);
+      if (el){ const n = next.length; el.textContent = `Units updated — ${n} unit${n !== 1 ? 's' : ''}`; el.style.color = _srcTone('behind'); }
+    } catch(e){ console.warn('rediscover:', e.message); }         // never breaks the recheck / shelf
+  }
 
   async function projects() {
     frame(`<div class="fn-loading fn-reveal">Loading your library…</div>`, { signout: true });
@@ -597,7 +626,7 @@ export async function launch() {
     menu.style.top = (r.bottom + 6) + 'px';
     menu.style.left = Math.max(8, Math.min(r.right - menu.offsetWidth, window.innerWidth - menu.offsetWidth - 8)) + 'px';
     menu.querySelector('[data-act="edit"]').onclick = () => { closeManageMenu(); projectSheet(list, project); };
-    menu.querySelector('[data-act="recheck"]').onclick = () => { closeManageMenu(); paintBookSource(project, list, true); };
+    menu.querySelector('[data-act="recheck"]').onclick = () => { closeManageMenu(); recheckSource(project, list); };
     // stopPropagation: showMoveTargets rebuilds this menu's innerHTML in place, which detaches the clicked
     // button; without this the document-level outside-click handler would then see a detached target and
     // close the menu before the targets pane is visible.

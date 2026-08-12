@@ -1,6 +1,7 @@
 // Pure helpers for the document import + convert flow. No I/O — unit-tested in tests/importdoc.test.mjs.
 // The import UI (app.js / hub.js) uses these to decide how to handle an uploaded file and where to put it.
-import { parseLatexOutline } from './docparse.js?v=c61fbc8';
+import { parseLatexOutline, parseLatexChapters, mergeChapters } from './docparse.js?v=c61fbc8';
+import { annotateAttachments } from './appattach.js?v=3a4f618';
 
 // Which converter handles an uploaded file, by extension. 'tex' = commit as-is; 'docx' = pandoc Action.
 // Anything else (md/pdf/none) is unsupported → null.
@@ -116,6 +117,79 @@ export function outlineFromFiles(files) {
   const { entry, entryText, map } = folderTexIndex(files);
   if (!entry) return null;
   return parseLatexOutline(entryText, p => (p in map ? map[p] : null));
+}
+
+// Re-discover the reading-unit list (chapters.json) from the CURRENT source and merge it onto the stored
+// manifest, id-PRESERVING. This is the durable fix for the "chapters.json frozen at import" staleness: the
+// unit list was only ever seeded once at import, so a later source push that adds/renames a chapter or
+// appendix (e.g. a merged appendix) never appeared in the reader. Composition of the SAME pure functions the
+// import path uses — one source of truth:
+//   folderTexIndex → parseLatexChapters (fresh unit list) → mergeChapters (keep existing ids by sourceFile,
+//   so comments/content stay mapped; a rename keeps its id under the new title) → annotateAttachments
+//   (recompute appendix home/citedBy from source). `files` is folderTexIndex-shaped; `existing` is the
+//   stored chapters.json list. Never clobbers: an entry-less or empty parse returns `existing` unchanged.
+// Pure + unit-tested (tests/rediscover.test.mjs) — the network wrapper (rediscoverChaptersFromRepo) supplies
+// the files and commits the result.
+export function rediscoverChapters(files, existing) {
+  const exList = existing || [];
+  const { entry, entryText, map } = folderTexIndex(files);
+  if (!entry) return exList;                                   // no .tex entry → do not clobber the manifest
+  const parsed = parseLatexChapters(entryText, p => (p in map ? map[p] : null));
+  if (!parsed.length) return exList;                          // parse found nothing → keep what we have
+  const merged = mergeChapters(exList, parsed);
+  // Appendix attachment must see \cref's that live in a chapter's \input'd subfiles, not just its top file,
+  // so feed annotateAttachments each unit's fully-inlined include tree. One level of include cycles is guarded.
+  const assemble = (text, seen = new Set(), depth = 0) => depth > 40 ? text
+    : String(text).replace(/\\(?:input|include)\s*\{([^{}]+)\}/g, (m, name) => {
+        const k = name.trim().replace(/\.tex$/i, '');
+        if (!(k in map)) return m;
+        if (seen.has(k)) return '';
+        seen.add(k); const r = assemble(map[k], seen, depth + 1); seen.delete(k);
+        return `\n${r}\n`;
+      });
+  const sourceByFile = {};
+  for (const u of merged) {
+    const bare = String(u.sourceFile || '').replace(/\.tex$/i, '');
+    if (bare in map) sourceByFile[u.sourceFile] = assemble(map[bare]);
+  }
+  annotateAttachments(merged, sourceByFile);                  // mutates appendix entries' home/citedBy in place
+  return merged;
+}
+
+// Has the reading-unit manifest materially changed? Compares the fields the reader/nav depends on
+// (id, title, kind, n, home, citedBy) so re-discovery only re-commits chapters.json when it must — a
+// no-op re-scan never churns the data repo. Key ORDER and unrelated fields are ignored. Pure + testable.
+export function chaptersChanged(a, b) {
+  const sig = list => JSON.stringify((list || []).map(u => ({
+    id: u.id, title: u.title, kind: u.kind || null, n: u.n ?? null,
+    home: u.home ?? null, citedBy: u.citedBy || [],
+  })));
+  return sig(a) !== sig(b);
+}
+
+// Decode GitHub Contents-API base64 (whitespace already stripped by getRepoBlob) to a UTF-8 string.
+const _b64ToUtf8 = b64 => decodeURIComponent(escape(atob(String(b64))));
+
+// NETWORK wrapper around rediscoverChapters: pull the source repo's .tex tree (under srcPrefix for a
+// workspace project, or the repo root for an independent one), then re-discover + id-preserving-merge onto
+// `existing`. Returns the merged unit list (the caller commits it to chapters.json only if chaptersChanged).
+// Best-effort by contract: no source repo, an empty tree, or a parse that finds nothing all return `existing`
+// unchanged, so a recheck can never blank or shrink the manifest. fetchImpl is injectable for tests.
+export async function rediscoverChaptersFromRepo({ sourceRepo, srcPrefix = '', existing, token, fetchImpl, onProgress } = {}) {
+  const exList = existing || [];
+  if (!sourceRepo) return exList;
+  const prefix = srcPrefix || '';
+  const all = await listRepoTree(sourceRepo, token, fetchImpl);
+  const texPaths = all.filter(p => p.startsWith(prefix) && /\.tex$/i.test(p));
+  if (!texPaths.length) return exList;
+  const files = [];
+  let i = 0;
+  for (const p of texPaths) {
+    if (onProgress) onProgress(`Reading source ${++i}/${texPaths.length}`);
+    const b64c = await getRepoBlob(sourceRepo, p, token, fetchImpl);
+    files.push({ path: p.slice(prefix.length), isText: true, text: _b64ToUtf8(b64c) });
+  }
+  return rediscoverChapters(files, exList);
 }
 
 // Normalize a heading for prev-matching: lowercase, collapse whitespace, trim (matches outline_gen.py).
