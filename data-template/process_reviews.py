@@ -101,6 +101,26 @@ def _source_root(a):
     return ws if ws.is_dir() else Path(a.source)
 
 
+def _review_branch(a, unit):
+    """Resolve the real review branch, including legacy/custom unit aliases stored on comments.
+
+    Older dissertation units used ``review-edits/ch1`` while their portal id is
+    ``ch_introduction``. Silently ignoring a failed checkout rendered whichever branch happened to
+    be active. Prefer the canonical branch when it exists, otherwise use the recorded branch only
+    when it is a valid local review ref.
+    """
+    canonical = R.branch_for(unit)
+    if _git(["rev-parse", "--verify", canonical], a.source, check=False, capture=True).returncode == 0:
+        return canonical
+    review = R.load_json(_dpath(a, f"reviews/{unit}.json"), {"comments": []})
+    for c in reversed(review.get("comments", [])):
+        branch = ((c.get("claude") or {}).get("branch") or "").strip()
+        if (branch.startswith("review-edits/") and
+                _git(["rev-parse", "--verify", branch], a.source, check=False, capture=True).returncode == 0):
+            return branch
+    return canonical
+
+
 def _load_reviews_by_unit(a, units):
     out = {}
     for u in units:
@@ -213,15 +233,26 @@ def cmd_preview(a):
     _pull(a.data)
     unit = a.unit
     src = _source_root(a)
-    _git(["checkout", R.branch_for(unit)], a.source, check=False, capture=True)
+    branch = _review_branch(a, unit)
+    checkout = _git(["checkout", branch], a.source, check=False, capture=True)
+    if checkout.returncode != 0:
+        sys.exit(f"cannot preview {unit}: review branch {branch} does not exist")
     workdir = Path(a.data) / ".render-build"
     cwd0 = os.getcwd()
     try:  # build helpers write <prefix>preview/… relative to CWD (like the Action) → run from the data repo
         os.chdir(a.data)
-        ci_apply.build_preview(_P(a), unit, str(src), str(workdir))
+        built = ci_apply.build_preview(_P(a), unit, str(src), str(workdir))
     finally:
         os.chdir(cwd0)
-    _push_data(a.data, f"preview: build {unit} from {R.branch_for(unit)}")
+    if built:
+        commit = _git(["rev-parse", "--short", "HEAD"], a.source, capture=True).stdout.strip()
+        rp = _dpath(a, f"reviews/{unit}.json")
+        review = R.load_json(rp, {"comments": []})
+        review, invalidated = R.restage_stale_approvals(review, branch, commit, _now())
+        _write_json(rp, review)
+        if invalidated:
+            print(f"Restaged {invalidated} stale approval(s): {branch} now points to {commit}.")
+    _push_data(a.data, f"preview: build {unit} from {branch}")
     print(f"Built preview/{unit}.html")
 
 

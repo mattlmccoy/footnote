@@ -48,6 +48,19 @@ test('setDecision with null clears the decision', () => {
   assert.equal(r.comments[0].decision_note, undefined);
 });
 
+test('requesting revision of an approved comment invalidates the stale merge approval', () => {
+  const r = { chapter:'c', comments:[{
+    id:'approved', status:'approved', decision:'approve', decision_note:'old',
+    staged_edit:{ before:'old', after:'new' }
+  }]};
+  const out = setDecision(r, 'approved', 'revise', 'review the newer branch');
+  const c = out.comments[0];
+  assert.equal(c.status, 'queued');
+  assert.equal(c.decision, 'revise');
+  assert.equal(c.decision_note, 'review the newer branch');
+  assert.equal(c.staged_edit, undefined);
+});
+
 test('partitionByDecision groups staged comments by decision', () => {
   const comments = [
     { id:'a', status:'staged', decision:'approve' },

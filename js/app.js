@@ -1,4 +1,4 @@
-import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount, isResolved } from './model.js?v=c284b81';
+import { newReview, addComment, updateComment, deleteComment, setDecision, partitionByDecision, queueApproved, nodeActiveCommentCount, isResolved } from './model.js?v=53aeded';
 import { anchorFromSelection } from './anchor.js?v=a2ba4a9';
 import { brandMark } from './brandmark.js?v=a2aa2c8';   // single source of truth for the Footnote logo (shared with the launcher + reviewer)
 import { reviewPath, mergeReview, getJson, putJson, ghTree, putFile, getDataUrl, deleteFile } from './gh.js?v=bcd8c23';
@@ -36,6 +36,7 @@ import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
 import { readingViewState } from './setupstatus.js?v=8716f90';   // distinguish a failed tree read from genuinely-not-built
 import { readingSource, showPreviewToggle } from './previewsource.js?v=eb52e54';   // gated, opt-in "Preview staged edits" decision logic (default view stays merged content)
+import { changedParagraphIndexes } from './paragraphdiff.js?v=f3d46be';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=2c9ac2d';
@@ -46,7 +47,7 @@ import { isAiComment, buildAdvisorClaudeJob, partitionAdvisorComments, findingCa
 import { fetchSourceStatus } from './sourcestatusio.js?v=ed10990';   // is the reading view behind the source repo HEAD?
 import { rebuildAction, localRebuildHint } from './sourcestatus.js?v=f4377bc';   // cloud rebuild vs local-render guidance
 import { resilientRenderDispatch } from './renderdispatch.js?v=66d7fb0';   // dispatch render.yml, tolerating a just-added workflow_dispatch trigger
-import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure, figureAnchor, describeRegion, normalizedBBox } from './figures.js?v=891c668';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
+import { buildGallery, galleryHtml, markReviewed, isReviewed, adjacentFigure, firstUnreviewedFigure, figureAnchor, describeRegion, normalizedBBox } from './figures.js?v=0f02ef6';   // Figure Review: bulk figure gallery (owner-only, AI-gated)
 startNetWatch();
 showBuildTag(import.meta.url);
 // Load the effective config before the module body evaluates. Two modes:
@@ -155,7 +156,7 @@ function loadDemoChapterOwner(){
 }
 const OWNER_CHAPTER_TOUR = [
   { sel:'#doc h1', title:`Inside a ${UNIT}`, body:`The reading view. We loaded a sample ${UNIT} with a sample reviewer comment and a staged edit so you can see the workflow. Nothing here is saved.` },
-  { sel:'.ccard.adv', title:'Reviewers\' comments land here', body:'Every comment your reviewers leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
+  { sel:'.ccard.adv', title:'Reviewers\' comments land here', body:'Every comment your reviewers leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to the Writer.' },
   { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to reviewer. They see the outcome in their Responses view.' },
   { sel:'.ccard.adv .a-send', title:'Or hand it to the Writer', body:'Once you have read a comment, send it to your selected Writer to draft the edit. You still approve the result before anything lands.' },
   { sel:'#doc ins.tc-stage', title:'Proposed edits show inline', body:'A staged edit shows as tracked changes right in the text, the old wording struck through and the new wording in place.' },
@@ -571,6 +572,7 @@ function renderDoc(fragment){
   buildNav();
   paintHighlights();
   refreshStaged();
+  paintPreviewParagraphChanges(doc);
   restoreCursor();
   syncDown();
   loadAdvisorComments(current);
@@ -1313,11 +1315,11 @@ function buildCommentCard(c){
       </div>
       ${assistantOn() ? `<div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for the Writer."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Writer</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}` : ''}
       ${c.status === 'approved' ? `<div class="cdec" data-id="${c.id}"><span class="cqd"><i class="ti ti-clock-check"></i>queued for merge</span><button class="btn cunq" data-id="${c.id}"><i class="ti ti-arrow-back-up"></i>Unqueue</button></div>` : ''}
-      ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
+      ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Writer</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
-      ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Claude'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
+      ${(c.thread||[]).map(m => `<div class="cmsg ${m.author==='you'?'me':'cl'}"><span class="cmsg-h">${m.author==='you'?'You':'Writer'} · ${(m.ts||'').slice(0,10)}</span>${escapeHtml(m.text)}</div>`).join('')}
       ${st!=='resolved' ? `<div class="creply"><button class="creply-open">${(c.thread&&c.thread.length)?'Reply':(assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply / push back':'Add a note')}</button>
-        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply to Claude / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
+        <div class="creply-form" style="display:none"><textarea class="creply-t" rows="2" placeholder="${assistantOn()&&(c.claude?.response||c.claude?.branch)?'Reply to Writer / request a change…':'Add a private note…'}"></textarea><button class="btn btn-primary creply-send" style="padding:4px 11px;font-size:11.5px">Send</button></div></div>` : ''}`;
     if (c.id === activeCommentId) card.classList.add('active');
     card.onmouseenter = () => { card.querySelector('.cactions').style.display='flex'; const s=card.querySelector('.status'); if (st!=='open') s.style.visibility='hidden'; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.add('cmark-hot'); };
     card.onmouseleave = () => { card.querySelector('.cactions').style.display='none'; const s=card.querySelector('.status'); if (s) s.style.visibility=''; document.querySelector(`#doc .cmark[data-id="${c.id}"]`)?.classList.remove('cmark-hot'); };
@@ -1386,7 +1388,7 @@ function renderClaudeFindings(pane){
   const resolved = findings.filter(c => RESOLVED_STATES.has(c.status));
   if (!active.length && !resolved.length) return;
   const lbl = document.createElement('div'); lbl.className = 'lbl adv-lbl';
-  lbl.innerHTML = `<i class="ti ti-robot-face" style="margin-right:5px"></i>CLAUDE · REVIEW<span style="margin-left:auto">${active.length}</span>`;
+  lbl.innerHTML = `<i class="ti ti-robot-face" style="margin-right:5px"></i>AI · REVIEW<span style="margin-left:auto">${active.length}</span>`;
   pane.appendChild(lbl);
   active.forEach(c => pane.appendChild(buildAdvCard(c)));
   if (resolved.length){
@@ -1466,7 +1468,7 @@ function buildAdvCard(c){
   const ai = isAiComment(c);
   card.innerHTML = `<div class="row">
       <label class="rel-read"><input type="checkbox" class="adv-readbox" ${c.read?'checked':''}>read</label>
-      <span class="chip advchip" style="${ai?'background:var(--info-bg);color:var(--info)':''}"><i class="ti ti-${ai?'robot-face':'user'}" style="font-size:11px;margin-right:3px"></i>${ai?'Claude · review':escapeHtml(whoLabel(c))}</span>
+      <span class="chip advchip" style="${ai?'background:var(--info-bg);color:var(--info)':''}"><i class="ti ti-${ai?'robot-face':'user'}" style="font-size:11px;margin-right:3px"></i>${ai?'AI · review':escapeHtml(whoLabel(c))}</span>
       ${c.tag&&c.tag!=='other'?`<span class="chip" style="margin-left:5px">${c.kind==='suggestion'?'<i class="ti ti-pencil" style="font-size:10px;margin-right:2px"></i>':''}${escapeHtml(c.tag)}</span>`:''}
       ${ai
         ? (() => { const s = findingCardState(c); const chip = (bg,fg,t)=>`<span class="status" style="margin-left:auto;background:${bg};color:${fg}">${t}</span>`;
@@ -2150,8 +2152,37 @@ async function watchApplyRun(t){
 }
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;
+let _previewChangedIndexes = [];
+let _previewBranch = '';
+
+// Use the smallest rendered prose blocks. A list item that contains its own <p> is a container, not an
+// additional paragraph; excluding it prevents one changed contribution from being counted twice.
+function previewParagraphElements(root){
+  const blocks = [...root.querySelectorAll('p, li, figcaption, td, th, blockquote')];
+  return blocks.filter(el => !blocks.some(child => child !== el && el.contains(child)));
+}
+function previewParagraphTexts(fragment){
+  const parsed = new DOMParser().parseFromString(fragment || '', 'text/html');
+  return previewParagraphElements(parsed.body).map(el => el.textContent);
+}
+function paintPreviewParagraphChanges(doc){
+  doc.querySelectorAll('.preview-change').forEach(el => el.classList.remove('preview-change'));
+  if (!previewing || !_previewChangedIndexes.length) return;
+  const blocks = previewParagraphElements(doc);
+  _previewChangedIndexes.forEach(index => blocks[index]?.classList.add('preview-change'));
+}
+
+async function fetchReaderFragment(path, token, dev){
+  if (dev){ const r = await fetch('./' + path); if (r.ok) return await r.text(); }
+  if (token){
+    const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath(path)}?t=${Date.now()}`,
+      { headers:{ Authorization:`Bearer ${token}`, Accept:'application/vnd.github.raw' }, cache:'no-store' });
+    if (r.ok) return await r.text();
+  }
+  return null;
+}
 async function togglePreview(ch){
-  if (previewing){ previewing = false; _previewBannerDismissed = false; loadChapter(ch); return; }   // back to the merged content view
+  if (previewing){ previewing = false; _previewChangedIndexes = []; _previewBranch = ''; _previewBannerDismissed = false; loadChapter(ch); return; }   // back to the merged content view
   const t = tok(); const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
   // The path is decided by readingSource: it returns preview/<ch>.html ONLY with a staged edit, a built
   // preview, and the toggle on, so the merged view can never be swapped by accident. If it declines
@@ -2160,10 +2191,17 @@ async function togglePreview(ch){
   if (!path.startsWith('preview/')){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }
   flash('Loading the rendered staged version…');
   try {
-    let html = null;
-    if (dev){ const r = await fetch('./'+path); if (r.ok) html = await r.text(); }
-    if (!html && t){ const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath(path)}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) html = await r.text(); }
+    const [html, merged] = await Promise.all([
+      fetchReaderFragment(path, t, dev),
+      fetchReaderFragment(`content/${ch}.html`, t, dev),
+    ]);
     if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }   // fetch failed/absent → stay on merged content
+    _previewChangedIndexes = merged
+      ? changedParagraphIndexes(previewParagraphTexts(merged), previewParagraphTexts(html))
+      : [];
+    const branchComment = [...(review?.comments || [])].reverse().find(c =>
+      ['staged', 'approved', 'queued'].includes(c.status) && c.claude?.branch);
+    _previewBranch = branchComment?.claude?.branch || `review-edits/${ch}`;
     previewing = true; renderDoc(html); showStagedPreviewBanner(ch);
   } catch(e){ flash('Preview failed: '+e.message); }
 }
@@ -2177,7 +2215,7 @@ function showStagedPreviewBanner(ch){
   b.id = 'staged-preview-banner';
   b.style.cssText = 'display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:11px 14px;border:.5px solid var(--info);border-radius:var(--r-md,10px);background:var(--info-bg);font-size:13px;line-height:1.5;color:var(--text-1)';
   b.innerHTML = `<i class="ti ti-git-branch" style="font-size:18px;color:var(--info);flex:0 0 auto"></i>`
-    + `<span style="flex:1">Showing staged edits from <code>review-edits/${escapeHtml(ch)}</code>, not yet merged. Approve to make them live.</span>`
+    + `<span style="flex:1">Showing staged edits from <code>${escapeHtml(_previewBranch)}</code>, not yet merged. ${_previewChangedIndexes.length} changed paragraph${_previewChangedIndexes.length===1?' is':'s are'} highlighted. Approve to make them live.</span>`
     + `<button class="icbtn" id="staged-preview-dismiss" title="Dismiss this note" style="flex:0 0 auto"><i class="ti ti-x"></i></button>`;
   doc.prepend(b);
   document.getElementById('staged-preview-dismiss')?.addEventListener('click', () => { _previewBannerDismissed = true; b.remove(); });
