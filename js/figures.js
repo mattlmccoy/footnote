@@ -12,7 +12,7 @@
 // text ("Figure 3.1. ") and anchor.figure is the last 40 chars of the img src. We key on the parsed caption
 // NUMBER and keep the img-src tail for back-compat with the existing painter.
 
-import { isActiveComment } from './model.js?v=c284b81';
+import { isActiveComment } from './model.js?v=53aeded';
 
 // A figure number is either a chapter digit form ("3", "3.1") OR an appendix letter form ("A.1", "AA.2") —
 // appendix top-level numbers render as letters (preprocess.py _letter). Trailing period REQUIRED (figTableMaps).

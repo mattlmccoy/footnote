@@ -39,6 +39,10 @@ export const isResolved = (c) => !!c && !isActiveComment(c);
 export const setDecision = (r, id, decision, note) => ({ ...r, comments: r.comments.map(c => {
   if (c.id !== id) return c;
   const { decision: _d, decision_note: _n, decision_ts: _t, ...rest } = c;
+  if (decision === 'revise' && c.status === 'approved') {
+    const { staged_edit: _stale, ...unapproved } = rest;
+    return { ...unapproved, status:'queued', decision, ...(note ? { decision_note:note } : {}), decision_ts:new Date().toISOString() };
+  }
   return decision ? { ...rest, decision, ...(note ? { decision_note: note } : {}), decision_ts: new Date().toISOString() } : rest;
 }) });
 

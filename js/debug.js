@@ -164,9 +164,9 @@ export function buildSnapshot(state) {
 }
 
 import { resolveProject, loadConfig, loadProjects } from './config.js?v=f58d6b0';
-import { isActiveComment } from './model.js?v=c284b81';
+import { isActiveComment } from './model.js?v=53aeded';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
-import { condApi } from './condfetch.js?v=acd31f3';   // conditional reads: an unchanged diagnostic costs no rate limit
+import { condApi } from './condfetch.js?v=4187db3';   // conditional reads: an unchanged diagnostic costs no rate limit
 import { budgetSnapshot } from './ratebudget.js?v=dbe477a';   // budget observed from real response headers
 import { formatBuildTime } from './buildinfo.js?v=2e84ce0';
 import { unitLabel } from './unitlabel.js?v=7d58e97';   // 'Chapter 3' / 'Appendix A' — never a raw .n

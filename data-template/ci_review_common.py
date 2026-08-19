@@ -671,11 +671,43 @@ def decide_comment(comment, ts, decision, note=""):
     """Record an owner decision (approve|reject|revise) on a comment. Pure — input not mutated.
     Port of process-reviews.py cmd_decide."""
     out = dict(comment)
+    if decision == "revise" and out.get("status") == "approved":
+        out["status"] = "queued"
+        out.pop("staged_edit", None)
     out["decision"] = decision
     out["decision_ts"] = ts
     if note:
         out["decision_note"] = note
     return out
+
+
+def restage_stale_approvals(review, branch, commit, ts):
+    """Invalidate approvals made against an older commit of the same review branch.
+
+    A branch can receive a broader manual revision after its original comment was approved. That old
+    approval must never authorize the newer commit. Demote it to ``staged``, remove its now-inaccurate
+    inline diff and decision fields, and stamp the commit that the next owner review actually covers.
+    Pure: neither the review nor its nested comment dictionaries are mutated.
+    """
+    changed = 0
+    comments = []
+    for original in (review or {}).get("comments", []):
+        c = dict(original)
+        claude = dict(c.get("claude") or {})
+        if claude.get("branch") == branch:
+            old_commit = claude.get("commit")
+            if c.get("status") == "approved" and old_commit != commit:
+                c["status"] = "staged"
+                c.pop("staged_edit", None)
+                c.pop("decision", None)
+                c.pop("decision_note", None)
+                c.pop("decision_ts", None)
+                changed += 1
+            claude["commit"] = commit
+            claude["ts"] = ts
+            c["claude"] = claude
+        comments.append(c)
+    return {**(review or {}), "comments": comments}, changed
 
 
 def resolve_advisor_comment(comment, ts, state, note, before="", after=""):
