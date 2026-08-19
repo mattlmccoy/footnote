@@ -3,12 +3,12 @@
 // projects.json in the owner's private hub repo, read/written with their token. The workspace (hub) repo
 // can be set up entirely in the UI (stored as a localStorage override so nothing in the app repo is edited).
 import { loadConfig, loadProjects, normalizeProject, writeProjectPatch, projectStorage, loadAccount, writeAccount, resolveProject } from './config.js?v=f58d6b0';
-import { fetchSourceStatus } from './sourcestatusio.js?v=8a63fdb';   // per-book "reading view behind source?" indicator
+import { fetchSourceStatus } from './sourcestatusio.js?v=ed10990';   // per-book "reading view behind source?" indicator
 import { groupByWorkspace, workspaceNames, moveDocPatch, defaultWorkspaceName } from './workspaces.js?v=48fa24b';
 import { storageBadge, storageLabel, storageInfo } from './storagecopy.js?v=d7cc02b';
 import { addWorkspace, removeWorkspace, normalizeAccount, overleafSealTargets, overleafExpiryDue, overleafSaveTargets, needsOverleafSeal, withSealedRepo } from './account.js?v=6246abd';
 import { seedDataRepo, ensureRenderPipeline, ensureOverleafPipeline } from './seed.js?v=3df6010';
-import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=d47929c';
+import { getPublicKey, putSecret, dispatchOverleaf, overleafRun } from './ghsecrets.js?v=494ac47';
 import { sealToBase64 } from './vendor/seal.js?v=175ae7b';
 import { overleafMarker, secretName, bridgeUrlHint, conflictSummary, overleafNewProjectPatch } from './overleaf.js?v=5e5b959';
 import { importFormat, sourceRepoSuggestion, dataRepoSuggestion, planNewProjectRepos, newProjectPlan, ensureRepo, commitSourceFile, commitSourceBinary, migrateProjectToWorkspace, folderTexIndex, stripTopFolder, isTextPath } from './importdoc.js?v=8f01361';
@@ -16,7 +16,7 @@ import { parseLatexChapters, detectUnitLevel, resolveUnitNoun } from './docparse
 import { startWatch as startNetWatch } from './netstatus.js?v=0760473';
 import { showBuildTag } from './buildinfo.js?v=2e84ce0';
 import { brandMark as MARK } from './brandmark.js?v=a2aa2c8';   // shared Footnote logo (real mark, single source)
-import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=cf28223';
+import { classicTokenUrl, fineGrainedUrl, OWNER_KEY_PERMISSIONS } from './tokenscopes.js?v=2c9ac2d';
 import { initAccent } from './accent.js?v=8f4c423';   // per-viewer accent color (overrides the brand default)
 startNetWatch();
 showBuildTag(import.meta.url);

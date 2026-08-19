@@ -6,7 +6,7 @@
 // read answered 304 costs no rate limit (the REST limit is per USER and shared with every reviewer's key).
 // Self-contained on purpose: it does NOT import js/debug.js, whose module boot() would run the whole debug
 // collector when imported into a page that has a document.
-import { condApi, condInvalidate } from './condfetch.js?v=acd31f3';
+import { condApi, condInvalidate } from './condfetch.js?v=4187db3';
 import { fetchWithTimeout } from './nethelpers.js?v=a764ebc';
 import { builtMarker, staleness, sourceStatusLabel, sourceStatusShort } from './sourcestatus.js?v=f4377bc';
 

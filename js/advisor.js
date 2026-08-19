@@ -12,7 +12,7 @@ import { keyFromSearch, searchWithoutKey, readReviewerKey, writeReviewerKey, cle
 import { makeSafeStore } from './safestore.js?v=43e41dd';   // never-throw storage so a blocked browser can't kill boot (F4)
 import { initAccent, swatchesHtml, chooseAccent, storedAccent, celebrate, withColorEasterEgg, celebrateCardFill } from './accent.js?v=8f4c423';   // per-viewer accent color (theme-only; no assistant)
 import { parseVersion, latestFromHtml, isStale } from './version.js?v=b8a0753';
-import { condJson, condRaw, condInvalidate } from './condfetch.js?v=acd31f3';
+import { condJson, condRaw, condInvalidate } from './condfetch.js?v=4187db3';
 import { formatCount, totalWords, countWords } from './wordcount.js?v=2bef567';   // word counts, mirroring the author panel (term-neutral)
 import { positionFab, watchFabLayout } from './fablayout.js?v=3d85aeb';   // keep the tour button clear of the word-count pill
 import { budgetLevel, budgetFactor, budgetSnapshot } from './ratebudget.js?v=dbe477a';   // the hourly budget is the OWNER's, shared across reviewers — ease off before it runs out   // conditional reads: a 304 costs no rate limit (the limit is per-USER, shared with the owner)   // stale-bundle refresh nudge
