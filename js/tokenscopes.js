@@ -5,6 +5,7 @@
 //   Reviewer key — Contents-only, Review-repo-only; the `&k=` in every magic link. Deliberately minimal.
 //   Source key   — SOURCE_TOKEN; only when the Source repo is SEPARATE from the Review repo.
 //   Claude token — CLAUDE_CODE_OAUTH_TOKEN (subscription) or an Anthropic API key.
+//   Codex API key — CODEX_API_KEY; cloud only (local runs use the ambient Codex login).
 //
 // The UNDERLYING secret/variable names never change (ADVISOR_KEY, SOURCE_TOKEN, CLAUDE_MODEL, …); only
 // the user-facing labels above do. Pure module (no DOM) — unit-tested in tests/tokenscopes.test.mjs.
@@ -107,6 +108,10 @@ export function credentialStatus(id, ctx = {}) {
       return ctx.claudeConnected
         ? { glyph: 'ok', text: 'Connected.' }
         : { glyph: null, text: 'Not set — only needed when the AI assistant is on.' };
+    case 'codex':
+      return ctx.codexConnected
+        ? { glyph: 'ok', text: 'Connected for cloud runs.' }
+        : { glyph: null, text: 'Not set — only needed when a cloud agent uses Codex.' };
     default:
       return { glyph: null, text: '' };
   }
@@ -139,6 +144,13 @@ export const CREDENTIALS = [
   {
     id: 'claude', label: 'Claude token', secret: 'CLAUDE_CODE_OAUTH_TOKEN',
     forWhat: 'Your Claude Code subscription token (from `claude setup-token`) or an Anthropic API key. Only used when the AI assistant is on.',
+    repo: 'Review repo (sealed as a secret)',
+    scope: 'Sealed into your Review repo’s Actions secrets. Setting it needs the Owner key’s Secrets access.',
+    permissions: null,
+  },
+  {
+    id: 'codex', label: 'Codex API key', secret: 'CODEX_API_KEY',
+    forWhat: 'Your OpenAI API key for Codex cloud runs. Local runs use the ambient `codex login` session and need no secret.',
     repo: 'Review repo (sealed as a secret)',
     scope: 'Sealed into your Review repo’s Actions secrets. Setting it needs the Owner key’s Secrets access.',
     permissions: null,

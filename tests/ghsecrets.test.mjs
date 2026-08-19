@@ -49,16 +49,18 @@ test('applyRunLabel narrates the apply workflow run so a queued job never looks 
 // is repo-level (set once, every paper here uses it), not per-paper.
 test('claudeConnectionStatus reports Claude/source connection from the secret names', () => {
   assert.deepStrictEqual(claudeConnectionStatus(['CLAUDE_CODE_OAUTH_TOKEN', 'SOURCE_TOKEN']),
-    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', source: true });
+    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', codex: false, codexVia: null, source: true });
   assert.deepStrictEqual(claudeConnectionStatus(['ANTHROPIC_API_KEY']),
-    { claude: true, via: 'ANTHROPIC_API_KEY', source: false });
+    { claude: true, via: 'ANTHROPIC_API_KEY', codex: false, codexVia: null, source: false });
   // subscription token wins the "via" label when both are present
   assert.deepStrictEqual(claudeConnectionStatus(['ANTHROPIC_API_KEY', 'CLAUDE_CODE_OAUTH_TOKEN']),
-    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', source: false });
+    { claude: true, via: 'CLAUDE_CODE_OAUTH_TOKEN', codex: false, codexVia: null, source: false });
+  assert.deepStrictEqual(claudeConnectionStatus(['CODEX_API_KEY']),
+    { claude: false, via: null, codex: true, codexVia: 'CODEX_API_KEY', source: false });
   assert.deepStrictEqual(claudeConnectionStatus([]),
-    { claude: false, via: null, source: false });
+    { claude: false, via: null, codex: false, codexVia: null, source: false });
   assert.deepStrictEqual(claudeConnectionStatus(null),
-    { claude: false, via: null, source: false });   // defensive
+    { claude: false, via: null, codex: false, codexVia: null, source: false });   // defensive
 });
 
 // Slice 7: the AI setup panel seals the adopter's OWN Claude credentials. aiSecretsPlan decides which
@@ -71,6 +73,8 @@ test('aiSecretsPlan seals only the non-empty fields, trimmed, under the right na
   // The API key is the alternative → ANTHROPIC_API_KEY.
   assert.deepStrictEqual(aiSecretsPlan({ anthropicKey: 'sk-ant-123' }),
     [{ name: 'ANTHROPIC_API_KEY', value: 'sk-ant-123' }]);
+  assert.deepStrictEqual(aiSecretsPlan({ codexApiKey: '  sk-openai-123  ' }),
+    [{ name: 'CODEX_API_KEY', value: 'sk-openai-123' }]);
   // Both credentials + source, in a stable order (subscription first).
   assert.deepStrictEqual(
     aiSecretsPlan({ claudeCodeToken: 'oat', anthropicKey: 'key', sourceToken: 'ghp' }),
@@ -80,6 +84,7 @@ test('aiSecretsPlan seals only the non-empty fields, trimmed, under the right na
   // blank / whitespace-only fields are skipped (don't overwrite an existing secret with empty)
   assert.deepStrictEqual(aiSecretsPlan({ claudeCodeToken: '  oat  ', sourceToken: '   ' }),
     [{ name: 'CLAUDE_CODE_OAUTH_TOKEN', value: 'oat' }]);       // trimmed
+  assert.deepStrictEqual(aiSecretsPlan({ codexApiKey: '   ' }), []);
   assert.deepStrictEqual(aiSecretsPlan({}), []);              // nothing to do
 });
 

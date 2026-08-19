@@ -33,6 +33,9 @@ const hdr = tok => ({ Authorization:`Bearer ${tok}`, Accept:'application/vnd.git
 // comes back 304 and costs no rate limit. Freshness is unchanged: nothing is served un-revalidated.
 const treeUrl = () => `${API}/repos/${slug()}/git/trees/main?recursive=1`;
 const contentUrl = path => `${API}/repos/${slug()}/contents/${dp(path)}`;
+const blobUrl = sha => `${API}/repos/${slug()}/git/blobs/${sha}`;
+// Decode GitHub's base64-wrapped content (strip the newlines GitHub inserts; atob is strict on some mobile browsers).
+const decodeB64 = b64 => decodeURIComponent(escape(atob(String(b64).replace(/\s/g,''))));
 // A write changes the file AND the repo tree; drop both so the next read re-fetches rather than revalidating
 // a token we already know is stale (this is what keeps putJson's 409 retry looking at a current sha).
 const invalidate = path => { condDrop(contentUrl(path)); condDrop(treeUrl()); };
@@ -73,8 +76,20 @@ export async function getJson(tok, path, _retried){
   if (r.status===404){ condDrop(url); return { json:null, sha:null }; }
   if (!r.ok) throw ghErr(r);
   const d = await r.json();
-  if (typeof d.content !== 'string' || !d.content.trim()) throw new Error('empty content for '+path);
-  const txt = decodeURIComponent(escape(atob(d.content.replace(/\s/g,''))));   // strip GitHub's base64 newlines (atob is strict on some mobile browsers)
+  let txt;
+  if (typeof d.content === 'string' && d.content.trim()){
+    txt = decodeB64(d.content);
+  } else if (typeof d.sha === 'string' && d.sha){
+    // GitHub returns empty inline content for files >1MB; the Blobs API serves the bytes up to 100MB.
+    const b = await gfetch(blobUrl(d.sha), { headers: hdr(tok), cache:'no-store' });
+    observeBudget(b.headers);
+    if (!b.ok) throw ghErr(b, 'blob');
+    const bd = await b.json();
+    if (typeof bd.content !== 'string' || !bd.content.trim()) throw new Error('empty blob for '+path);
+    txt = decodeB64(bd.content);
+  } else {
+    throw new Error('empty content for '+path);
+  }
   condPut(url, r.headers.get('etag'), { text: txt, sha: d.sha });
   return { json: JSON.parse(txt), sha:d.sha };
 }

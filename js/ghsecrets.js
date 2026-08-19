@@ -140,31 +140,32 @@ export async function dispatchRender(tok, projectId){
   if (!r.ok) throw new Error('render dispatch ' + r.status + ' ' + (await r.text()).slice(0,120));
 }
 
-// ---- AI setup (Slice 7): seal the adopter's OWN Claude credentials, all on their own data repo ----
+// ---- AI setup (Slice 7): seal the adopter's own engine credentials in their own data repo ----
 
 // Which Actions secrets to write from the AI setup form: only non-empty fields, trimmed, under their
 // canonical names (the same names apply.yml/ci_apply read). Pure so the gating is unit-tested; blanks
 // are skipped so "Save" never clobbers an existing secret with an empty value. The RECOMMENDED Claude
 // credential is a Claude Code SUBSCRIPTION token (CLAUDE_CODE_OAUTH_TOKEN from `claude setup-token`) —
 // most adopters have a subscription, not an API key; ANTHROPIC_API_KEY is the alternative.
-export function aiSecretsPlan({ claudeCodeToken, anthropicKey, sourceToken } = {}){
+export function aiSecretsPlan({ claudeCodeToken, anthropicKey, codexApiKey, sourceToken } = {}){
   const plan = [];
   const push = (name, v) => { const t = (v || '').trim(); if (t) plan.push({ name, value: t }); };
   push('CLAUDE_CODE_OAUTH_TOKEN', claudeCodeToken);
   push('ANTHROPIC_API_KEY', anthropicKey);
+  push('CODEX_API_KEY', codexApiKey);
   push('SOURCE_TOKEN', sourceToken);
   return plan;
 }
 
-// Interpret the data repo's Actions secret NAMES (values are write-only) into an AI connection status:
-// whether Claude is connected and via which credential (subscription token preferred), and whether a
-// SOURCE_TOKEN is present. Pure so the status copy is unit-tested. Secrets are REPO-LEVEL, so this status
-// applies to every project in the workspace — the panel uses it to say "set once, every paper here works".
+// Interpret Actions secret NAMES (values are write-only) into per-provider connection status while
+// retaining the historical Claude fields (`claude`, `via`) for existing callers.
 export function claudeConnectionStatus(names){
   const set = new Set(names || []);
   const via = set.has('CLAUDE_CODE_OAUTH_TOKEN') ? 'CLAUDE_CODE_OAUTH_TOKEN'
     : set.has('ANTHROPIC_API_KEY') ? 'ANTHROPIC_API_KEY' : null;
-  return { claude: !!via, via, source: set.has('SOURCE_TOKEN') };
+  const codexVia = set.has('CODEX_API_KEY') ? 'CODEX_API_KEY'
+    : set.has('OPENAI_API_KEY') ? 'OPENAI_API_KEY' : null;
+  return { claude: !!via, via, codex: !!codexVia, codexVia, source: set.has('SOURCE_TOKEN') };
 }
 
 // List the data repo's Actions secret NAMES (never values). Needs a token with Secrets read (admin) — a

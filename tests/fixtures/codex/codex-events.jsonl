@@ -1,0 +1,4 @@
+{"type":"thread.started","thread_id":"01a01b8a-00f9-7ad0-abe2-4ad752744b3b"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"[{\"id\":\"ch1-1\",\"before\":\"reuslt\",\"after\":\"result\"},{\"id\":\"ch1-2\",\"before\":\"signficant\",\"after\":\"significant\"},{\"id\":\"ch1-3\",\"before\":\"We seen\",\"after\":\"We saw\"}]"}}
+{"type":"turn.completed","usage":{"input_tokens":15744,"cached_input_tokens":11008,"cache_write_input_tokens":0,"output_tokens":126,"reasoning_output_tokens":65}}

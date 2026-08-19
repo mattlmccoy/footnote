@@ -4,13 +4,18 @@
 // engine calls stay current as new models ship — no code change. A pinned claude-* id also works.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { MODELS, DEFAULT_MODEL, INHERIT, resolveModel, isKnownModel, modelLabel } from '../js/aimodels.js';
 
-test('registry lists the current tiers as future-proof aliases', () => {
+test('registry lists Claude aliases and Codex specs with explicit providers', () => {
   const values = MODELS.map(m => m.value);
   for (const tier of ['opus', 'sonnet', 'haiku']) assert.ok(values.includes(tier), `missing ${tier}`);
-  // every entry has a label + tier
-  for (const m of MODELS) { assert.ok(m.value && m.label && m.tier, `incomplete ${m.value}`); }
+  for (const model of ['codex:gpt-5.6-sol', 'codex:gpt-5.6-terra', 'codex:gpt-5.6-luna']) {
+    assert.ok(values.includes(model), `missing ${model}`);
+  }
+  for (const m of MODELS) {
+    assert.ok(m.value && m.label && m.tier && ['claude', 'codex'].includes(m.provider), `incomplete ${m.value}`);
+  }
 });
 
 test('DEFAULT_MODEL is the best general tier (Opus) — "Opus for everything" default', () => {
@@ -34,6 +39,8 @@ test('isKnownModel accepts registry aliases and any pinned claude-* id', () => {
   assert.ok(isKnownModel('opus'));
   assert.ok(isKnownModel('claude-opus-4-8'));
   assert.ok(isKnownModel('claude-fable-5'));
+  assert.ok(isKnownModel('codex:gpt-5.6-terra'));
+  assert.ok(isKnownModel('anthropic.claude-3-5-sonnet-20241022-v2:0'));
   assert.ok(!isKnownModel('gpt-4'));
   assert.ok(!isKnownModel(''));
 });
@@ -41,4 +48,19 @@ test('isKnownModel accepts registry aliases and any pinned claude-* id', () => {
 test('modelLabel gives a human label for aliases, falls back to the raw value', () => {
   assert.match(modelLabel('opus'), /Opus/);
   assert.equal(modelLabel('claude-opus-4-8'), 'claude-opus-4-8');
+});
+
+test('Settings makes Writer/Editor a prominent model override', async () => {
+  const app = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+  const writer = app.indexOf('id="mb-writer"');
+  const optional = app.indexOf('Per-agent overrides');
+  assert.ok(writer >= 0, 'missing dedicated Writer/Editor model control');
+  assert.ok(optional < 0 || writer < optional, 'Writer/Editor control must precede optional overrides');
+  assert.match(app, /map\.writer\s*=/, 'Writer/Editor selection must persist in AGENT_MODELS');
+});
+
+test('writer actions use a provider-neutral label', async () => {
+  const app = await readFile(new URL('../js/app.js', import.meta.url), 'utf8');
+  assert.match(app, />Send to Writer</);
+  assert.doesNotMatch(app, />Send to Claude</);
 });

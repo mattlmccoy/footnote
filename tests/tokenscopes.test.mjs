@@ -108,13 +108,23 @@ test('credentialStatus(claude): muted when off, ok when connected', () => {
   assert.equal(credentialStatus('claude', { claudeConnected: false }).glyph, null);
 });
 
+test('credentialStatus(codex): muted when off, ok when connected', () => {
+  assert.equal(credentialStatus('codex', { codexConnected: true }).glyph, 'ok');
+  assert.equal(credentialStatus('codex', { codexConnected: false }).glyph, null);
+});
+
 test('CREDENTIALS uses the standardized vocabulary and maps to stable internal names', () => {
   const byId = Object.fromEntries(CREDENTIALS.map(c => [c.id, c]));
+  assert.ok(byId.codex, 'missing Codex credential descriptor');
   assert.equal(byId.owner.label, 'Owner key');
   assert.equal(byId.reviewer.label, 'Reviewer key');
   assert.equal(byId.source.label, 'Source key');
   assert.equal(byId.claude.label, 'Claude token');
+  assert.equal(byId.codex.label, 'Codex API key');
   // internal names unchanged
   assert.equal(byId.source.secret, 'SOURCE_TOKEN');
   assert.equal(byId.claude.secret, 'CLAUDE_CODE_OAUTH_TOKEN');
+  assert.equal(byId.codex.secret, 'CODEX_API_KEY');
+  assert.match(byId.codex.forWhat, /cloud runs/i);
+  assert.match(byId.codex.forWhat, /local runs.*codex login/i);
 });

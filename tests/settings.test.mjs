@@ -31,7 +31,7 @@ test('AI on: agents appears before ai; ai not muted', () => {
   const s = settingsSections(cfg, { aiOn:true, claudeConnected:true, emailConfigured:true, hasToken:true });
   assert.deepEqual(s.map(x => x.id), ['document', 'email', 'access', 'appearance', 'agents', 'ai']);
   assert.equal(s.find(x => x.id === 'ai').muted, false);
-  assert.equal(s.find(x => x.id === 'ai').label, 'Claude / AI');
+  assert.equal(s.find(x => x.id === 'ai').label, 'AI engines');
 });
 
 test('glyphs reflect state: ok when configured, warn when not', () => {

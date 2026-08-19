@@ -811,8 +811,8 @@ def budget_caps(env):
 
 # The global default model for cloud runs — the best general tier. Everything (writer + every agent) runs
 # on this unless a specific agent is overridden. This is the "use Opus for everything" default. The value
-# is a Claude Code CLI `--model` alias (opus/sonnet/haiku) that resolves to the LATEST model of that tier,
-# so calls stay current as new models ship. Mirrors js/aimodels.js DEFAULT_MODEL.
+# remains the Claude Code `opus` alias for backward compatibility. Individual values may instead be a
+# provider-prefixed Codex model spec. Mirrors js/aimodels.js DEFAULT_MODEL.
 DEFAULT_MODEL = "opus"
 
 
@@ -821,9 +821,9 @@ def resolve_agent_model(agent_id, env):
       1. AGENT_MODELS (an Actions variable = JSON map {agent_id: alias}) — this agent's override, if any;
       2. else CLAUDE_MODEL — the global default the owner picked;
       3. else DEFAULT_MODEL — the best tier.
-    The sentinel "default" (or an empty value) in the map means "inherit the global default". Values are
-    CLI `--model` aliases (opus/sonnet/haiku, latest of each tier) so calls stay current; a pinned claude-*
-    id also works. Malformed AGENT_MODELS degrades to the global default rather than crashing. Pure."""
+    The sentinel "default" (or an empty value) in the map means "inherit the global default". Values may
+    be Claude aliases/pinned ids or a known provider-prefixed model such as ``codex:gpt-5.6-terra``.
+    Malformed AGENT_MODELS degrades to the global default rather than crashing. Pure."""
     env = env or {}
     global_default = (env.get("CLAUDE_MODEL") or DEFAULT_MODEL).strip() or DEFAULT_MODEL
     raw = env.get("AGENT_MODELS") or ""
