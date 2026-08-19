@@ -28,7 +28,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import ci_review_common as R  # noqa: E402
+import ci_review_common as R
+import ci_llm  # noqa: E402
 import ci_render  # noqa: E402  (reuse the tested source resolution)
 import ci_agents  # noqa: E402  (the shipped agent catalog + the pure directive resolver)
 import ci_authoring  # noqa: E402  (B4 — generate a user-described agent into agents.json as a draft)
@@ -253,35 +254,17 @@ def agent_context(task):
     return "UNIT:\n" + json.dumps(task, ensure_ascii=False, indent=2)
 
 
-def _run_claude(directive, context, model, label):
-    """Run the headless Claude Code CLI: ``directive`` is the ``-p`` argument (short), ``context`` is the
-    piped STDIN (the manuscript — too large for argv, which blew the OS arg-size limit). Returns stdout,
-    or None on a missing CLI or non-zero exit so a broken/absent Claude leaves the job queued rather than
-    crashing the whole drain."""
-    model = model or R.resolve_agent_model("", os.environ)   # no per-agent id → the global default model
-    try:
-        proc = subprocess.run(["claude", "-p", directive, "--output-format", "json", "--model", model],
-                              input=context, capture_output=True, text=True)
-    except OSError as e:
-        print(f"[apply] {label}: claude CLI unavailable ({e}) — leaving job", file=sys.stderr)
-        acc = getattr(_run_claude, "usage", None)
-        if acc is not None:
-            acc["errors"] += 1
-        return None
-    acc = getattr(_run_claude, "usage", None)
-    if proc.returncode != 0:
-        print(f"[apply] {label}: claude CLI failed ({proc.returncode}): {proc.stderr[:300]}", file=sys.stderr)
-        if acc is not None:
-            acc["errors"] += 1
-            acc["last_error"] = (proc.stderr or "")[:200]
-        return None
-    if acc is not None:
-        u = claude_usage(proc.stdout)
-        acc["cost_usd"] += u["cost_usd"]
-        acc["input_tokens"] += u["input_tokens"]
-        acc["output_tokens"] += u["output_tokens"]
-        acc["calls"] += 1
-    return proc.stdout
+def _run_claude(directive, context, model, label, sandbox="read-only"):
+    """Run one headless engine and return its raw final message, or None on failure.
+
+    Kept under its historical name because every caller (apply-edits, the writer, each review agent)
+    already speaks it. The engine is no longer necessarily Claude: the resolved model value carries
+    the provider (``codex:gpt-5.6-terra`` vs a bare ``opus``), and ci_llm dispatches on it. A missing
+    CLI or a failed run still returns None so the job stays QUEUED rather than crashing the drain."""
+    model = model or R.resolve_agent_model("", os.environ)
+    spec = ci_llm.parse_model_spec(model)
+    return ci_llm.run_llm(spec, directive, context, label,
+                          sandbox=sandbox, usage_acc=getattr(_run_claude, "usage", None))
 
 
 def run_agent_cli(agent_id, task, model=None, catalog=None, field=None):
@@ -321,7 +304,12 @@ def writer_directive(catalog=None, field="", writer_id="writer"):
 def run_writer_cli(task, catalog=None, field="", writer_id="writer", model=None):
     """Produce apply-edits specs using the CONFIGURED Writer/Editor agent's prompt (not the generic
     copy-editor). Live-CI-gated boundary; the parse is pure."""
-    out = _run_claude(writer_directive(catalog, field, writer_id), claude_context(task), model, "writer:" + writer_id)
+    # Resolve PER WRITER, not against the global default: the writer is the agent that actually drafts
+    # the prose, so pointing it at a different engine (AGENT_MODELS = {"writer": "codex:gpt-5.6-terra"})
+    # is the main reason an author would want a second engine at all. Resolving against "" here silently
+    # ignored that override and ran every writer on the global model.
+    out = _run_claude(writer_directive(catalog, field, writer_id), claude_context(task),
+                      model or R.resolve_agent_model(writer_id, os.environ), "writer:" + writer_id)
     if out is None:
         return {}
     specs = parse_claude_edits(out)

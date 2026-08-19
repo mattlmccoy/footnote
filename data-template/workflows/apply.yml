@@ -46,6 +46,13 @@ jobs:
             texlive-latex-base texlive-latex-extra texlive-pictures texlive-science
       - name: Install Claude Code CLI (used by apply-edits/run-agents when Claude is connected)
         run: npm install -g @anthropic-ai/claude-code || echo "claude CLI unavailable — Claude jobs will wait"
+      - name: Install Codex CLI (used when an agent's model is prefixed codex:)
+        # Pinned, not latest: the JSONL event shape this engine parses is still moving and already
+        # differs from the published docs (the real usage object carries a fifth field). Bump this
+        # deliberately, with tests/fixtures/codex/ re-captured, never implicitly.
+        # Codex refuses to run outside a Git repository; the Actions workspace IS the checkout, which
+        # a fresh-clone test confirmed runs unattended with no trust prompt and no config entry.
+        run: npm install -g @openai/codex@0.146.0-alpha.9.2 || echo "codex CLI unavailable — Codex jobs will wait"
       - name: Sync to latest main before draining
         # checkout@v4 lands on the SHA that triggered the run, which is behind a prior serialized run's
         # [skip ci] drain commit. Draining that stale jobs.json makes the whole-file writeback conflict on
@@ -65,9 +72,15 @@ jobs:
           CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           # ALTERNATIVE: a raw Anthropic API key (billed per token). Either one enables Claude jobs.
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          # Codex engine. Only needed when a model value is prefixed `codex:`; absent, Codex jobs wait
+          # exactly as Claude jobs do without a Claude credential. CI uses an API key — the ChatGPT-plan
+          # login is a local-machine path only.
+          CODEX_API_KEY: ${{ secrets.CODEX_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           # Model + budget levers set in Settings → Cloud model & budget. CLAUDE_MODEL is the global
           # default every agent runs on (defaults to Opus); AGENT_MODELS is a JSON map {agentId: alias}
-          # overriding individual agents (e.g. cheaper Sonnet on light critics); the caps stop a job before
+          # overriding individual agents (e.g. cheaper Sonnet on light critics, or `codex:gpt-5.6-terra`
+          # to run that one agent on Codex instead); the caps stop a job before
           # it burns tokens. All are Actions variables the engine reads (ci_review_common.resolve_agent_model
           # / budget_caps).
           CLAUDE_MODEL: ${{ vars.CLAUDE_MODEL }}
