@@ -1,4 +1,4 @@
-// js/aimodels.js — the future-proof Claude model registry for the CLOUD review runs.
+// js/aimodels.js — model registry for the CLOUD review runs.
 //
 // The values are Claude Code CLI `--model` ALIASES (opus / sonnet / haiku). The CLI resolves each alias
 // to the LATEST model of that tier, so the selector options AND the engine's `--model` calls stay current
@@ -9,9 +9,12 @@
 // Pure module (no DOM) — unit-tested in tests/aimodels.test.mjs.
 
 export const MODELS = [
-  { value: 'opus',   label: 'Opus — most capable',           tier: 'opus',   blurb: 'Best quality. Recommended for a dissertation or anything intensive.' },
-  { value: 'sonnet', label: 'Sonnet — balanced, lower cost', tier: 'sonnet', blurb: 'Strong and cheaper. A good override for lighter, high-volume agents.' },
-  { value: 'haiku',  label: 'Haiku — fastest, cheapest',     tier: 'haiku',  blurb: 'Fastest and cheapest. Best for simple, mechanical checks.' },
+  { value: 'opus',   label: 'Opus — most capable',           tier: 'opus',   provider: 'claude', blurb: 'Best quality. Recommended for a dissertation or anything intensive.' },
+  { value: 'sonnet', label: 'Sonnet — balanced, lower cost', tier: 'sonnet', provider: 'claude', blurb: 'Strong and cheaper. A good override for lighter, high-volume agents.' },
+  { value: 'haiku',  label: 'Haiku — fastest, cheapest',     tier: 'haiku',  provider: 'claude', blurb: 'Fastest and cheapest. Best for simple, mechanical checks.' },
+  { value: 'codex:gpt-5.6-sol',   label: 'GPT-5.6 Sol — most capable', tier: 'sol',   provider: 'codex', blurb: 'Best Codex quality for demanding prose and analysis.' },
+  { value: 'codex:gpt-5.6-terra', label: 'GPT-5.6 Terra — balanced',   tier: 'terra', provider: 'codex', blurb: 'Balanced Codex quality and cost.' },
+  { value: 'codex:gpt-5.6-luna',  label: 'GPT-5.6 Luna — cheapest',    tier: 'luna',  provider: 'codex', blurb: 'Lowest-cost Codex option for simple, mechanical work.' },
 ];
 
 // The global default: the best general tier. Everything (writer + every agent) runs on this unless a
@@ -30,10 +33,11 @@ export function resolveModel(pref, globalDefault = DEFAULT_MODEL) {
   return p;
 }
 
-// A value is a usable --model if it is a known alias or any pinned claude-* id.
+// A value is usable if it is registered or is a pinned Claude id. Keep Anthropic/Bedrock-style ids
+// intact: their own version suffix can contain a colon and is not a provider separator here.
 export function isKnownModel(v) {
   const s = String(v == null ? '' : v).trim();
-  return MODELS.some(m => m.value === s) || /^claude-/.test(s);
+  return MODELS.some(m => m.value === s) || /^claude-/.test(s) || /^anthropic\.claude-/.test(s);
 }
 
 // Human label for a value: the registry label for an alias, else the raw value (pinned id shown as-is).

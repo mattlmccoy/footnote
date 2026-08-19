@@ -15,7 +15,7 @@ export function settingsSections(cfg, state) {
     secs.push({ id: 'agents', label: 'Agents', glyph: agents.length ? 'ok' : null, muted: false });
   }
   secs.push(state.aiOn
-    ? { id: 'ai', label: 'Claude / AI',  glyph: state.claudeConnected ? 'ok' : 'warn', muted: false }
+    ? { id: 'ai', label: 'AI engines',    glyph: state.claudeConnected ? 'ok' : 'warn', muted: false }
     : { id: 'ai', label: 'AI assistant', glyph: null,                                  muted: true  });
   return secs;
 }

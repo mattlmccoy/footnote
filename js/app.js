@@ -77,7 +77,7 @@ const DOC = _CFG.doc.noun;
 let UNIT = _CFG.doc.unitNoun;                                 // let: an import can update the unit noun in-session
 const DOCC = DOC.charAt(0).toUpperCase() + DOC.slice(1);
 let UNITC = UNIT.charAt(0).toUpperCase() + UNIT.slice(1);     // "Chapter"/"Section"/… for visible unit labels
-// Optional AI assistant (Send to Claude / run agents) — OFF by default; the deterministic review→stage→
+// Optional AI assistant (Send to Writer / run agents) — OFF by default; the deterministic review→stage→
 // approve→merge flow is core. Toggled per-user in ⋯ menu (localStorage) or shipped on via reviewAgents.
 const ASSIST_KEY = 'footnote:assistant';
 const assistantOn = () => assistantEnabled(_CFG, localStorage.getItem(ASSIST_KEY));
@@ -111,7 +111,7 @@ async function launchOwnerTour(){
 // The tour's demo chapter is a fully STATIC, dead mock — NOT the live tool. It borrows the real
 // builders (buildAdvCard / buildCommentCard) only to capture exact markup, then injects that as
 // inert HTML strings: none of the real .onclick wiring comes along, so Queue for merge, Resolution,
-// Send to Claude and Approve do nothing. `demoMode` silences the text-selection composer, and the
+// Send to Writer and Approve do nothing. `demoMode` silences the text-selection composer, and the
 // topbar Send button is unwired. Nothing here is live or saved; teardown just re-renders the real
 // view. This mirrors the advisor demo's static fake page instead of muzzling live components.
 let demoMode = false;
@@ -123,7 +123,7 @@ function loadDemoChapterOwner(){
   demoMode = true;
   document.getElementById('nav').style.display = ''; cmt.style.display = '';
   renderTopbar();   // chapter topbar so #btn-more exists for the tour to point at
-  const bs = document.getElementById('btn-send'); if (bs) bs.onclick = null;   // topbar Send to Claude: dead in the demo
+  const bs = document.getElementById('btn-send'); if (bs) bs.onclick = null;   // topbar Send to Writer: dead in the demo
   const fig = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="520" height="200"><rect width="520" height="200" fill="#e9e7e1"/><text x="260" y="106" font-family="sans-serif" font-size="16" fill="#8f8d84" text-anchor="middle">Sample figure</text></svg>');
   // Sample data used ONLY to generate exact card markup — never written to the live globals.
   const demoAdv = { id:'demo-adv', _advisor:'demo', read:false, kind:'text', tag:'wording', status:'submitted',
@@ -157,7 +157,7 @@ const OWNER_CHAPTER_TOUR = [
   { sel:'#doc h1', title:`Inside a ${UNIT}`, body:`The reading view. We loaded a sample ${UNIT} with a sample reviewer comment and a staged edit so you can see the workflow. Nothing here is saved.` },
   { sel:'.ccard.adv', title:'Reviewers\' comments land here', body:'Every comment your reviewers leave shows here, pinned to the exact spot. Its buttons carry the full action set: Jump to it, Reply so they see your answer, add a Private note only you see, Suggest an edit, record a Resolution, or Send it to Claude.' },
   { sel:'.ccard.adv .a-rec', title:'Record how you handled it', body:'Resolution lets you pick Addressed, Kept as written, or Noted, add an optional note, and Save to reviewer. They see the outcome in their Responses view.' },
-  { sel:'.ccard.adv .a-send', title:'Or hand it to Claude', body:'Once you have read a comment, send it to Claude to draft the edit. You still approve the result before anything lands.' },
+  { sel:'.ccard.adv .a-send', title:'Or hand it to the Writer', body:'Once you have read a comment, send it to your selected Writer to draft the edit. You still approve the result before anything lands.' },
   { sel:'#doc ins.tc-stage', title:'Proposed edits show inline', body:'A staged edit shows as tracked changes right in the text, the old wording struck through and the new wording in place.' },
   { sel:'#approvebar', title:'Approve and merge', body:'The bar tallies what is approved, rejected, or still to decide. Preview the rendered result, then Queue the approved edits for merge.' },
   { sel:'#tour-demo-select', title:'Comment yourself too', body:'Select any text to leave your own note or propose exact replacement wording, the same way your reviewers do.', pin:'bl' },
@@ -281,7 +281,7 @@ function renderTopbar(){
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
       <button class="icbtn" id="btn-theme" title="Theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>
       ${assistantOn() ? '<button class="icbtn" id="btn-figures" title="Figure review — every figure in the document, by chapter"><i class="ti ti-photo"></i></button>' : ''}
-      <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+      <button class="btn btn-primary" id="btn-send">${assistantOn() ? '<i class="ti ti-send"></i>Send to Writer' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
       <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
       <button class="icbtn" id="btn-settings" title="Settings"><i class="ti ti-settings"></i></button>
       <button class="icbtn" id="btn-more" title="More"><i class="ti ti-dots"></i></button>
@@ -1311,7 +1311,7 @@ function buildCommentCard(c){
         <button class="btn cdec-b ${c.decision==='reject'?'on-reject':''}" data-d="reject"><i class="ti ti-x"></i>Reject</button>
         ${assistantOn() ? `<button class="btn cdec-b ${c.decision==='revise'?'on-revise':''}" data-d="revise"><i class="ti ti-pencil"></i>Request changes</button>` : ''}
       </div>
-      ${assistantOn() ? `<div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for Claude."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Claude</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}` : ''}
+      ${assistantOn() ? `<div class="cdec-revform" style="display:none"><textarea class="cdec-revt" rows="2" placeholder="What should change? This re-queues the edit for the Writer."></textarea><div style="display:flex;gap:6px;margin-top:6px"><button class="btn btn-primary cdec-revsend" style="padding:4px 11px;font-size:11.5px">Send to Writer</button><button class="btn cdec-revcancel" style="padding:4px 11px;font-size:11.5px">Cancel</button></div></div>` : ''}` : ''}
       ${c.status === 'approved' ? `<div class="cdec" data-id="${c.id}"><span class="cqd"><i class="ti ti-clock-check"></i>queued for merge</span><button class="btn cunq" data-id="${c.id}"><i class="ti ti-arrow-back-up"></i>Unqueue</button></div>` : ''}
       ${c.claude?.response ? `<div class="cresp"><div class="cresp-h"><i class="ti ti-robot-face"></i>Claude</div>${escapeHtml(c.claude.response)}</div>` : ''}
       ${c.claude?.branch ? `<div class="branch"><i class="ti ti-git-branch"></i>${escapeHtml(c.claude.branch)}</div>` : ''}
@@ -1341,7 +1341,7 @@ function buildCommentCard(c){
       const note = card.querySelector('.cdec-revt').value.trim();
       if (!note){ card.querySelector('.cdec-revt').focus(); return; }
       const b = e.currentTarget; b.disabled = true; b.textContent = 'Sending…';
-      try { await requestChanges(c.id, note); } catch(err){ b.disabled = false; b.textContent = 'Send to Claude'; alert('Failed: '+err.message); } });
+      try { await requestChanges(c.id, note); } catch(err){ b.disabled = false; b.textContent = 'Send to Writer'; alert('Failed: '+err.message); } });
     card.querySelector('.cdec-revcancel')?.addEventListener('click', e => { e.stopPropagation(); card.querySelector('.cdec-revform').style.display = 'none'; });
     card.querySelector('.cunq')?.addEventListener('click', async e => { e.stopPropagation();
       try { await unqueueComment(c.id); } catch(err){ alert('Failed: '+err.message); } });
@@ -1368,7 +1368,7 @@ async function replyToComment(id, text){
       const { json, sha } = await getJson(t, 'jobs.json'); const jobs = Array.isArray(json) ? json : [];
       jobs.push({ id:jid, type:'apply-edits', chapter:current, comment_ids:[id], revision:true, status:'queued', requested_ts:new Date().toISOString() });
       await putJson(t, 'jobs.json', jobs, sha, 'review: revision reply '+id);
-      flash('Reply sent — Claude will revise this.');
+      flash('Reply sent — your Writer will revise this.');
       // Cloud mode: actively surface the run (like sendJob) so the reply isn't a silent queue — otherwise
       // the revision job only rides the passive jobs.json push-trigger with no confirmation, which reads as
       // "the reply never reached Claude". Additive only: no change to what is written to the data repo.
@@ -1478,7 +1478,7 @@ function buildAdvCard(c){
     <div class="advacts">
       <button class="btn aj"><i class="ti ti-arrow-right"></i>Jump</button>
       ${ai ? `
-      ${assistantOn() ? `<button class="btn btn-primary a-act" ${c.sent?'disabled title="Already sent to Claude"':''}><i class="ti ti-check"></i>${c.sent?'Sent to Claude':'Act on it'}</button>` : ''}
+      ${assistantOn() ? `<button class="btn btn-primary a-act" ${c.sent?'disabled title="Already sent to the Writer"':''}><i class="ti ti-check"></i>${c.sent?'Sent to Writer':'Act on it'}</button>` : ''}
       <button class="btn a-dismiss"><i class="ti ti-x"></i>Dismiss</button>
       ${assistantOn() ? `<button class="btn a-morework" ${c.sent?'disabled title="Already sent — iterate from the staged edit’s Request changes"':''}><i class="ti ti-pencil"></i>Request further work</button>` : ''}
       ` : `
@@ -1486,7 +1486,7 @@ function buildAdvCard(c){
       <button class="btn a-note"><i class="ti ti-note"></i>Private note</button>
       <button class="btn a-suggest"><i class="ti ti-pencil"></i>Suggest edit</button>
       <button class="btn a-rec"><i class="ti ti-message-check"></i>${c.resolution?'Update':'Resolution'}</button>
-      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Claude'}</button>` : ''}
+      ${assistantOn() ? `<button class="btn a-send" ${(!c.read||c.sent)?`disabled title="${c.sent?'Already sent':'Mark this read first'}"`:''}><i class="ti ti-send"></i>${c.sent?'Sent':'Send to Writer'}</button>` : ''}
       `}</div>
     <div class="rel-pop a-replybox" style="display:none"><textarea rows="2" placeholder="Reply to ${escapeHtml(whoLabel(c))} — they'll see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-reply-save">Send reply</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rel-pop a-notebox" style="display:none"><textarea rows="2" placeholder="Private note — only you see this…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-note-save">Save note</button><button class="btn a-x">Cancel</button></div></div>
@@ -1495,7 +1495,7 @@ function buildAdvCard(c){
       <textarea class="a-sug-find" rows="2" placeholder="Exact text to find (verbatim)…">${escapeHtml(c.edit?.find ?? c.anchor?.quote ?? '')}</textarea>
       <textarea class="a-sug-repl" rows="2" placeholder="Your replacement / insertion text…">${escapeHtml(c.edit?.replacement||'')}</textarea>
       <div class="rel-popacts"><button class="btn btn-primary a-sug-save">Attach edit</button><button class="btn a-x">Cancel</button></div></div>
-    <div class="rel-pop a-moreworkbox" style="display:none"><textarea rows="2" placeholder="What should Claude do? e.g. go deeper, wrong section, cite a source…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-morework-save">Send to Claude</button><button class="btn a-x">Cancel</button></div></div>
+    <div class="rel-pop a-moreworkbox" style="display:none"><textarea rows="2" placeholder="What should the Writer do? e.g. go deeper, wrong section, cite a source…"></textarea><div class="rel-popacts"><button class="btn btn-primary a-morework-save">Send to Writer</button><button class="btn a-x">Cancel</button></div></div>
     <div class="rform" style="display:none">
       <select class="r-state"><option value="addressed"${c.resolution?.state==='addressed'?' selected':''}>Addressed — changed as suggested</option><option value="declined"${c.resolution?.state==='declined'?' selected':''}>Kept as written</option><option value="noted"${c.resolution?.state==='noted'?' selected':''}>Noted</option></select>
       <textarea class="r-note" rows="2" placeholder="How it was handled — the reviewer sees this…">${escapeHtml(c.resolution?.note||'')}</textarea>
@@ -1734,7 +1734,7 @@ async function loadWholeDoc(){
 // ---- Figure Review (Slice 2): the bulk figure gallery. Owner-only + AI-gated — #btn-figures only exists
 // when assistantOn(). It reuses the whole-doc fetch + loadAllReviews, enumerates figures via js/figures.js,
 // and on a card click JUMPS to that figure in the reader, where the existing figure popover + "Draw on the
-// figure" + comment + Send-to-Claude machinery takes over (no parallel comment system). ----
+// figure" + comment + Send-to-Writer machinery takes over (no parallel comment system). ----
 let _figJumpTimer = null;
 function _figByNumber(num){ const doc = document.getElementById('doc'); return doc ? (figTableMaps(doc).fig[num] || null) : null; }
 function jumpToFigure(num, tries = 30){                     // poll: the target chapter may still be rendering
@@ -2830,7 +2830,7 @@ async function loadOwnerOutline(){
   document.getElementById('comments').style.display = '';
   document.getElementById('topbar').innerHTML = `<button class="icbtn" id="ol-back" title="Home"><i class="ti ti-arrow-left"></i></button>
     <strong style="font-size:15px;font-weight:600;margin-left:4px">Proposed outline</strong>
-    <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Claude' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
+    <button class="btn btn-primary" id="btn-send" style="margin-left:auto">${assistantOn() ? '<i class="ti ti-send"></i>Send to Writer' : '<i class="ti ti-git-pull-request"></i>Review actions'}</button>
     <span class="pm-pill" title="${processingMode(_CFG) === 'cloud' ? 'Click to watch cloud activity' : 'Review processing: local'}" style="align-self:center;margin-left:8px;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;${processingMode(_CFG) === 'cloud' ? 'background:var(--accent,#2c64c4);color:#fff;cursor:pointer' : 'background:var(--bg-3,#eef);color:var(--text-3)'}">${modePill(_CFG.processingMode).label}${processingMode(_CFG) === 'cloud' ? ' ◵' : ''}</span>
     <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
     <button class="icbtn" id="btn-theme"><i class="ti ${themeIconName(document.documentElement.classList.contains('dark'))}"></i></button>`;
@@ -3488,7 +3488,7 @@ const BUTTONS = [
   ['ti-arrows-diagonal-minimize-2','Focus mode — hide both side panes'],
   ['ti-history',`Version history & diffs for this ${UNIT}`],
   ['ti-moon','Light / dark theme'],
-  ['ti-send','Send to Claude — apply edits or run review agents'],
+  ['ti-send','Send to Writer — apply edits or run review agents'],
   ['ti-circle','Check off a section as read (left rail)'],
   ['ti-dots','This menu — token, shortcuts, dashboard'],
 ];
@@ -3677,7 +3677,7 @@ function toggleAssistant(){
     localStorage.setItem(ASSIST_KEY, '0'); flash('AI assistant off. “Review actions” (stage → approve → merge) still works.');
   } else {
     localStorage.setItem(ASSIST_KEY, '1');
-    alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Claude”, which dispatches queued edits and agent reviews through your OWN Review repo’s GitHub Actions and Claude credentials. Nothing runs until you configure that (agent list + secrets). See the setup docs.');
+    alert('AI assistant enabled.\n\nThe core review flow — comment → stage edit → approve → merge — always works WITHOUT AI. Turning this on adds “Send to Writer”, which dispatches queued edits and agent reviews through your OWN Review repo using the engine you select. Nothing runs until you configure that (agent list + credentials). See the setup docs.');
   }
   if (document.getElementById('btn-send')) renderTopbar();   // refresh the top-bar button label
 }
@@ -3716,10 +3716,10 @@ async function openSettingsPage(section) {
     `<strong style="font-size:16px;font-weight:600"><i class="ti ti-settings" style="margin-right:7px"></i>Settings</strong>
      <button class="btn" id="set-close" style="margin-left:auto"><i class="ti ti-arrow-left"></i>Back to ${UNIT}s</button>`;
   document.getElementById('set-close').onclick = enterHome;
-  let claudeConnected = false, emailConfigured = false;
-  try { claudeConnected = claudeConnectionStatus(await listSecretNames(t)).claude; } catch {}
+  let aiConnected = false, emailConfigured = false;
+  try { const s = claudeConnectionStatus(await listSecretNames(t)); aiConnected = s.claude || s.codex; } catch {}
   try { const r = await loadAdvisorsRegistry(t); emailConfigured = r.reg?.email_configured === true; } catch {}
-  const state = { aiOn: assistantOn(), claudeConnected, emailConfigured, hasToken: !!t, hasTitle: !!(_CFG.doc && _CFG.doc.title) };
+  const state = { aiOn: assistantOn(), claudeConnected: aiConnected, emailConfigured, hasToken: !!t, hasTitle: !!(_CFG.doc && _CFG.doc.title) };
   const secs = settingsSections(_CFG, state);
   _setSection = resolveSection(secs, section || _setSection);
   const nav = secs.map(s => `<div class="set-item${s.id===_setSection?' active':''}${s.muted?' muted':''}" data-s="${s.id}">
@@ -3881,7 +3881,9 @@ async function renderSettingsAccess(pane, t) {
   const ownerSt = st('owner', { hasOwnerKey: has, ownerScopeOk });
   const revSt = st('reviewer', { reviewerSet: nameSet.has('ADVISOR_KEY') });
   const srcSt = st('source', { sourceExternal, sourceOwned: srcInfo.owned, sourceSet: nameSet.has('SOURCE_TOKEN') });
-  const claudeSt = st('claude', { claudeConnected: claudeConnectionStatus(names || []).claude });
+  const aiStatus = claudeConnectionStatus(names || []);
+  const claudeSt = st('claude', { claudeConnected: aiStatus.claude });
+  const codexSt = st('codex', { codexConnected: aiStatus.codex });
 
   pane.innerHTML = `
     <details class="set-card" style="margin-bottom:12px"><summary style="cursor:pointer;font-weight:600;font-size:13px">How Footnote uses your repos</summary>
@@ -3928,6 +3930,14 @@ async function renderSettingsAccess(pane, t) {
       <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.claude.forWhat)}</div>
       ${meta(byId.claude)}
       <button class="btn" id="set-claude-manage" style="padding:5px 12px;margin-top:2px">Connect / manage Claude</button>
+    </div>
+
+    <div class="set-card">
+      <h4>${escapeHtml(byId.codex.label)}</h4>
+      <div class="set-status">${g(codexSt)} ${escapeHtml(codexSt.text)}</div>
+      <div style="font-size:11.5px;color:var(--text-3);margin:6px 0 2px">${escapeHtml(byId.codex.forWhat)}</div>
+      ${meta(byId.codex)}
+      <button class="btn" id="set-codex-manage" style="padding:5px 12px;margin-top:2px">Connect / manage Codex</button>
     </div>`;
 
   pane.querySelector('#set-pat-save').onclick = () => {
@@ -3939,6 +3949,7 @@ async function renderSettingsAccess(pane, t) {
   if (clr) clr.onclick = () => { if (confirm('Remove the saved Owner key from this browser?')){ localStorage.removeItem('ghpat'); flash('Owner key removed.'); openSettingsPage('access'); } };
   pane.querySelector('#set-rev-manage').onclick = () => openAccessKeySheet(t, () => openSettingsPage('access'));
   pane.querySelector('#set-claude-manage').onclick = () => openClaudeDialog(t);
+  pane.querySelector('#set-codex-manage').onclick = () => openClaudeDialog(t);
   const srcBtn = pane.querySelector('#set-srctok-save');
   if (srcBtn) srcBtn.onclick = async () => {
     const v = pane.querySelector('#set-srctok').value.trim(); const stat = pane.querySelector('#set-srctok-stat');
@@ -4052,7 +4063,7 @@ function renderSettingsAgents(pane, t) {
     finally { create.disabled = false; }
   };
 }
-// Claude / AI section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
+// AI engines section. OFF: an understated card + the master toggle, nothing else (not AI-forward).
 // ON: status card (connected via <secret> / not connected) + Connect / Manage → dialog, + Run apply.
 // Local/Cloud review-processing toggle (lives in the Claude/AI settings section). Writes the mode to
 // projects.json AND commits <prefix>mode.json — the exact marker the CI engine's hard gate reads — so
@@ -4064,9 +4075,9 @@ function pmToggleCard() {
       .pm-b{border:none;background:var(--bg);padding:6px 13px;cursor:pointer;font:inherit;font-size:12.5px;color:var(--text);border-right:.5px solid var(--border)}
       .pm-b:last-child{border-right:none}.pm-b.on{background:var(--accent,#2c64c4);color:#fff}</style>
     <h4>Review processing</h4>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Where queued review work runs. <b>Local</b> (default): you run it on your machine (<code>process_reviews.py</code> + Claude Code) — the trusted route. <b>Cloud</b>: GitHub Actions runs it — experimental, not yet at local parity.</div>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Where queued review work runs. <b>Local</b> (default): you run it on your machine with the configured Claude or Codex CLI — the trusted route. <b>Cloud</b>: GitHub Actions runs it — experimental, not yet at local parity.</div>
     <div class="pm-seg" id="pm-seg">
-      <button type="button" class="pm-b${isCloud ? '' : ' on'}" data-mode="local">Local · Claude Code</button>
+      <button type="button" class="pm-b${isCloud ? '' : ' on'}" data-mode="local">Local · AI CLI</button>
       <button type="button" class="pm-b${isCloud ? ' on' : ''}" data-mode="cloud">Cloud · Actions</button>
     </div>
     <div id="pm-stat" style="font-size:11.5px;color:var(--text-3);margin-top:8px"></div>
@@ -4088,7 +4099,7 @@ function wirePmToggle(pane, t) {
       stat.textContent = mode === 'cloud'
         ? 'Cloud mode — GitHub Actions will process reviews (experimental).'
         : 'Local mode — run process_reviews.py to process; cloud CI is inert.';
-      if (document.getElementById('btn-send')) renderTopbar();   // refresh the Send-to-Claude pill
+      if (document.getElementById('btn-send')) renderTopbar();   // refresh the Send-to-Writer pill
     } catch (e) { stat.style.color = 'var(--warn)'; stat.textContent = 'Failed: ' + escapeHtml((e && e.message) || 'error'); }
   });
 }
@@ -4098,7 +4109,7 @@ async function renderSettingsAI(pane, t) {
   if (!on) {
     pane.innerHTML = pmToggleCard() + `<div class="set-card">
       <h4>AI assistant</h4>
-      <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Off by default. The core review flow — comment → stage → approve → merge — works fully without AI. Turn on to send comments to Claude on your own GitHub Actions + credentials.</div>
+      <div style="font-size:12px;color:var(--text-3);margin-bottom:10px">Off by default. The core review flow — comment → stage → approve → merge — works fully without AI. Turn on to process comments with Claude or Codex using your own credentials.</div>
       <button class="btn" id="set-ai-toggle" style="padding:5px 14px">Turn on</button>
     </div>`;
     wirePmToggle(pane, t);
@@ -4107,19 +4118,21 @@ async function renderSettingsAI(pane, t) {
   }
   pane.innerHTML = pmToggleCard() + `<div class="set-card"><div id="set-ai-conn" class="set-status">Checking…</div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
-        <button class="btn btn-primary" id="set-ai-connect" style="padding:5px 12px">Connect / manage Claude</button>
+        <button class="btn btn-primary" id="set-ai-connect" style="padding:5px 12px">Connect / manage AI engines</button>
         <button class="btn" id="set-ai-run" style="padding:5px 12px"><i class="ti ti-player-play"></i>Run apply now</button>
         <span id="set-ai-run-stat" style="font-size:11.5px;color:var(--text-3);align-self:center"></span>
       </div>
-      <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every Claude edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
+      <div style="font-size:11px;color:var(--text-3);margin-top:10px"><i class="ti ti-git-branch"></i> Every generated edit stages on a <code>review-edits/&lt;${escapeHtml(UNIT)}&gt;</code> branch for you to approve — nothing reaches your document without your say-so.</div>
       <div style="margin-top:10px"><button class="btn" id="set-ai-off" style="padding:4px 11px;font-size:11.5px;color:var(--text-3)">Turn AI assistant off</button></div>
     </div>` + modelBudgetCard();
   wireModelBudget(pane, t);
   const conn = pane.querySelector('#set-ai-conn');
   try { const s = claudeConnectionStatus(await listSecretNames(t));
-    conn.innerHTML = s.claude ? `<span class="ok">✓</span> Claude connected via <code>${s.via}</code> — every paper in ${escapeHtml(DATA_REPO)} is set.` : '<span class="warn">●</span> Not connected — add your Claude Code token.';
+    const claude = s.claude ? `<span class="ok">✓</span> Claude via <code>${s.via}</code>` : '<span class="warn">●</span> Claude not connected';
+    const codex = s.codex ? `<span class="ok">✓</span> Codex via <code>${s.codexVia}</code>` : '<span style="color:var(--text-3)">○</span> Codex not connected';
+    conn.innerHTML = `${claude}<br>${codex}<div style="font-size:11px;color:var(--text-3);margin-top:5px">Credentials are shared by every paper in ${escapeHtml(DATA_REPO)}.</div>`;
   } catch(e){ conn.innerHTML = (e && e.code === 'NOSCOPE')
-      ? '<span class="warn">●</span> Can’t verify from here — your access token can’t list secrets. If you connected Claude before, it still works. To connect or change it, use <b>Connect / manage Claude</b> below with a token that has <b>Secrets + Actions</b> access.'
+      ? '<span class="warn">●</span> Can’t verify from here — your access token can’t list secrets. Existing credentials still work. To connect or change an engine, use <b>Connect / manage AI engines</b> below with a token that has <b>Secrets + Actions</b> access.'
       : 'Couldn’t check connection: ' + escapeHtml((e && e.message) || 'error'); }
   pane.querySelector('#set-ai-connect').onclick = () => openClaudeDialog(t);
   pane.querySelector('#set-ai-run').onclick = async () => {
@@ -4139,17 +4152,26 @@ async function renderSettingsAI(pane, t) {
 // haiku) that resolve to the LATEST of each tier, so the list stays current as new models ship. Only
 // relevant in Cloud mode (local runs use your own Claude Code).
 function _modelOptions(selected, includeInherit) {
-  const opts = includeInherit ? [{ value: AI_INHERIT, label: 'Default (use the model above)' }] : [];
-  for (const m of AI_MODELS) opts.push({ value: m.value, label: m.label });
   const sel = String(selected == null ? '' : selected).trim();
-  if (sel && !opts.some(o => o.value === sel)) opts.push({ value: sel, label: sel });   // pinned legacy id
-  return opts.map(o => `<option value="${escapeHtml(o.value)}"${o.value === sel ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('');
+  const option = o => `<option value="${escapeHtml(o.value)}"${o.value === sel ? ' selected' : ''}>${escapeHtml(o.label)}</option>`;
+  let html = includeInherit ? option({ value: AI_INHERIT, label: 'Default (use the model below)' }) : '';
+  for (const [provider, label] of [['claude', 'Claude Code'], ['codex', 'OpenAI Codex']]) {
+    const models = AI_MODELS.filter(m => m.provider === provider);
+    html += `<optgroup label="${label}">${models.map(option).join('')}</optgroup>`;
+  }
+  if (sel && sel !== AI_INHERIT && !AI_MODELS.some(o => o.value === sel)) html += option({ value: sel, label: sel });
+  return html;
 }
 function modelBudgetCard() {
   const inp = 'width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text)';
   return `<div class="set-card" id="set-mb">
-    <h4>Cloud model &amp; budget</h4>
-    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">What the <b>cloud</b> review runs use. The default model runs <b>everything</b> — the writer and every review agent — unless you override an individual agent below. For a dissertation, leaving the default on <b>Opus</b> uses the best model throughout; drop a light, high-volume agent to Sonnet to trim cost. (Local runs use your own Claude Code and ignore these.)</div>
+    <h4>Cloud models &amp; budget</h4>
+    <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">Choose who writes your prose independently from the agents that critique it. Existing settings remain on Claude unless you change them.</div>
+    <div style="padding:11px;border:1px solid var(--accent,#2c64c4);border-radius:8px;margin-bottom:12px;background:color-mix(in srgb,var(--accent,#2c64c4) 6%,var(--bg))">
+      <label style="display:block;font-size:13px;font-weight:650;margin-bottom:4px">Writer / Editor <span style="font-weight:400;color:var(--text-3)">— drafts your dissertation prose</span></label>
+      <select id="mb-writer" style="${inp};margin-bottom:6px">${_modelOptions(AI_INHERIT, true)}</select>
+      <div style="font-size:11px;color:var(--text-3)">Set this to Codex while leaving the default below on Claude to change only the prose writer.</div>
+    </div>
     <label style="display:block;font-size:12px;font-weight:600;margin-bottom:4px">Default model <span style="font-weight:400;color:var(--text-3)">— used by everything unless overridden</span></label>
     <select id="mb-model" style="${inp};margin-bottom:12px">${_modelOptions(AI_DEFAULT_MODEL, false)}</select>
     <details style="margin-bottom:12px"><summary style="cursor:pointer;font-size:12px;font-weight:600">Per-agent overrides <span style="font-weight:400;color:var(--text-3)">— optional</span></summary>
@@ -4157,7 +4179,7 @@ function modelBudgetCard() {
     <div style="display:flex;gap:12px;flex-wrap:wrap">
       <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Cost cap (USD / job)
         <input id="mb-cost" type="number" min="0" step="0.5" placeholder="off" style="${inp};margin-top:4px;font-weight:400"></label>
-      <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Max Claude calls / job
+      <label style="flex:1;min-width:120px;font-size:12px;font-weight:600">Max AI calls / job
         <input id="mb-calls" type="number" min="1" step="1" placeholder="100" style="${inp};margin-top:4px;font-weight:400"></label>
     </div>
     <div style="font-size:11px;color:var(--text-3);margin-top:8px">A job stops as soon as either cap is hit and tells you in Cloud Activity. Cost cap blank = off; calls default 100.</div>
@@ -4165,7 +4187,7 @@ function modelBudgetCard() {
   </div>`;
 }
 async function wireModelBudget(pane, t) {
-  const sel = pane.querySelector('#mb-model'), cost = pane.querySelector('#mb-cost'),
+  const sel = pane.querySelector('#mb-model'), writer = pane.querySelector('#mb-writer'), cost = pane.querySelector('#mb-cost'),
         calls = pane.querySelector('#mb-calls'), stat = pane.querySelector('#mb-stat'),
         agentsBox = pane.querySelector('#mb-agents');
   if (!sel) return;
@@ -4179,6 +4201,7 @@ async function wireModelBudget(pane, t) {
       getVariable(t, 'MAX_CLAUDE_CALLS').catch(() => null)]);
     if (m) { sel.innerHTML = _modelOptions(m, false); }   // reflect the saved default (adds a pinned id if legacy)
     if (am) { try { const p = JSON.parse(am); if (p && typeof p === 'object') agentModels = p; } catch {} }
+    if (writer) writer.innerHTML = _modelOptions(agentModels.writer || AI_INHERIT, true);
     if (c && Number(c) > 0) cost.value = c;
     if (n && Number(n) > 0) calls.value = n;
   } catch {}
@@ -4198,6 +4221,7 @@ async function wireModelBudget(pane, t) {
     stat.style.color = 'var(--text-3)'; stat.textContent = 'Saving…';
     // Build the per-agent map from the dropdowns; only non-inherit choices are persisted.
     const map = {};
+    if (writer && writer.value && writer.value !== AI_INHERIT) map.writer = writer.value;
     pane.querySelectorAll('[data-agent-model]').forEach(s => { if (s.value && s.value !== AI_INHERIT) map[s.dataset.agentModel] = s.value; });
     try {
       await setVariable(t, 'CLAUDE_MODEL', sel.value);
@@ -4211,26 +4235,29 @@ async function wireModelBudget(pane, t) {
     }
   };
 }
-// Connect Claude dialog: primary = paste the `claude setup-token` value (CLAUDE_CODE_OAUTH_TOKEN);
-// Advanced = Anthropic API key fallback. Save seals via setAiSecrets + self-heals the engine.
+// Connect AI engines: each non-empty credential is sealed; blanks preserve existing secrets.
 function openClaudeDialog(t) {
   const box = document.createElement('div');
   box.innerHTML = `
-    <div style="font-size:12.5px;margin-bottom:8px">On your computer run <code>claude setup-token</code>, sign in, and paste the token it prints (recommended — no API bill; counts against your Claude plan).</div>
+    <div style="font-size:12.5px;font-weight:650;margin-bottom:4px">OpenAI Codex</div>
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:6px">For cloud Writer/Editor runs, paste an OpenAI API key. Local runs use your ambient <code>codex login</code> session and need no secret.</div>
+    <input id="set-codex-key" type="password" placeholder="CODEX_API_KEY" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:14px">
+    <div style="font-size:12.5px;font-weight:650;margin-bottom:4px">Claude Code</div>
+    <div style="font-size:11.5px;color:var(--text-3);margin-bottom:6px">Run <code>claude setup-token</code>, sign in, and paste the token it prints (recommended — no API bill; counts against your Claude plan).</div>
     <input id="set-claude-tok" type="password" placeholder="CLAUDE_CODE_OAUTH_TOKEN" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
     <details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--text-3);font-size:11.5px">Prefer an Anthropic API key? (billed per token)</summary>
       <input id="set-claude-key" type="password" placeholder="sk-ant-… (ANTHROPIC_API_KEY)" style="width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);margin-top:8px"></details>
     <input id="set-claude-etok" type="password" placeholder="GitHub token with Secrets + Actions access (only if the saved one can’t)" style="display:none;width:100%;box-sizing:border-box;font:inherit;font-size:12.5px;padding:7px 9px;border:.5px solid var(--warn);border-radius:6px;background:var(--bg);color:var(--text);margin-bottom:8px">
     <div id="set-claude-stat" style="font-size:11.5px;color:var(--text-3)"></div>`;
-  openModal('<i class="ti ti-robot-face" style="margin-right:7px"></i>Connect Claude', box, [
+  openModal('<i class="ti ti-robot-face" style="margin-right:7px"></i>Connect AI engines', box, [
     { label:'Save & connect', primary:true, onClick: async (close) => {
       const stat = box.querySelector('#set-claude-stat');
-      const values = { claudeCodeToken: box.querySelector('#set-claude-tok').value, anthropicKey: box.querySelector('#set-claude-key')?.value || '' };
-      if (!values.claudeCodeToken.trim() && !values.anthropicKey.trim()){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
+      const values = { codexApiKey: box.querySelector('#set-codex-key').value, claudeCodeToken: box.querySelector('#set-claude-tok').value, anthropicKey: box.querySelector('#set-claude-key')?.value || '' };
+      if (!values.codexApiKey.trim() && !values.claudeCodeToken.trim() && !values.anthropicKey.trim()){ stat.textContent='Paste at least one engine credential first.'; return; }
       const etok = (box.querySelector('#set-claude-etok').value || '').trim() || t;   // elevated one-time token if the saved login can't write secrets
       stat.style.color='var(--text-3)'; stat.textContent='Sealing…';
       try { const names = await setAiSecrets(etok, sealToBase64, values);
-        if (!names.length){ stat.textContent='Paste your Claude Code token (or an API key) first.'; return; }
+        if (!names.length){ stat.textContent='Paste at least one engine credential first.'; return; }
         try { await ensureApplyEngine(DATA_REPO, etok); } catch {}
         close(); flash('Saved ' + names.join(' + ') + ' to your Review repo.'); openSettingsPage('ai');
       } catch(e){
@@ -5126,7 +5153,7 @@ async function requestChanges(id, note){
   const jobs = Array.isArray(jj) ? jj : [];
   jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-edits', chapter:current, comment_ids:[id], revision:true, revise_note:note, status:'queued', requested_ts:ts });
   await putJson(t, 'jobs.json', jobs, js, `review: revision request ${id}`);
-  flash('Change request sent to Claude — it’ll come back as a fresh staged edit.');
+  flash('Change request sent to the Writer — it’ll come back as a fresh staged edit.');
 }
 const markAdvisorRead = (advisorId, ch, cid, val=true) => _mutateAdvisorComment(advisorId, ch, cid, c => { c.read = val; }, `read: ${advisorId} ${ch} ${cid}`);
 const replyToAdvisorComment = (advisorId, ch, cid, text) => _mutateAdvisorComment(advisorId, ch, cid, c => { c.thread = [...(c.thread||[]), { author:'author', text, ts:new Date().toISOString() }]; c.read = true; }, `reply: ${advisorId} ${ch} ${cid}`);
@@ -5202,7 +5229,7 @@ document.addEventListener('click', e => {
   if (!(e.target.closest && e.target.closest('.pm-pill'))) return;
   if (typeof processingMode !== 'function' || processingMode(_CFG) !== 'cloud') return;
   const j = localStorage.getItem('footnote:lastcloud:' + (_projectId || DATA_REPO));
-  if (j) openCloudActivity(j); else flash('No cloud job yet — use “Send to Claude” to start one.');
+  if (j) openCloudActivity(j); else flash('No cloud job yet — use “Send to Writer” to start one.');
 });
 (() => { const r = sessionStorage.getItem('_resume'); if (r){ sessionStorage.removeItem('_resume'); enterChapter(r); } else enterHome(); })();   // a refresh returns you to where you were
 document.addEventListener('mouseover', e => { const c = e.target.closest?.('.chcard'); if (c) c.style.borderColor='var(--border-2)'; });

@@ -3,8 +3,8 @@
 
 Some agents can't run in the data repo's GitHub Actions: they use tools (Bash/Read/Write) and are
 bound to code and paths that live only on the operator's own machine. ci_local drains the SAME
-run-agents job queue LOCALLY — invoking a tool-enabled Claude with each agent's working directory and
-model — and writes the results back as review comments through the shared pure core (ci_review_common).
+run-agents job queue LOCALLY — invoking the selected tool-enabled engine with each agent's working
+directory and model — and writes the results back through the shared pure core (ci_review_common).
 
 Split of responsibility (keyed on each catalog entry's ``execution`` field):
   * CI (ci_apply.run_agent_cli): read-only, document-only critics — ``execution: "ci"`` (the default).
@@ -16,12 +16,13 @@ OWN code; it never writes the Footnote-reviewed document's source. Its result co
 the author then acts on — the deterministic review→stage→approve→merge path is unchanged.
 
 Pure decision logic (command construction, agent selection, comment folding) is unit-tested; the live
-``claude`` subprocess is behind an injectable ``agent_fn`` and verified by running it locally.
+engine subprocess is behind an injectable ``agent_fn`` and verified by running it locally.
 """
 import json
 import os
 import subprocess
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import ci_review_common as R  # noqa: E402
 import ci_agents  # noqa: E402
 import ci_authoring  # noqa: E402
+import ci_llm  # noqa: E402
 
 
 def _now_iso():
@@ -36,8 +38,8 @@ def _now_iso():
 
 
 # --------------------------------------------------------------- command construction (pure)
-def build_local_command(agent_entry, directive, default_model):
-    """Build the local Claude invocation for one agent. Returns ``{argv, cwd}``.
+def build_local_command(agent_entry, directive, default_model, codex_out_path=None):
+    """Build one local engine invocation. Returns ``{argv, cwd, provider, out_path}``.
 
     Unlike the CI call (``claude -p <directive> --output-format json`` with NO tools, document piped on
     stdin), a local agent gets its declared tools allowed and runs in its own working directory, so it
@@ -45,13 +47,19 @@ def build_local_command(agent_entry, directive, default_model):
     agent's working directory (None → the runner's current directory). Pure — no subprocess here.
     """
     entry = agent_entry or {}
-    model = entry.get("model") or default_model
-    argv = ["claude", "-p", directive, "--output-format", "json", "--model", model]
-    tools = [t for t in (entry.get("tools") or []) if isinstance(t, str)]
-    if tools:
-        # allow exactly the tools the agent declares (the CI path allows none)
-        argv += ["--allowedTools", ",".join(tools)]
-    return {"argv": argv, "cwd": entry.get("cwd") or None}
+    provider, model = ci_llm.parse_model_spec(entry.get("model") or default_model)
+    if provider == "codex":
+        if not codex_out_path:
+            raise ValueError("codex_out_path is required for a local Codex invocation")
+        argv = ci_llm.codex_argv(directive, model, codex_out_path, sandbox="workspace-write")
+    else:
+        argv = ci_llm.claude_argv(directive, model)
+        tools = [t for t in (entry.get("tools") or []) if isinstance(t, str)]
+        if tools:
+            # Claude needs its declared tools allowlisted; Codex gets them from its workspace sandbox.
+            argv += ["--allowedTools", ",".join(tools)]
+    return {"argv": argv, "cwd": entry.get("cwd") or None,
+            "provider": provider, "out_path": codex_out_path if provider == "codex" else None}
 
 
 # --------------------------------------------------------------- job orchestration (pure)
@@ -59,7 +67,7 @@ def run_local_job(job, review, catalog, agent_fn, ts, idgen, field=""):
     """Run the LOCAL agents selected by a run-agents job and fold their findings into the review.
 
     Only agents whose catalog entry is ``execution: "local"`` are run here (CI agents are left for CI).
-    ``agent_fn(agent_id, task)`` is the injectable local-Claude boundary. Returns the findings shaped as
+    ``agent_fn(agent_id, task)`` is the injectable local-engine boundary. Returns the findings shaped as
     SUBMITTED reviewer comments (via ``R.agent_findings_comments``) — the caller routes them to the AI
     reviewer so LOCAL and CLOUD both give the owner the accept/decline flow. Pure: ``ts`` injected.
     """
@@ -73,9 +81,9 @@ def run_local_job(job, review, catalog, agent_fn, ts, idgen, field=""):
     return R.agent_findings_comments(local_job, outputs, ts, idgen=idgen)
 
 
-# --------------------------------------------------------------- live Claude boundary (local)
+# --------------------------------------------------------------- live engine boundary (local)
 def run_local_agent_cli(agent_id, task, catalog=None, field="", default_model=None):
-    """Invoke a tool-enabled Claude locally as one agent; returns a (capped) list of finding specs.
+    """Invoke a tool-enabled engine locally as one agent; returns a capped list of finding specs.
     Thin, live-gated boundary: resolves the directive from the catalog, builds the local command
     (tools + cwd + model), runs it, and parses findings. Missing CLI / non-zero exit → [] (the job is
     left for a retry rather than crashing the drain)."""
@@ -83,18 +91,30 @@ def run_local_agent_cli(agent_id, task, catalog=None, field="", default_model=No
     default_model = default_model or os.environ.get("CLAUDE_MODEL") or "claude-opus-4-8"
     directive = ci_agents.resolve_agent_directive(agent_id, catalog, field)
     entry = (catalog or ci_agents.builtin_catalog()).get(agent_id)
-    cmd = build_local_command(entry, directive, default_model)
     context = ci_apply.agent_context(task)
-    try:
-        proc = subprocess.run(cmd["argv"], input=context, capture_output=True, text=True, cwd=cmd["cwd"])
-    except OSError as e:
-        print(f"[local] agent {agent_id}: claude CLI unavailable ({e}) — leaving job", file=sys.stderr)
-        return []
-    if proc.returncode != 0:
-        print(f"[local] agent {agent_id}: claude failed ({proc.returncode}): {proc.stderr[:300]}",
-              file=sys.stderr)
-        return []
-    return ci_agents.cap_findings(ci_apply.parse_agent_findings(proc.stdout))
+    with tempfile.TemporaryDirectory(prefix="footnote-local-") as tmpdir:
+        out_path = str(Path(tmpdir) / "codex-last.txt")
+        cmd = build_local_command(entry, directive, default_model, codex_out_path=out_path)
+        try:
+            proc = subprocess.run(cmd["argv"], input=context, capture_output=True, text=True, cwd=cmd["cwd"])
+        except OSError as e:
+            print(f"[local] agent {agent_id}: {cmd['provider']} CLI unavailable ({e}) — leaving job",
+                  file=sys.stderr)
+            return []
+        failed = ci_llm.codex_failed(proc.stdout) if cmd["provider"] == "codex" else ""
+        if proc.returncode != 0 or failed:
+            detail = failed or proc.stderr[:300]
+            print(f"[local] agent {agent_id}: {cmd['provider']} failed ({proc.returncode}): {detail}",
+                  file=sys.stderr)
+            return []
+        if cmd["provider"] == "codex":
+            try:
+                raw = Path(out_path).read_text(encoding="utf-8")
+            except OSError:
+                return []
+        else:
+            raw = proc.stdout
+        return ci_agents.cap_findings(ci_apply.parse_agent_findings(raw))
 
 
 # --------------------------------------------------------------- thin CLI (live-gated)

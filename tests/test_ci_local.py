@@ -37,6 +37,43 @@ def test_build_local_command_defaults_model_and_leaves_cwd_none_when_absent():
     assert cmd["cwd"] is None
 
 
+def test_build_local_command_routes_codex_with_workspace_write_sandbox():
+    entry = {"id": "heatr", "execution": "local", "tools": ["Bash", "Read", "Write"],
+             "model": "codex:gpt-5.6-terra", "cwd": "/research/geo-prewarp"}
+    cmd = L.build_local_command(entry, "SYSTEM PROMPT DIRECTIVE", default_model="opus",
+                                codex_out_path="/tmp/codex-last.txt")
+    assert cmd["provider"] == "codex"
+    assert cmd["argv"] == [
+        "codex", "exec", "--json", "--sandbox", "workspace-write",
+        "--model", "gpt-5.6-terra", "-o", "/tmp/codex-last.txt", "SYSTEM PROMPT DIRECTIVE",
+    ]
+    assert "--allowedTools" not in cmd["argv"]
+    assert cmd["cwd"] == "/research/geo-prewarp"
+
+
+def test_run_local_agent_cli_reads_codex_last_message(monkeypatch):
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["argv"] = argv
+        out_path = argv[argv.index("-o") + 1]
+        Path(out_path).write_text('[{"quote":"x","body":"Codex finding","tag":"clarity"}]',
+                                  encoding="utf-8")
+        return SimpleNamespace(returncode=0,
+                               stdout='{"type":"turn.completed","usage":{"input_tokens":1}}\n',
+                               stderr="")
+
+    monkeypatch.setattr(L.subprocess, "run", fake_run)
+    catalog = {"heatr": {"id": "heatr", "category": "critic", "execution": "local",
+                           "systemPrompt": "Review it", "model": "codex:gpt-5.6-terra"}}
+    findings = L.run_local_agent_cli("heatr", {"chapter": "ch1"}, catalog=catalog)
+    assert findings == [{"quote": "x", "body": "Codex finding", "tag": "clarity"}]
+    assert seen["argv"][0:2] == ["codex", "exec"]
+
+
 # --------------------------------------------------------------- run_local_job (pure orchestration)
 def _catalog_with_local():
     cat = C.builtin_catalog()
