@@ -328,6 +328,21 @@ def _unit_sourcefile(prefix, unit_id):
     return next((r.get("sourceFile") for r in rows if r.get("id") == unit_id), None)
 
 
+def figure_markup_path(comment, prefix):
+    """Slice 4: resolve a figure comment's hand-drawn markup PNG to an existing on-disk path, or None.
+
+    The client commits the markup to the data repo at ``<prefix>markups/<commentId>.png`` and records
+    ``comment.markup.path`` (the prefix-less ``markups/<id>.png``). The apply job runs with the data repo as
+    cwd (review_path/_write_json are relative), so the file sits at ``<prefix><path>``. Returns an ABSOLUTE
+    path only when the file actually exists — a recorded-but-missing markup yields None so the writer falls
+    back to the text round-trip instead of handing Claude a dangling path. Pure except the existence check."""
+    mp = ((comment or {}).get("markup") or {}).get("path")
+    if not mp:
+        return None
+    disk = f"{prefix}{mp}"
+    return os.path.abspath(disk) if os.path.exists(disk) else None
+
+
 def read_text_files(root):
     """Every text source file under ``root`` as ``{relpath: text}`` (skips binaries/figures)."""
     out = {}
@@ -1040,9 +1055,18 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
             def _is_fig(c):
                 return bool((c.get("anchor") or {}).get("figure")) or c.get("tag") == "figure"
             def writer_call(comment, wtask, _pw=prose_writer, _fw=fig_writer, _f=field):
+                is_fig = _is_fig(comment)
+                # Slice 4: hand the Figure Drafter the on-disk path of the reviewer's hand-drawn markup PNG
+                # so it can Read the image and edit from what it SEES. Augment the task BEFORE the (possibly
+                # stubbed) writer call so both the real CLI and injected test writers get it. Additive +
+                # guarded — no markup / missing file → task unchanged (the body already carries a text region).
+                if is_fig:
+                    mp = figure_markup_path(comment, prefix)
+                    if mp:
+                        wtask = {**wtask, "markup_path": mp}
                 if claude_fn:
                     return claude_fn(wtask)
-                return run_writer_cli(wtask, catalog, _f, _fw if _is_fig(comment) else _pw)
+                return run_writer_cli(wtask, catalog, _f, _fw if is_fig else _pw)
             _apply_edits_pipeline(prefix, job, review, files, source_dir, repo_dir, remote_repo, token,
                                   base_branch, build_root, writer_call, agent_fn,
                                   catalog, review_agents, field)
