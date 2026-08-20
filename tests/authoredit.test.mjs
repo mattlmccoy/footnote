@@ -14,6 +14,28 @@ test('source-aware editor protects citations, cross-references, math, units, and
   assert.equal(serializeAuthorSegments(model, segments(model)), src);
 });
 
+test('literal section and chapter references are protected even without LaTeX ref commands', () => {
+  const src = 'The hardware in section 3.1 supports sections 3.1 and 3.3; chapter 5 gives the result.';
+  const model = parseAuthorSource(src);
+  const refs = model.nodes.filter(n => n.kind === 'reference');
+  assert.deepEqual(refs.map(n => n.raw), ['section 3.1', 'sections 3.1 and 3.3', 'chapter 5']);
+  assert.equal(serializeAuthorSegments(model, segments(model)), src);
+});
+
+test('literal figure, equation, and appendix reference lists and ranges are protected', () => {
+  const src = 'See Figures 5.1--5.3, equations (2) and (3), and Appendix A.';
+  const model = parseAuthorSource(src);
+  const refs = model.nodes.filter(n => n.kind === 'reference');
+  assert.deepEqual(refs.map(n => n.raw), ['Figures 5.1--5.3', 'equations (2) and (3)', 'Appendix A']);
+  assert.equal(serializeAuthorSegments(model, segments(model)), src);
+});
+
+test('reference words embedded in ordinary words are not falsely locked', () => {
+  const src = 'This subsection contains three equations but no numbered reference; the appendix then closes.';
+  const model = parseAuthorSource(src);
+  assert.equal(model.nodes.some(n => n.kind === 'reference'), false);
+});
+
 test('formatting wrappers keep their delimiters while exposing their prose', () => {
   const src = 'This is \\emph{important language} in the chapter.';
   const model = parseAuthorSource(src);

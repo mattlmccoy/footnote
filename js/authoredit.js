@@ -14,6 +14,18 @@ const CITE_COMMANDS = new Set(['cite', 'citep', 'citet', 'parencite', 'textcite'
 const TERM_COMMANDS = new Set(['gls', 'Gls', 'glspl', 'Glspl', 'acrshort', 'acrlong', 'acrfull']);
 const QUANTITY_COMMANDS = new Set(['SI', 'SIrange', 'num', 'qty', 'qtyrange', 'ang']);
 
+// This dissertation also contains intentionally literal cross-references such as "section 3.1",
+// "sections 3.1 and 3.3", and "equations (2) and (3)". They have no LaTeX command for the parser to
+// recognize, but the reading view turns them into links. Treat the complete numbered phrase as one
+// protected object so Author Edit Mode cannot silently break or renumber the link text.
+const REF_NUMBER = String.raw`(?:\(\d+(?:\.\d+)*\)|\d+(?:\.\d+)*)`;
+const REF_SEPARATOR = String.raw`(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to|through)\s+|\s*(?:--|[–—-])\s*)`;
+const TEXTUAL_REFERENCE = new RegExp(
+  String.raw`^(?:sections?|chapters?|figures?|fig\.?|tables?|equations?|eqs?\.?)[\s~]+${REF_NUMBER}(?:${REF_SEPARATOR}${REF_NUMBER})*`,
+  'i',
+);
+const TEXTUAL_APPENDIX_REFERENCE = /^(?:[Aa]ppendix|[Aa]ppendices)[\s~]+[A-Z](?:(?:,\s*(?:(?:and|or)\s+)?|\s+(?:and|or|to|through)\s+|\s*(?:--|[–—-])\s*)[A-Z])*/;
+
 function balancedEnd(source, start, open, close) {
   let depth = 0;
   for (let i = start; i < source.length; i++) {
@@ -57,6 +69,7 @@ function tokenLabel(raw, kindHint = '') {
     const name = (raw.match(/^\\([A-Za-z@]+)/) || [,'format'])[1];
     return { kind: 'format', label: name.replace(/^text/, '') || 'format' };
   }
+  if (kindHint === 'text-reference') return { kind: 'reference', label: raw.replace(/~/g, ' ').replace(/\s+/g, ' ').trim() };
   return commandInfo(raw);
 }
 
@@ -77,6 +90,13 @@ export function parseAuthorSource(source = '') {
   const flush = () => { text(source.slice(start, i)); };
   while (i < source.length) {
     const ch = source[i];
+    if ((i === 0 || !/[A-Za-z]/.test(source[i - 1])) && /[A-Za-z]/.test(ch)) {
+      const tail = source.slice(i);
+      const ref = tail.match(TEXTUAL_REFERENCE) || tail.match(TEXTUAL_APPENDIX_REFERENCE);
+      if (ref) {
+        flush(); token(ref[0], 'text-reference'); i += ref[0].length; start = i; continue;
+      }
+    }
     if (ch === '%' && (i === 0 || source[i - 1] !== '\\')) {
       flush();
       const end = source.indexOf('\n', i);
