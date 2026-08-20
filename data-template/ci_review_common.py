@@ -371,6 +371,49 @@ def process_apply_direct_job(job, review, files, ts, prefix=""):
     return {**review, "comments": new_comments}, work, branch, applied
 
 
+def process_author_edit_job(job, review, files, ts, prefix=""):
+    """Apply literal prose edits created in the owner's source-aware Author Edit Mode.
+
+    Author edits are not reviewer comments and never pass through an LLM. Internally they are stored
+    as hidden, pre-approved review records so the existing preview and approved-only merge machinery
+    remains the single publication path. Every still-pending author edit is replayed from main when a
+    new one arrives; the disposable review branch therefore contains the complete author draft rather
+    than only the latest paragraph.
+    """
+    comments = list((review or {}).get("comments") or [])
+    have = {c.get("id") for c in comments if isinstance(c, dict)}
+    for i, edit in enumerate(job.get("edits") or []):
+        if not isinstance(edit, dict) or edit.get("op", "replace") != "replace":
+            continue
+        cid = edit.get("id") or f"ae_{job.get('id', 'job')}_{i}"
+        if cid in have:
+            continue
+        before = edit.get("prose_before", "")
+        comments.append({
+            "id": cid,
+            "kind": "author-edit",
+            "tag": "edit",
+            "hidden": True,
+            "author": "owner",
+            "status": "queued",
+            "decision": "approve",
+            "created_ts": ts,
+            "anchor": {"quote": before[:90], "section": ""},
+            "body": "Author edit",
+            "prose_before": before,
+            "prose_after": edit.get("prose_after", ""),
+            "source_hash": edit.get("source_hash", ""),
+            "edit": {"op": "replace", "find": edit.get("find", ""),
+                     "replacement": edit.get("replacement", "")},
+        })
+        have.add(cid)
+    active = [c.get("id") for c in comments
+              if c.get("kind") == "author-edit" and c.get("status") in ("queued", "staged", "approved")]
+    direct = {"id": job.get("id"), "type": "apply-direct", "chapter": job.get("chapter"),
+              "comment_ids": active}
+    return process_apply_direct_job(direct, {**(review or {}), "comments": comments}, files, ts, prefix)
+
+
 # --------------------------------------------------------------- approve -> merge
 # Merge is the ONE place edits become permanent, and it is author-triggered only (the front-end sets
 # approved comments to status 'approved' and queues a merge job; reject -> 'declined', revise ->

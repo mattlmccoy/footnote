@@ -97,9 +97,10 @@ async function ensureFiles(files, dataRepo, token, fetchImpl, base, label) {
   const root = (base || (typeof location !== 'undefined' ? location.pathname.replace(/[^/]*$/, '') : './'));
   const h = { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json' };
   const norm = s => (s || '').replace(/\s/g, '');   // GitHub returns 76-col-wrapped base64; b64() emits none
+  const templateVersion = Date.now();                 // bypass a stale Pages/CDN copy during self-heal
   const out = { seeded: [], already: [] };
   for (const { src, dest } of files) {
-    const res = await f(`${root}data-template/${src}`);
+    const res = await f(`${root}data-template/${src}?v=${templateVersion}`, { cache:'no-store' });
     if (!res || !res.ok) throw new Error(`couldn’t read template ${src}`);
     const content = b64(await res.text());
     // Refresh, not just seed: if the file exists but its content differs from the current template (a stale

@@ -37,6 +37,7 @@ import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices fol
 import { readingViewState } from './setupstatus.js?v=8716f90';   // distinguish a failed tree read from genuinely-not-built
 import { readingSource, showPreviewToggle } from './previewsource.js?v=eb52e54';   // gated, opt-in "Preview staged edits" decision logic (default view stays merged content)
 import { paragraphChangeDetails } from './paragraphdiff.js?v=c0968db';
+import { parseAuthorSource, serializeAuthorSegments, authorPlainText, authorEditJob } from './authoredit.js?v=1';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=2c9ac2d';
@@ -215,6 +216,7 @@ const MOD = IS_MAC ? '⌘' : 'Ctrl+';
 const read = document.getElementById('read');
 let current = 'ch_modeling';
 let review = loadLocalReview(current);
+let authorEditMode = false;
 // "Preview staged edits" (opt-in): does a branch render preview/<current>.html exist, and has this unit
 // been probed yet. Reset per chapter. The default reading view stays content/<id>.html regardless.
 let _previewExists = false, _previewProbedFor = null, _previewBannerDismissed = false;
@@ -277,6 +279,7 @@ function renderTopbar(){
     <div class="search"><i class="ti ti-search"></i><input id="search" placeholder="Search ${UNIT} · ${MOD}\\ for all"></div>
     <div style="margin-left:auto;display:flex;align-items:center;gap:3px">
       <button class="icbtn" id="src-fresh" data-compact="1" title="How current the reading view is vs your source repo. Click to re-check or rebuild." style="width:auto;padding:0 9px;gap:5px;font-size:12px;color:var(--text-3)"><i class="ti ti-git-branch"></i><span id="src-fresh-lbl">…</span></button>
+      ${current !== '__whole__' && current !== '__outline__' ? '<button class="btn author-edit-toggle" id="btn-author-edit" title="Edit the human prose while Footnote protects references, citations, math, and LaTeX structure"><i class="ti ti-pencil"></i><span>Edit text</span></button>' : ''}
       <button class="icbtn" id="btn-refresh" title="Refresh — keeps your place"><i class="ti ti-refresh"></i></button>
       <button class="icbtn" id="btn-focus" title="Focus mode (f)"><i class="ti ti-arrows-diagonal-minimize-2"></i></button>
       <button class="icbtn" id="btn-history" title="History"><i class="ti ti-history"></i></button>
@@ -291,6 +294,7 @@ function renderTopbar(){
   document.getElementById('chsel').onclick = openChapterMenu;
   document.getElementById('btn-theme').onclick = withColorEasterEgg(toggleTheme);
   document.getElementById('btn-send').onclick = openSendMenu;
+  { const ae = document.getElementById('btn-author-edit'); if (ae) ae.onclick = toggleAuthorEditMode; }
   { const bf = document.getElementById('btn-figures'); if (bf) bf.onclick = openFiguresGallery; }
   document.getElementById('btn-history').onclick = showHistory;
   document.getElementById('btn-focus').onclick = toggleFocus;
@@ -298,6 +302,7 @@ function renderTopbar(){
   document.getElementById('btn-settings').onclick = () => openSettingsPage();
   mountSrcFresh();                          // source-freshness pill (compact); paints from cache on unit switch
   renderHelpFab();                          // body-level, so it outlives every view swap
+  applyAuthorEditMode();
   const si = document.getElementById('search');
   si.addEventListener('keydown', e => { if (e.key === 'Enter') runSearch(si.value); if (e.key === 'Escape'){ si.value=''; clearSearch(); } });
 }
@@ -640,9 +645,27 @@ async function renderChapterAppendices(ch){
   // (not stretched full-pane); fall back to `read` if the article wrapper isn't present.
   (read.querySelector('#doc') || read).appendChild(wrap);
 }
-// ---------- in-context direct editor (prose -> confirm LaTeX diff -> stage) ----------
-const _srcmap = {};   // ch -> { normHead: source_text }
+// ---------- Author Edit Mode (human prose + protected LaTeX objects -> deterministic source patch) ----------
+const _srcmap = {};   // ch -> { byIndex: Map<html paragraph index, entry>, byHead: legacy fallback }
 const _normHead = s => (s||'').replace(/\s+/g,' ').trim().slice(0,80).toLowerCase();
+function toggleAuthorEditMode(){
+  authorEditMode = !authorEditMode;
+  applyAuthorEditMode();
+  if (authorEditMode) flash('Author Edit Mode — click any outlined paragraph. References and LaTeX objects are protected.');
+}
+function applyAuthorEditMode(){
+  const doc = document.getElementById('doc');
+  if (doc) doc.classList.toggle('author-edit-mode', authorEditMode);
+  const btn = document.getElementById('btn-author-edit');
+  if (btn){ btn.classList.toggle('active', authorEditMode); const s = btn.querySelector('span'); if (s) s.textContent = authorEditMode ? 'Done editing' : 'Edit text'; }
+  if (!doc) return;
+  let banner = doc.querySelector('.author-edit-banner');
+  if (authorEditMode && !banner){
+    banner = document.createElement('div'); banner.className = 'author-edit-banner';
+    banner.innerHTML = '<i class="ti ti-lock"></i><span><b>Author Edit Mode.</b> Click an outlined paragraph. Citations, references, math, units, labels, and formatting stay locked while you write.</span>';
+    doc.prepend(banner);
+  } else if (!authorEditMode) banner?.remove();
+}
 async function loadSrcmapPencils(ch){
   try {
     if (!_srcmap[ch]){
@@ -650,86 +673,89 @@ async function loadSrcmapPencils(ch){
       let json = null;
       if (dev){ const r = await fetch(`./content/${ch}.srcmap.json`); if (r.ok) json = await r.json(); }
       else { const t = tok(); if (!t) return; const r = await fetch(`https://api.github.com/repos/${DATA_REPO}/contents/${dpath('content/'+ch+'.srcmap.json')}?t=${Date.now()}`, { headers:{ Authorization:`Bearer ${t}`, Accept:'application/vnd.github.raw' }, cache:'no-store' }); if (r.ok) json = await r.json(); }
-      _srcmap[ch] = {}; for (const e of (json?.paragraphs||[])) _srcmap[ch][_normHead(e.head)] = e.source_text;
+      const entries = json?.paragraphs || [];
+      _srcmap[ch] = { byIndex:new Map(entries.map(e => [e.i, e])), byHead:Object.fromEntries(entries.map(e => [_normHead(e.head), e])) };
     }
-    const map = _srcmap[ch]; if (!map || !Object.keys(map).length) return;
-    document.querySelectorAll('#doc p').forEach(p => {
+    const map = _srcmap[ch]; if (!map || (!map.byIndex.size && !Object.keys(map.byHead).length)) return;
+    const all = [...document.querySelectorAll('#doc p')];
+    let mapped = 0, eligible = 0;
+    all.forEach((p, i) => {
       if (p.closest('figure, #footnotes, .references, #refs')) return;
       const txt = p.textContent || ''; if (txt.trim().length < 24) return;
-      const src = map[_normHead(txt)]; if (!src || p.querySelector('.pen-btn')) return;
+      eligible++;
+      const entry = map.byIndex.get(i) || map.byHead[_normHead(txt)];
+      const src = entry?.source_text; if (!src) return;
+      mapped++;
       p.classList.add('editable-p');
-      const btn = document.createElement('button'); btn.className = 'pen-btn'; btn.title = 'Edit this paragraph';
-      btn.innerHTML = '<i class="ti ti-pencil"></i>';
-      btn.onclick = e => { e.stopPropagation(); startDirectEdit(p, src); };
-      p.appendChild(btn);
+      p.dataset.authorMapped = '1'; p._authorSource = src;
+      if (!p.querySelector('.pen-btn')){
+        const btn = document.createElement('button'); btn.className = 'pen-btn'; btn.title = 'Edit this paragraph';
+        btn.innerHTML = '<i class="ti ti-pencil"></i>';
+        btn.onclick = e => { e.stopPropagation(); startDirectEdit(p, p._authorSource); };
+        p.appendChild(btn);
+        p.addEventListener('click', e => { if (authorEditMode && !e.target.closest('a,button,.ae-token')) startDirectEdit(p, p._authorSource); });
+      }
     });
+    const btn = document.getElementById('btn-author-edit');
+    if (btn){ btn.disabled = mapped === 0; btn.title = mapped ? `${mapped} of ${eligible} prose paragraphs are source-linked and editable` : 'No source-linked paragraphs are available yet; rebuild the reading view.'; }
+    applyAuthorEditMode();
   } catch(e){ /* editor is optional; never block reading */ }
 }
 function startDirectEdit(p, source){
-  if (document.querySelector('.pedit')) return;
+  if (!source || document.querySelector('.pedit')) return;
   const proseBefore = (p.textContent||'').replace(/\s+/g,' ').trim();
+  const model = parseAuthorSource(source);
   const box = document.createElement('div'); box.className = 'pedit';
-  box.innerHTML = `<textarea class="pedit-ta"></textarea>
-    <div class="pedit-acts"><button class="btn btn-primary pedit-next">Review change →</button><button class="btn pedit-cancel">Cancel</button>
-      <span style="font-size:11.5px;color:var(--text-3);margin-left:4px">Edit the prose; you'll confirm the LaTeX before it stages.</span></div>`;
+  box.innerHTML = `<div class="ae-help"><i class="ti ti-shield-check"></i> Type in the plain text. Locked chips preserve the exact LaTeX behind citations, references, math, units, labels, and formatting.</div>
+    <div class="author-source-editor" role="textbox" aria-label="Edit paragraph prose"></div>
+    <div class="pedit-acts"><button class="btn btn-primary pedit-save"><i class="ti ti-eye"></i>Save &amp; build preview</button><button class="btn pedit-cancel">Cancel</button>
+      <span class="pedit-stat" style="font-size:11.5px;color:var(--text-3);margin-left:4px"></span></div>`;
   p.style.display = 'none'; p.after(box);
-  const ta = box.querySelector('.pedit-ta'); ta.value = proseBefore; ta.style.height = Math.max(70, ta.scrollHeight)+'px'; ta.focus();
-  ta.oninput = () => { ta.style.height = 'auto'; ta.style.height = ta.scrollHeight+'px'; };
+  const editor = box.querySelector('.author-source-editor');
+  for (const n of model.nodes){
+    const el = document.createElement('span');
+    if (n.type === 'text'){
+      el.className = 'ae-text'; el.contentEditable = 'true'; el.spellcheck = true; el.textContent = n.display;
+      el.dataset.nodeType = 'text';
+    } else {
+      el.className = `ae-token ae-${n.kind}`; el.contentEditable = 'false'; el.dataset.nodeType = 'token'; el.dataset.tokenId = n.id;
+      el.title = n.raw; el.innerHTML = `<i class="ti ${n.kind==='citation'?'ti-quote':n.kind==='reference'?'ti-link':n.kind==='math'?'ti-math':n.kind==='label'?'ti-tag':'ti-lock'}"></i>${escapeHtml(n.label)}`;
+    }
+    editor.appendChild(el);
+  }
+  editor.querySelector('.ae-text')?.focus();
   const close = () => { box.remove(); p.style.display = ''; };
   box.querySelector('.pedit-cancel').onclick = close;
-  box.querySelector('.pedit-next').onclick = () => { const after = ta.value.replace(/\s+/g,' ').trim();
-    if (after === proseBefore){ close(); return; } confirmDirectEdit(p, source, proseBefore, after, close); };
-}
-// word-level common prefix/suffix -> single changed span; transpose onto the LaTeX source if uniquely locatable
-function transposeToSource(before, after, source){
-  const a = before.split(/\s+/), b = after.split(/\s+/);
-  let pre = 0; while (pre < a.length && pre < b.length && a[pre] === b[pre]) pre++;
-  let suf = 0; while (suf < a.length-pre && suf < b.length-pre && a[a.length-1-suf] === b[b.length-1-suf]) suf++;
-  const oldMid = a.slice(pre, a.length-suf).join(' '), newMid = b.slice(pre, b.length-suf).join(' ');
-  if (oldMid && source.split(oldMid).length === 2) return { replacement: source.replace(oldMid, newMid), auto:true };
-  return { replacement: source, auto:false };   // couldn't safely map — owner edits the source directly
-}
-function confirmDirectEdit(p, source, before, after, closeEditor){
-  const { replacement, auto } = transposeToSource(before, after, source);
-  const back = document.createElement('div'); back.className = 'pconfirm-back';
-  back.innerHTML = `<div class="pconfirm">
-      <div style="font-size:15px;font-weight:600;margin-bottom:3px">Confirm the LaTeX change</div>
-      <div style="font-size:12px;color:var(--text-3);margin-bottom:12px">${auto ? 'Your prose edit was mapped to the source below — confirm or adjust it.' : "Couldn't auto-map your edit to the LaTeX (it touches markup or math) — make the change in the source below."}</div>
-      <div class="pc-lbl">Your prose change</div>
-      <div class="pc-prose"><div class="pc-before">${escapeHtml(before)}</div><div class="pc-after">${escapeHtml(after)}</div></div>
-      <div class="pc-lbl" style="margin-top:12px">LaTeX source — original</div>
-      <pre class="pc-src pc-orig">${escapeHtml(source)}</pre>
-      <div class="pc-lbl" style="margin-top:10px">LaTeX source — new (editable)</div>
-      <textarea class="pc-new">${escapeHtml(replacement)}</textarea>
-      <div class="pc-acts"><button class="btn btn-primary pc-stage">Stage this edit</button><button class="btn pc-cancel">Cancel</button>
-        <span class="pc-stat" style="font-size:11.5px;color:var(--text-3)"></span></div></div>`;
-  document.body.appendChild(back);
-  back.onclick = e => { if (e.target === back) back.remove(); };
-  back.querySelector('.pc-cancel').onclick = () => back.remove();
-  back.querySelector('.pc-stage').onclick = async () => {
-    const newSource = back.querySelector('.pc-new').value;
-    if (newSource === source){ back.querySelector('.pc-stat').textContent = 'No source change.'; return; }
-    back.querySelector('.pc-stat').textContent = 'Staging…';
-    try { await stageDirectEdit(current, source, newSource, before, after);
-      back.remove(); closeEditor();
-      p.classList.add('p-staged'); p.style.display = ''; flash('Staged — preview, then Approve & merge.'); }
-    catch(e){ back.querySelector('.pc-stat').textContent = 'Failed: ' + e.message; }
+  box.querySelector('.pedit-save').onclick = async () => {
+    const parts = [...editor.children].map(el => el.dataset.nodeType === 'token'
+      ? { type:'token', id:el.dataset.tokenId }
+      : { type:'text', text:el.textContent || '' });
+    const stat = box.querySelector('.pedit-stat');
+    try {
+      const newSource = serializeAuthorSegments(model, parts);
+      if (newSource === source){ close(); return; }
+      stat.textContent = 'Saving your exact words and building a preview…';
+      box.querySelector('.pedit-save').disabled = true;
+      const after = authorPlainText(model, parts);
+      await stageAuthorEdit(current, source, newSource, proseBefore, after);
+      close(); p.classList.add('p-staged'); p.style.display = '';
+      flash('Author edit saved. Footnote is building the rendered preview…');
+    } catch(e){ stat.textContent = e.message; box.querySelector('.pedit-save').disabled = false; }
   };
 }
-async function stageDirectEdit(ch, source, newSource, before, after){
+async function stageAuthorEdit(ch, source, newSource, before, after){
   const t = tok(); if (!t) throw new Error('add your access token first');
-  // record as a first-class staged edit in the owner review, then queue a deterministic apply-direct job
-  review = addComment(review, { anchor:{ quote: before.slice(0,90), section:'' }, kind:'direct', tag:'edit',
-    body:'Direct edit', edit:{ op:'replace', find:source, replacement:newSource } });
-  const nc = review.comments[review.comments.length-1];
-  nc.prose_before = before; nc.prose_after = after;
-  review = updateComment(review, nc.id, { status:'queued' });
-  save(); await syncUp();
+  // The browser writes an author-edit job, not a reviewer comment and not an AI prompt. The engine
+  // applies the literal source replacement, builds a review-branch preview, and records hidden
+  // provenance for the approved-only publication gate.
+  await ensureApplyEngine(DATA_REPO, t);
   const { json, sha } = await getJson(t, 'jobs.json').catch(() => ({ json:null, sha:null }));
   const jobs = Array.isArray(json) ? json : [];
-  jobs.push({ id:'j_'+Date.now().toString(36), type:'apply-direct', chapter:ch, comment_ids:[nc.id], status:'queued', requested_ts:new Date().toISOString() });
-  await putJson(t, 'jobs.json', jobs, sha, `direct: stage edit on ${ch}`);
-  renderComments(); refreshStaged();
+  const id = 'j_author_'+Date.now().toString(36);
+  jobs.push(authorEditJob({ id, chapter:ch, find:source, replacement:newSource,
+    proseBefore:before, proseAfter:after, requestedTs:new Date().toISOString() }));
+  await putJson(t, 'jobs.json', jobs, sha, `author: stage prose on ${ch}`);
+  watchApplyRun(t);
 }
 // ---------- advisor comments surfaced in the owner reviewer ----------
 const ADVISOR_IDS = _CFG.advisors.map(a=>a.id);
@@ -1238,7 +1264,7 @@ function docOrderIndex(){           // map comment id -> vertical position of it
   return map;
 }
 function filteredComments(){
-  let cs = review.comments.filter(c =>
+  let cs = review.comments.filter(c => !(c.hidden && c.status !== 'conflict') &&
     (cFilter.status === 'all' || c.status === cFilter.status) &&
     (cFilter.tag === 'all' || c.tag === cFilter.tag));
   const cts = c => String(c.created_ts ?? '');   // coerce: a numeric created_ts must never crash the sort (localeCompare is String-only)
@@ -1248,13 +1274,14 @@ function filteredComments(){
 }
 function renderComments(){
   const pane = document.getElementById('comments');
-  const open = review.comments.filter(c => c.status === 'open').length;
-  pane.innerHTML = `<div class="lbl">COMMENTS${statusDot()}<span style="margin-left:auto">${review.comments.length} · ${open} open</span></div>`;
+  const visible = review.comments.filter(c => !(c.hidden && c.status !== 'conflict'));
+  const open = visible.filter(c => c.status === 'open').length;
+  pane.innerHTML = `<div class="lbl">COMMENTS${statusDot()}<span style="margin-left:auto">${visible.length} · ${open} open</span></div>`;
   paintDots();   // color the comments-rail status dot to the current connection state
-  if (!review.comments.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; renderClaudeFindings(pane); renderAdvisorSection(pane); return; }
+  if (!visible.length){ pane.innerHTML += `<div style="font-size:12.5px;color:var(--text-3);padding:8px 2px">Select text or click a figure to leave a comment.</div>`; renderClaudeFindings(pane); renderAdvisorSection(pane); return; }
   // filter / sort toolbar
   const bar = document.createElement('div'); bar.className = 'cbar';
-  const present = new Set(review.comments.map(c => c.status));
+  const present = new Set(visible.map(c => c.status));
   bar.innerHTML = `<select class="csel" id="fstatus">${STATUS_ORDER.filter(s => s==='all'||present.has(s)).map(s => `<option value="${s}"${cFilter.status===s?' selected':''}>${s==='all'?'all status':s}</option>`).join('')}</select>
     <select class="csel" id="ftag"><option value="all"${cFilter.tag==='all'?' selected':''}>all tags</option>${[...TAGS,'edit'].map(t => `<option value="${t}"${cFilter.tag===t?' selected':''}>${t}</option>`).join('')}</select>
     <button class="csort" id="fsort" title="Sort">${cFilter.sort==='doc'?'↓ document':'↓ newest'}</button>`;
@@ -1664,6 +1691,7 @@ function paintCommentsIn(root, comments, advComments){
   root.querySelectorAll('figure[data-cid]').forEach(f => { f.classList.remove('cmark-fig'); delete f.dataset.cid; });
   const blocks = [...root.querySelectorAll('p, li, figcaption')];
   (comments||[]).forEach(c => {
+    if (c.hidden) return;
     if (isResolved(c)) return;   // don't highlight finalized comments (merged/answered/declined/resolved, or reopened→active)
     if (c.kind === 'figure'){ markFigure(root, c); return; }
     const q = (c.anchor.quote||'').replace(/\s+/g,' ').trim(); if (q.length < 4) return;
@@ -2037,6 +2065,7 @@ function renderStagedEdits(doc){
   doc.querySelectorAll('del.tc-stage').forEach(n => { const p = n.parentNode; n.replaceWith(...n.childNodes); p.normalize(); });
   if (previewing) return;            // preview already shows the final rendered text — no track-changes overlay
   (review.comments||[]).forEach(c => {
+    if (c.hidden) return;          // author edits are reviewed in the rendered branch preview, not as fake comments
     if (!c.staged_edit || !['staged','approved'].includes(c.status)) return;
     paintEditDiff(c);
   });
@@ -2050,17 +2079,21 @@ function showApproveBar(){
   document.getElementById('approvebar')?.remove();
   const staged = (review.comments||[]).filter(c => ['staged','approved'].includes(c.status));   // any staged change, inline-diff or not
   if (!staged.length) return;
+  const authorOnly = staged.every(c => c.kind === 'author-edit' && c.hidden);
   probePreviewExists(current);   // opt-in preview is gated on the branch render actually existing; probe once per unit
   const p = partitionByDecision(review.comments);
   const counts = `<b>${p.approved.length}</b> approved · ${p.rejected.length} rejected · ${p.undecided.length} to decide${p.revise.length?` · ${p.revise.length} to revise`:''}${p.queued.length?` · <b>${p.queued.length}</b> queued for merge`:''}`;
-  const inlineN = staged.filter(c => c.staged_edit).length;
-  const note = inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
+  const inlineN = staged.filter(c => c.staged_edit && !c.hidden).length;
+  const note = authorOnly ? 'your exact prose is on the review branch; preview it rendered before publishing'
+             : inlineN === staged.length ? `shown inline as <span class="tc-legend"><del>old</del> <ins>new</ins></span>`
              : inlineN ? `${inlineN} shown inline; figure/structure changes need a preview`
              : `figure or structure changes, preview to see them rendered`;
   const bar = document.createElement('div'); bar.id = 'approvebar'; bar.className = 'approvebar';
   const left = previewing
     ? `<i class="ti ti-eye"></i><span><b>Previewing the rendered staged version</b> — figures and text as they'll look after merge. Nothing is merged yet.</span>`
-    : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} — ${counts}. ${note}.</span>`;
+    : authorOnly
+      ? `<i class="ti ti-pencil"></i><span><b>${staged.length} author edit${staged.length>1?'s':''} ready.</b> ${note}.</span>`
+      : `<i class="ti ti-git-pull-request"></i><span><b>${staged.length}</b> staged change${staged.length>1?'s':''} — ${counts}. ${note}.</span>`;
   // The "Preview staged edits" control is shown ONLY when a branch render exists (showPreviewToggle);
   // while previewing, the Exit control always shows so the owner can get back to the merged view.
   const canPreview = showPreviewToggle({ hasStaged: staged.length > 0, previewExists: _previewExists });
@@ -2070,7 +2103,8 @@ function showApproveBar(){
       ? `<button class="btn" id="preview-btn" style="margin-left:auto"><i class="ti ti-eye"></i>Preview staged edits</button>`
       : '';
   const decided = p.approved.length + p.rejected.length + p.revise.length;
-  const applyLabel = decided ? `Apply ${decided} decision${decided>1?'s':''}` : 'Apply decisions';
+  const applyLabel = authorOnly ? `Publish ${staged.length} author edit${staged.length>1?'s':''}`
+                   : decided ? `Apply ${decided} decision${decided>1?'s':''}` : 'Apply decisions';
   const mergeMargin = prevBtn ? '' : 'style="margin-left:auto"';   // keep Apply right-aligned when no preview button
   bar.innerHTML = `${left}${prevBtn}<button class="btn btn-primary" id="merge-approved" ${mergeMargin} ${decided?'':'disabled'}>${applyLabel}</button>`;
   read.prepend(bar);
@@ -2096,11 +2130,18 @@ async function approveChapter(){
   const p = partitionByDecision(review.comments);
   const decided = p.approved.length + p.rejected.length + p.revise.length;
   if (!decided){ flash('Decide on at least one edit (approve, reject, or revise) first.'); return; }
+  const decidedComments = [...p.approved, ...p.rejected, ...p.revise];
+  const authorOnly = decidedComments.length > 0 && decidedComments.every(c => c.kind === 'author-edit' && c.hidden);
   const lines = [];
-  if (p.approved.length) lines.push(`${p.approved.length} approved edit(s) will be merged.`);
+  if (p.approved.length) lines.push(authorOnly
+    ? `${p.approved.length} exact author edit(s) will be published.`
+    : `${p.approved.length} approved edit(s) will be merged.`);
   if (p.rejected.length) lines.push(`${p.rejected.length} rejected edit(s) will be discarded.`);
   if (p.revise.length)   lines.push(`${p.revise.length} edit(s) will be re-queued for revision.`);
-  if (!confirm(`Apply ${decided} decision(s) in ${unitLabel(chMeta(current), UNIT)}?\n` + lines.join('\n'))) return;
+  const confirmPrompt = authorOnly
+    ? `Publish your ${decided} author edit(s) in ${unitLabel(chMeta(current), UNIT)}?\n`
+    : `Apply ${decided} decision(s) in ${unitLabel(chMeta(current), UNIT)}?\n`;
+  if (!confirm(confirmPrompt + lines.join('\n'))) return;
   const q = queueApproved(review); const revise = q.revise; review = q.review; save(); renderComments(); refreshStaged();
   try {
   // persist the promotion conflict-safe: re-apply queueApproved on the freshest remote copy
@@ -2116,8 +2157,9 @@ async function approveChapter(){
   // A merge job publishes approved edits AND cleans up the review branch after rejections. Queue it
   // whenever anything is approved or rejected; a revise-only pass leaves it to the apply-edits re-run.
   const needsMerge = p.approved.length || p.rejected.length;
-  if (needsMerge && !jobs.some(j => j.type==='merge' && j.chapter===current && j.status==='queued'))
-    jobs.push({ id:'j_'+Date.now().toString(36), type:'merge', chapter:current, status:'queued', requested_ts:new Date().toISOString() });
+  const mergeType = authorOnly ? 'author-merge' : 'merge';
+  if (needsMerge && !jobs.some(j => ['merge','author-merge'].includes(j.type) && j.chapter===current && j.status==='queued'))
+    jobs.push({ id:'j_'+Date.now().toString(36), type:mergeType, chapter:current, status:'queued', requested_ts:new Date().toISOString() });
   await putJson(t, 'jobs.json', jobs, js, `review: apply decisions for ${current}`);
   const parts = [];
   if (p.approved.length) parts.push(`${p.approved.length} to merge`);

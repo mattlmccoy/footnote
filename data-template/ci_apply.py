@@ -500,7 +500,8 @@ def publish_merge(prefix, ch, job, review, files, source_dir, repo_dir, remote_r
     return new_review
 
 
-HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-agent", "export", "response")
+HANDLED_TYPES = ("apply-direct", "apply-edits", "run-agents", "merge", "author-edit", "author-merge",
+                 "author-agent", "export", "response")
 
 
 def _run_response_job(prefix, job, review, field, catalog):
@@ -845,19 +846,21 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
     """
     if claude_fn is None:
         claude_fn = run_claude_cli
-    # HARD GATE: cloud apply runs ONLY when this project is explicitly in cloud mode. A missing/local
-    # <prefix>mode.json (the default) makes the cloud engine inert so it can never collide with the
-    # local process-reviews.py round-trip (the 2026-07-08 both-routes-live corruption). Clean skip, not
-    # a failure — no red X, no email.
-    if not R.cloud_enabled(prefix):
-        print(f"[apply] {prefix or '(root)'}: processing mode is local — cloud apply inert (skipped)")
-        return 0
-    # agent_fn is left as passed: None means "use the catalog-aware default", which needs the loaded
-    # catalog + per-job field bound in the run-agents branch below (an injected fake is used as-is).
     jobs = R.load_json(R.jobs_path(prefix), [])
     if not isinstance(jobs, list):
         return 0
     todo = [j for j in jobs if j.get("type") in HANDLED_TYPES and j.get("status") != "done"]
+    # HARD GATE: AI/reviewer work runs in exactly one configured route. Owner-authored literal edits
+    # are the exception: author-edit/author-merge are deterministic, never invoke an LLM, and are not
+    # consumed by the local operator. They may therefore use the cloud write path even while the
+    # project's reviewer processing mode is local, which makes Author Edit Mode work immediately.
+    if not R.cloud_enabled(prefix):
+        todo = [j for j in todo if j.get("type") in ("author-edit", "author-merge")]
+        if not todo:
+            print(f"[apply] {prefix or '(root)'}: processing mode is local — cloud review apply inert (skipped)")
+            return 0
+    # agent_fn is left as passed: None means "use the catalog-aware default", which needs the loaded
+    # catalog + per-job field bound in the run-agents branch below (an injected fake is used as-is).
     if not todo:
         return 0
 
@@ -905,9 +908,25 @@ def process_project(prefix, this_repo, token, base_branch="main", claude_fn=None
         review = R.load_json(R.review_path(prefix, ch), {"comments": []})
         files = read_text_files(source_dir)
 
-        if job.get("type") == "merge":
+        if job.get("type") in ("merge", "author-merge"):
             new_review = publish_merge(prefix, ch, job, review, files,
                                        source_dir, repo_dir, remote_repo, token, base_branch, build_root)
+            _write_json(R.review_path(prefix, ch), new_review)
+            jobs = R.remove_job(jobs, job.get("id"))
+            done += 1
+            continue
+
+        if job.get("type") == "author-edit":
+            new_review, new_files, branch, applied = R.process_author_edit_job(
+                job, review, files, _now_iso(), prefix)
+            if applied:
+                src_rel = os.path.relpath(source_dir, repo_dir)
+                changed = {os.path.normpath(os.path.join(src_rel, rel)): txt
+                           for rel, txt in new_files.items() if files.get(rel) != txt}
+                commit_branch(repo_dir, branch, changed, base_branch,
+                              f"author-edit: stage prose on {ch}", token=token,
+                              remote_repo=remote_repo, push=True,
+                              after_commit=lambda c=ch: build_preview(prefix, c, source_dir, build_root))
             _write_json(R.review_path(prefix, ch), new_review)
             jobs = R.remove_job(jobs, job.get("id"))
             done += 1

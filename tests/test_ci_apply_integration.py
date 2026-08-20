@@ -94,6 +94,42 @@ def test_apply_direct_end_to_end(workspace_repo, monkeypatch):
     assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\alpha + 1\n"
 
 
+def test_author_edit_and_publish_run_in_local_review_mode_without_ai(workspace_repo, monkeypatch):
+    """Author Edit Mode owns a deterministic cloud lane even when reviewer/AI processing is local.
+    It stages the literal prose on the review branch, records hidden provenance, and publishes only
+    after the owner queues author-merge."""
+    data, bare = workspace_repo
+    (data / "proj" / "mode.json").write_text(json.dumps({"processingMode": "local"}))
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps({"comments": []}))
+    (data / "proj" / "jobs.json").write_text(json.dumps([{
+        "id":"ja", "type":"author-edit", "chapter":"02-methods", "status":"queued",
+        "edits":[{"id":"ae1", "find":"\\alpha", "replacement":"\\beta",
+                  "prose_before":"alpha", "prose_after":"beta"}]}]))
+    monkeypatch.chdir(data)
+    monkeypatch.setenv("GITHUB_REPOSITORY", "owner/data")
+    monkeypatch.setattr(ci_apply, "build_preview", lambda *a, **k: True)
+
+    assert ci_apply.process_project("proj/", "owner/data", token="") == 1
+    branched = subprocess.run(
+        ["git", "--git-dir", str(bare), "show", "review-edits/proj/02-methods:proj/source/methods.tex"],
+        capture_output=True, text=True, check=True).stdout
+    assert branched == "x = \\beta + 1\n"
+    review = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())
+    assert review["comments"][0]["hidden"] is True
+    assert review["comments"][0]["decision"] == "approve"
+
+    # The author publication job uses the same local-mode exception and approved-only merge path.
+    review["comments"][0]["status"] = "approved"
+    (data / "proj" / "reviews" / "02-methods.json").write_text(json.dumps(review))
+    (data / "proj" / "jobs.json").write_text(json.dumps([
+        {"id":"jm", "type":"author-merge", "chapter":"02-methods", "status":"queued"}]))
+    monkeypatch.setattr(ci_apply, "build_content", lambda *a, **k: True)
+    assert ci_apply.process_project("proj/", "owner/data", token="") == 1
+    assert (data / "proj" / "source" / "methods.tex").read_text() == "x = \\beta + 1\n"
+    final = json.loads((data / "proj" / "reviews" / "02-methods.json").read_text())
+    assert final["comments"][0]["status"] == "merged"
+
+
 def test_apply_direct_builds_preview_from_the_branch(workspace_repo, monkeypatch, tmp_path):
     """The preview is rendered from the review-edits branch (edited source), reusing the render
     pipeline's chapter-html.sh. Stub the renderer so we need no pandoc/TeX but still prove the

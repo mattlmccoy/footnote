@@ -288,6 +288,35 @@ def test_comment_source_edit_reads_direct_edit_or_claude_source_edit():
     assert R.comment_source_edit({"body": "just a note"}) is None
 
 
+def test_author_edit_job_is_literal_hidden_and_preapproved():
+    job = {"id": "ja", "type": "author-edit", "chapter": "ch5", "edits": [{
+        "id": "ae1", "find": "old prose", "replacement": "new prose",
+        "prose_before": "old prose", "prose_after": "new prose", "source_hash": "abc123"}]}
+    review, files, branch, applied = R.process_author_edit_job(
+        job, {"comments": []}, {"chapter.tex": "Before old prose after."}, "now")
+    assert applied is True
+    assert files["chapter.tex"] == "Before new prose after."
+    assert branch == "review-edits/ch5"
+    c = review["comments"][0]
+    assert c["kind"] == "author-edit" and c["hidden"] is True
+    assert c["decision"] == "approve" and c["status"] == "staged"
+    assert c["source_hash"] == "abc123"
+
+
+def test_new_author_edit_replays_prior_staged_author_edit_on_branch():
+    prior = {"id":"ae0", "kind":"author-edit", "hidden":True, "status":"staged",
+             "decision":"approve", "prose_before":"alpha", "prose_after":"beta",
+             "edit":{"op":"replace", "find":"alpha", "replacement":"beta"}}
+    job = {"id":"ja2", "type":"author-edit", "chapter":"ch5", "edits":[{
+        "id":"ae1", "find":"gamma", "replacement":"delta",
+        "prose_before":"gamma", "prose_after":"delta"}]}
+    review, files, _, applied = R.process_author_edit_job(
+        job, {"comments":[prior]}, {"chapter.tex":"alpha gamma"}, "now")
+    assert applied is True
+    assert files["chapter.tex"] == "beta delta"
+    assert [c["status"] for c in review["comments"]] == ["staged", "staged"]
+
+
 def _approved(cid, find, repl, source_edit=False):
     key = "source_edit" if source_edit else "edit"
     return {"id": cid, "status": "approved",
