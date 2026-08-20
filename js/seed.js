@@ -27,6 +27,7 @@ export const SEED_FILES = [
   // The shared pure core (ci_review_common) is reused by every engine script. Runs on the
   // adopter's own Actions via apply.yml.
   { src: 'ci_review_common.py',    dest: 'ci_review_common.py' },
+  { src: 'ci_llm.py',              dest: 'ci_llm.py' },
   { src: 'ci_apply.py',            dest: 'ci_apply.py' },
   { src: 'workflows/apply.yml',    dest: '.github/workflows/apply.yml' },
   // Agent network B1 — the shipped agent catalog. ci_agents.py holds the engine-owned builtin
@@ -75,7 +76,7 @@ export const RENDER_FILES = SEED_FILES.filter(({ dest }) =>
 // ensured on demand (self-heal) so an EXISTING data repo created before the engine — or one where the
 // first seed failed — gets it once, WITHOUT re-importing. Repo-level, so one seal covers every paper.
 export const APPLY_FILES = SEED_FILES.filter(({ dest }) =>
-  dest === 'ci_review_common.py' || dest === 'ci_apply.py' || dest === 'ci_agents.py' ||
+  dest === 'ci_review_common.py' || dest === 'ci_llm.py' || dest === 'ci_apply.py' || dest === 'ci_agents.py' ||
   dest === 'agents.json' || dest === 'ci_local.py' || dest === 'ci_authoring.py' ||
   dest === '.github/workflows/apply.yml');
 

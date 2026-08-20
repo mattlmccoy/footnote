@@ -27,6 +27,7 @@ test('SEED_FILES includes the Phase 3 render pipeline (export scripts + driver +
 test('SEED_FILES includes the Claude round-trip apply engine (shared core + driver + workflow)', () => {
   const byDest = Object.fromEntries(SEED_FILES.map(f => [f.dest, f.src]));
   assert.equal(byDest['ci_review_common.py'], 'ci_review_common.py');
+  assert.equal(byDest['ci_llm.py'], 'ci_llm.py');
   assert.equal(byDest['ci_apply.py'], 'ci_apply.py');
   assert.equal(byDest['.github/workflows/apply.yml'], 'workflows/apply.yml');
 });
@@ -160,9 +161,10 @@ test('ensureRenderPipeline surfaces a non-workflow 404 as its own error (not wor
 
 // ---- ensureApplyEngine: idempotent self-heal for the Claude round-trip engine, so an EXISTING data
 //      repo (created before the engine, or where the first seed failed) gets it once, repo-level. ----
-test('APPLY_FILES is the apply-engine subset (ci_review_common, ci_apply, apply.yml)', () => {
+test('APPLY_FILES is the apply-engine subset (shared core, LLM provider, driver, workflow)', () => {
   const dests = APPLY_FILES.map(f => f.dest);
   assert.ok(dests.includes('ci_review_common.py'));
+  assert.ok(dests.includes('ci_llm.py'));              // provider seam imported by both cloud and local runners
   assert.ok(dests.includes('ci_apply.py'));
   assert.ok(dests.includes('ci_agents.py'));            // resolver must exist for run-agents to carry real prompts
   assert.ok(dests.includes('agents.json'));             // the catalog the engine reads for user agents
