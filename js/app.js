@@ -36,7 +36,7 @@ import { includePaths } from './apprefs.js?v=662b702';
 import { visibleUnitIds } from './releasegate.js?v=eeccf52';   // appendices follow their home chapter's release
 import { readingViewState } from './setupstatus.js?v=8716f90';   // distinguish a failed tree read from genuinely-not-built
 import { readingSource, showPreviewToggle } from './previewsource.js?v=eb52e54';   // gated, opt-in "Preview staged edits" decision logic (default view stays merged content)
-import { changedParagraphIndexes } from './paragraphdiff.js?v=f3d46be';
+import { paragraphChangeDetails } from './paragraphdiff.js?v=c0968db';
 import { clusterComments, editComments, clusterHasConflict } from './cluster.js?v=7a3b025';   // group reviewer comments on the same passage + flag/resolve edit conflicts
 import { isChecklistDismissed, dismissChecklist, restoreChecklist } from './relchecklist.js?v=551197f';
 import { classicTokenUrl, fineGrainedUrl, CREDENTIALS, credentialStatus } from './tokenscopes.js?v=2c9ac2d';
@@ -2153,7 +2153,9 @@ async function watchApplyRun(t){
 // load the branch-built rendered version (figures + text) from preview/<ch>.html — without merging
 let previewing = false;
 let _previewChangedIndexes = [];
+let _previewChanges = [];
 let _previewBranch = '';
+let _previewPopoverHideTimer = null;
 
 // Use the smallest rendered prose blocks. A list item that contains its own <p> is a container, not an
 // additional paragraph; excluding it prevents one changed contribution from being counted twice.
@@ -2165,11 +2167,72 @@ function previewParagraphTexts(fragment){
   const parsed = new DOMParser().parseFromString(fragment || '', 'text/html');
   return previewParagraphElements(parsed.body).map(el => el.textContent);
 }
+function previewBeforePopover(){
+  let tip = document.getElementById('preview-before-popover');
+  if (tip) return tip;
+  tip = document.createElement('div');
+  tip.id = 'preview-before-popover';
+  tip.className = 'preview-before-popover';
+  tip.setAttribute('role', 'tooltip');
+  tip.hidden = true;
+  tip.addEventListener('mouseenter', () => clearTimeout(_previewPopoverHideTimer));
+  tip.addEventListener('mouseleave', () => hidePreviewBeforePopover());
+  document.body.appendChild(tip);
+  return tip;
+}
+function hidePreviewBeforePopover(delay = 0){
+  clearTimeout(_previewPopoverHideTimer);
+  _previewPopoverHideTimer = setTimeout(() => {
+    const tip = document.getElementById('preview-before-popover');
+    if (tip) tip.hidden = true;
+  }, delay);
+}
+function showPreviewBeforePopover(block, change){
+  clearTimeout(_previewPopoverHideTimer);
+  const tip = previewBeforePopover();
+  const label = document.createElement('div');
+  label.className = 'preview-before-label';
+  label.textContent = change.before.length === 1 ? 'Previous wording'
+    : change.before.length ? 'Previous text in this changed region' : 'Added paragraph';
+  const text = document.createElement('div');
+  text.className = 'preview-before-text';
+  text.textContent = change.before.length
+    ? change.before.join('\n\n')
+    : 'This paragraph did not exist in the merged version.';
+  tip.replaceChildren(label, text);
+  tip.hidden = false;
+  tip.style.left = '12px';
+  tip.style.top = '12px';
+  const rect = block.getBoundingClientRect();
+  const margin = 12, gap = 8;
+  const left = Math.min(Math.max(margin, rect.left), window.innerWidth - tip.offsetWidth - margin);
+  let top = rect.bottom + gap;
+  if (top + tip.offsetHeight > window.innerHeight - margin) top = Math.max(margin, rect.top - tip.offsetHeight - gap);
+  tip.style.left = `${left}px`;
+  tip.style.top = `${top}px`;
+}
 function paintPreviewParagraphChanges(doc){
+  document.getElementById('preview-before-popover')?.remove();
   doc.querySelectorAll('.preview-change').forEach(el => el.classList.remove('preview-change'));
-  if (!previewing || !_previewChangedIndexes.length) return;
+  if (!previewing || !_previewChanges.length) return;
+  previewBeforePopover();
   const blocks = previewParagraphElements(doc);
-  _previewChangedIndexes.forEach(index => blocks[index]?.classList.add('preview-change'));
+  _previewChanges.forEach(change => {
+    const block = blocks[change.index]; if (!block) return;
+    block.classList.add('preview-change');
+    block.tabIndex = 0;
+    block.setAttribute('aria-describedby', 'preview-before-popover');
+    block.addEventListener('mouseenter', () => showPreviewBeforePopover(block, change));
+    block.addEventListener('mouseleave', () => hidePreviewBeforePopover(160));
+    block.addEventListener('focusin', () => showPreviewBeforePopover(block, change));
+    block.addEventListener('focusout', () => hidePreviewBeforePopover());
+    block.addEventListener('click', e => {
+      if (!e.target?.closest?.('a, button, input, textarea, select')) showPreviewBeforePopover(block, change);
+    });
+    block.addEventListener('keydown', e => {
+      if (e.key === 'Escape') { hidePreviewBeforePopover(); block.blur(); }
+    });
+  });
 }
 
 async function fetchReaderFragment(path, token, dev){
@@ -2182,7 +2245,7 @@ async function fetchReaderFragment(path, token, dev){
   return null;
 }
 async function togglePreview(ch){
-  if (previewing){ previewing = false; _previewChangedIndexes = []; _previewBranch = ''; _previewBannerDismissed = false; loadChapter(ch); return; }   // back to the merged content view
+  if (previewing){ previewing = false; _previewChangedIndexes = []; _previewChanges = []; _previewBranch = ''; _previewBannerDismissed = false; hidePreviewBeforePopover(); loadChapter(ch); return; }   // back to the merged content view
   const t = tok(); const dev = location.hostname==='localhost' || location.hostname==='127.0.0.1';
   // The path is decided by readingSource: it returns preview/<ch>.html ONLY with a staged edit, a built
   // preview, and the toggle on, so the merged view can never be swapped by accident. If it declines
@@ -2196,9 +2259,10 @@ async function togglePreview(ch){
       fetchReaderFragment(`content/${ch}.html`, t, dev),
     ]);
     if (!html){ flash(`No preview built yet for this ${UNIT}; it builds when changes are staged.`); return; }   // fetch failed/absent → stay on merged content
-    _previewChangedIndexes = merged
-      ? changedParagraphIndexes(previewParagraphTexts(merged), previewParagraphTexts(html))
+    _previewChanges = merged
+      ? paragraphChangeDetails(previewParagraphTexts(merged), previewParagraphTexts(html))
       : [];
+    _previewChangedIndexes = _previewChanges.map(change => change.index);
     const branchComment = [...(review?.comments || [])].reverse().find(c =>
       ['staged', 'approved', 'queued'].includes(c.status) && c.claude?.branch);
     _previewBranch = branchComment?.claude?.branch || `review-edits/${ch}`;
@@ -2215,7 +2279,7 @@ function showStagedPreviewBanner(ch){
   b.id = 'staged-preview-banner';
   b.style.cssText = 'display:flex;align-items:center;gap:10px;margin:0 0 18px;padding:11px 14px;border:.5px solid var(--info);border-radius:var(--r-md,10px);background:var(--info-bg);font-size:13px;line-height:1.5;color:var(--text-1)';
   b.innerHTML = `<i class="ti ti-git-branch" style="font-size:18px;color:var(--info);flex:0 0 auto"></i>`
-    + `<span style="flex:1">Showing staged edits from <code>${escapeHtml(_previewBranch)}</code>, not yet merged. ${_previewChangedIndexes.length} changed paragraph${_previewChangedIndexes.length===1?' is':'s are'} highlighted. Approve to make them live.</span>`
+    + `<span style="flex:1">Showing staged edits from <code>${escapeHtml(_previewBranch)}</code>, not yet merged. ${_previewChangedIndexes.length} changed paragraph${_previewChangedIndexes.length===1?' is':'s are'} highlighted. Hover or focus a highlight to see the previous wording. Approve to make them live.</span>`
     + `<button class="icbtn" id="staged-preview-dismiss" title="Dismiss this note" style="flex:0 0 auto"><i class="ti ti-x"></i></button>`;
   doc.prepend(b);
   document.getElementById('staged-preview-dismiss')?.addEventListener('click', () => { _previewBannerDismissed = true; b.remove(); });

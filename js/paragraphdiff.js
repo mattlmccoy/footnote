@@ -12,9 +12,11 @@ export function normalizeParagraph(text) {
     .toLowerCase();
 }
 
-export function changedParagraphIndexes(mainParagraphs, previewParagraphs) {
-  const a = (mainParagraphs || []).map(normalizeParagraph);
-  const b = (previewParagraphs || []).map(normalizeParagraph);
+export function paragraphChangeDetails(mainParagraphs, previewParagraphs) {
+  const original = mainParagraphs || [];
+  const preview = previewParagraphs || [];
+  const a = original.map(normalizeParagraph);
+  const b = preview.map(normalizeParagraph);
   const rows = a.length + 1, cols = b.length + 1;
   const dp = Array.from({ length: rows }, () => new Uint32Array(cols));
   for (let i = a.length - 1; i >= 0; i--) {
@@ -23,12 +25,28 @@ export function changedParagraphIndexes(mainParagraphs, previewParagraphs) {
         : Math.max(dp[i + 1][j], dp[i][j + 1]);
     }
   }
-  const unchanged = new Set();
+  const details = [];
+  let before = [], afterIndexes = [];
+  const flush = () => {
+    if (afterIndexes.length) {
+      const previousRegion = before.slice();
+      afterIndexes.forEach(index => details.push({ index, before: previousRegion.slice() }));
+    }
+    before = [];
+    afterIndexes = [];
+  };
   let i = 0, j = 0;
   while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) { unchanged.add(j); i++; j++; }
-    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
-    else j++;
+    if (a[i] === b[j]) { flush(); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) before.push(original[i++]);
+    else afterIndexes.push(j++);
   }
-  return b.map((_, index) => index).filter(index => !unchanged.has(index));
+  while (i < a.length) before.push(original[i++]);
+  while (j < b.length) afterIndexes.push(j++);
+  flush();
+  return details;
+}
+
+export function changedParagraphIndexes(mainParagraphs, previewParagraphs) {
+  return paragraphChangeDetails(mainParagraphs, previewParagraphs).map(change => change.index);
 }

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changedParagraphIndexes, normalizeParagraph } from '../js/paragraphdiff.js';
+import { changedParagraphIndexes, normalizeParagraph, paragraphChangeDetails } from '../js/paragraphdiff.js';
 
 test('normalizeParagraph ignores rendering whitespace and typographic punctuation', () => {
   assert.equal(normalizeParagraph('  RF–mediated\n  processing ’works’  '),
@@ -22,4 +22,28 @@ test('changedParagraphIndexes marks a moved paragraph because its context change
   const changed = changedParagraphIndexes(['a', 'b', 'c'], ['b', 'a', 'c']);
   assert.equal(changed.length, 1);
   assert.ok(changed[0] === 0 || changed[0] === 1);
+});
+
+test('paragraphChangeDetails gives rewritten preview paragraphs their previous wording', () => {
+  const details = paragraphChangeDetails(
+    ['same opening', 'old task paragraph', 'same ending'],
+    ['same opening', 'new task paragraph', 'new limitation paragraph', 'same ending'],
+  );
+  assert.deepEqual(details, [
+    { index: 1, before: ['old task paragraph'] },
+    { index: 2, before: ['old task paragraph'] },
+  ]);
+});
+
+test('paragraphChangeDetails identifies a wholly new paragraph', () => {
+  assert.deepEqual(paragraphChangeDetails(['opening'], ['opening', 'new paragraph']), [
+    { index: 1, before: [] },
+  ]);
+});
+
+test('paragraphChangeDetails keeps every prior paragraph for a merged rewrite region', () => {
+  assert.deepEqual(
+    paragraphChangeDetails(['opening', 'old one', 'old two', 'ending'], ['opening', 'merged rewrite', 'ending']),
+    [{ index: 1, before: ['old one', 'old two'] }],
+  );
 });
